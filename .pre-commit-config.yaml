@@ -1,4 +1,10 @@
 repos:
+  - repo: https://github.com/mwouts/jupytext
+    rev: v1.11.2  # (replace with the latest stable version)
+    hooks:
+      - id: jupytext
+        args: [--from, ipynb, --to, "py"]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.2.0
     hooks:
@@ -14,7 +20,7 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/mwouts/jupytext
-    rev: v1.11.2  # (replace with the latest stable version)
+    rev: v1.16.3
     hooks:
       - id: jupytext
-        args: [--from, ipynb, --to, "py"]
+        args: [--sync]
