@@ -1,19 +1,20 @@
 """Module with utility functions, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
 
+import ast
 import inspect
-import jax
+import logging
+import os
+import random
 import re
+import time
+from pathlib import Path
+from typing import Any
+
+import jax
 import jax.numpy as jnp
 import numpy as np
+from colorama import Back, Fore, Style, init
 from scipy.special import kl_div
-from pathlib import Path
-import os
-import ast
-import logging
-from typing import Any
-import random
-import time
-from colorama import init, Fore, Back, Style
 
 # Initialize colorama
 init(autoreset=True)
@@ -179,13 +180,11 @@ def experiment_list_to_tensor(longest_trial_length, nested_list, list_type):
     trials_per_block = len(nested_list[0])
     num_trials = num_blocks * trials_per_block
 
-    if list_type == "decisions" or list_type == "odors":
+    if list_type == "inputs" or list_type == "decisions":
         tensor = np.full((num_trials, longest_trial_length), np.nan)
-    elif list_type == "xs" or list_type == "neural_recordings":
+    elif list_type == "xs" or list_type == "ys":
         element_dim = len(nested_list[0][0][0])
         tensor = np.full((num_trials, longest_trial_length, element_dim), 0.0)
-    else:
-        raise Exception("list passed must be odors, decisions or xs")
 
     for i in range(num_blocks):
         for j in range(trials_per_block):
@@ -253,7 +252,7 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
             elif ind_l[idx] == 2:
                 term_str += "R²"
             coeff = plasticity_coeff[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
-            print("{:<10} {:<20.5f}".format(term_str, coeff))
+            print(f"{term_str:<10} {coeff:<20.5f}")
         print()
     else:
         print("MLP plasticity coeffs: ", plasticity_coeff)
