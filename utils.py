@@ -172,19 +172,19 @@ def experiment_list_to_tensor(longest_trial_length, nested_list):
     print(
         f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
     )
-    num_blocks = len(nested_list)
-    trials_per_block = len(nested_list[0])
-    num_trials = num_blocks * trials_per_block
+    num_sessions = len(nested_list)
+    trials_per_session = len(nested_list[0])
+    num_trials = num_sessions * trials_per_session
     print(type(nested_list[0][0][0]))
     element_dim = nested_list[0][0][0].shape
     print(f"before: {len(nested_list)}, {len(nested_list[0])}, {len(nested_list[0][0])}, {element_dim}")
     tensor = np.full((num_trials, int(longest_trial_length), *element_dim), 0.0)
 
-    for i in range(num_blocks):
-        for j in range(trials_per_block):
+    for i in range(num_sessions):
+        for j in range(trials_per_session):
             trial = nested_list[i][j]
             for k in range(len(trial)):
-                tensor[i * trials_per_block + j][k] = trial[k]
+                tensor[i * trials_per_session + j][k] = trial[k]
     tensor = jnp.array(tensor)
     print(tensor.shape)
     return tensor
@@ -333,8 +333,8 @@ def validate_config(cfg: Any) -> Any:
         cfg.layer_sizes = ast.literal_eval(cfg.layer_sizes)
 
     # Validate reward_ratios length
-    if len(cfg.reward_ratios) != cfg.num_blocks:
-        raise ValueError("Length of reward_ratios should be equal to num_blocks!")
+    if len(cfg.reward_ratios) != cfg.num_sessions:
+        raise ValueError("Length of reward_ratios should be equal to num_sessions!")
 
     # Validate plasticity_model
     if cfg.plasticity_model not in ["volterra", "mlp"]:
@@ -390,8 +390,8 @@ def validate_config(cfg: Any) -> Any:
                 f"Fly experimental data only for fly IDs 1 to {num_flies}!"
             )
 
-        if cfg.num_blocks != 3:
-            raise ValueError("All experimental data consists of 3 blocks!")
+        if cfg.num_sessions != 3:
+            raise ValueError("All experimental data consists of 3 sessions!")
 
         # Uncomment the following lines if num_train validation is required
         # if cfg.num_train != 1:
@@ -401,7 +401,7 @@ def validate_config(cfg: Any) -> Any:
             raise ValueError("Only 'behavior' experimental data is available!")
 
         # Set certain cfg fields to 'N/A' for experimental data
-        cfg.trials_per_block = "N/A"
+        cfg.trials_per_session = "N/A"
         cfg.reward_ratios = "N/A"
 
     # Adjust cfg for 'mlp' plasticity_model

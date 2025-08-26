@@ -73,8 +73,8 @@ class Experiment:
         inputs, xs, ys, decisions, rewards, expected_rewards = data
 
         trial_lengths = [
-            [len(inputs[j][i]) for i in range(self.cfg.trials_per_block)]
-            for j in range(self.cfg.num_blocks)
+            [len(inputs[j][i]) for i in range(self.cfg.trials_per_session)]
+            for j in range(self.cfg.num_sessions)
         ]
         max_trial_length = int(jnp.max(jnp.array(trial_lengths)))
         build_tensor = partial(experiment_list_to_tensor, max_trial_length)
@@ -99,20 +99,20 @@ class Experiment:
             decisions,
             rewards,
             expected_rewards): Nested lists
-                for each block
-                for each trial within block
+                for each session
+                for each trial within session
                 of timeseries
         """
         inputs, xs, ys, decisions, rewards, expected_rewards = (
             [
-                [[] for _ in range(self.cfg.trials_per_block)]
-                for _ in range(self.cfg.num_blocks)
+                [[] for _ in range(self.cfg.trials_per_session)]
+                for _ in range(self.cfg.num_sessions)
             ]
             for _ in range(6)  # Nested lists for each of the 6 variables
         )
 
-        for block in range(self.cfg.num_blocks):
-            for trial in range(self.cfg.trials_per_block):
+        for session in range(self.cfg.num_sessions):
+            for trial in range(self.cfg.trials_per_session):
                 key, _ = jax.random.split(key)
 
                 trial_data = self.generate_trial(
@@ -120,12 +120,12 @@ class Experiment:
                 # In generation mode all trials have the same length(?)
 
                 (
-                    inputs[block][trial],
-                    xs[block][trial],
-                    ys[block][trial],
-                    decisions[block][trial],
-                    rewards[block][trial],
-                    expected_rewards[block][trial],
+                    inputs[session][trial],
+                    xs[session][trial],
+                    ys[session][trial],
+                    decisions[session][trial],
+                    rewards[session][trial],
+                    expected_rewards[session][trial],
                 ) = trial_data
 
         return inputs, xs, ys, decisions, rewards, expected_rewards

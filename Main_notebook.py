@@ -31,10 +31,10 @@ config = {
     "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp": 10,  # Number of experiments/trajectories
-    #TODO account for different number of blocks within one experiment?
-    "num_blocks": 5,  # Number of blocks/sessions/days per experiment/trajectory/animal
-    #TODO account for different number of trials within one block?
-    "trials_per_block": 12,  # Number of trials/runs in each block/session/day
+    #TODO account for different number of sessions within one experiment?
+    "num_sessions": 5,  # Number of sessions/days per experiment/trajectory/animal
+    #TODO account for different number of trials within one session?
+    "trials_per_session": 12,  # Number of trials/runs in each session/session/day
     #TODO account for different number of steps within one trial?
     "num_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
     "num_epochs": 250,
