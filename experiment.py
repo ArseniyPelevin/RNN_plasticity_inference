@@ -76,26 +76,14 @@ class Experiment:
             [len(inputs[j][i]) for i in range(self.cfg.trials_per_block)]
             for j in range(self.cfg.num_blocks)
         ]
-        max_trial_length = jnp.max(jnp.array(trial_lengths))
-        print(f"Exp {self.exp_i}, longest trial length: {max_trial_length}")
+        max_trial_length = int(jnp.max(jnp.array(trial_lengths)))
+        build_tensor = partial(experiment_list_to_tensor, max_trial_length)
+        data = [
+            build_tensor(var) for var in
+            [inputs, xs, ys, decisions, rewards, expected_rewards]
+        ]
 
-        print(f"Inputs shape 1: {len(inputs)}, {len(inputs[0])}, {len(inputs[0][0])}")
-        inputs = experiment_list_to_tensor(max_trial_length, inputs, list_type="inputs")
-        print(f"Inputs shape 2: {inputs.shape}")
-
-        xs = experiment_list_to_tensor(max_trial_length, xs, list_type="xs")
-        ys = experiment_list_to_tensor(max_trial_length, ys, list_type="ys")
-        decisions = experiment_list_to_tensor(
-            max_trial_length, decisions, list_type="decisions"
-        )
-
-        rewards = jnp.array(rewards, dtype=float).flatten()
-        expected_rewards = jnp.array(expected_rewards, dtype=float).flatten()
-
-        # print("odors: ", odors[exp_i])
-        # print("rewards: ", rewards[exp_i])
-
-        return inputs, xs, ys, decisions, rewards, expected_rewards
+        return data
 
     def generate_experiment(self, key):
         """Generate a synthetic experiment for a single animal/trajectory.
@@ -105,9 +93,15 @@ class Experiment:
             key: JAX random key.
 
         Returns:
-            Nested lists of different length timeseries
-                of each trials within each blocks
-                for each variable.
+            (inputs,
+            xs,
+            ys,
+            decisions,
+            rewards,
+            expected_rewards): Nested lists
+                for each block
+                for each trial within block
+                of timeseries
         """
         inputs, xs, ys, decisions, rewards, expected_rewards = (
             [
@@ -121,7 +115,9 @@ class Experiment:
             for trial in range(self.cfg.trials_per_block):
                 key, _ = jax.random.split(key)
 
-                trial_data = self.generate_trial(key)
+                trial_data = self.generate_trial(
+                    key, trial_length=self.cfg["num_steps_per_trial"])
+                # In generation mode all trials have the same length(?)
 
                 (
                     inputs[block][trial],
@@ -134,11 +130,12 @@ class Experiment:
 
         return inputs, xs, ys, decisions, rewards, expected_rewards
 
-    def generate_trial(self, key):
+    def generate_trial(self, key, trial_length):
         """Generate a timecourse of all variables for a single trial.
 
         Args:
             key: JAX random key.
+            trial_length: Length of the trial.
 
         Returns:
             (inputs,
@@ -146,14 +143,16 @@ class Experiment:
             ys,
             decisions,
             rewards,
-            expected_rewards): Lists of the same length containing the timecourses
-                for each variable.
+            expected_rewards): Arrays of the same length containing the timecourses
+                for each variable. If the trial is shorter than the maximum length,
+                it will be padded with zeros.
 
         """
 
         inputs, xs, ys, decisions, rewards, expected_rewards = ([] for _ in range(6))
+
         # TODO manage all keys
-        for _step in range(self.cfg["num_steps_per_trial"]):
+        for _step in range(trial_length):
             key, _ = jax.random.split(key)
 
             # Generate input
@@ -198,4 +197,7 @@ class Experiment:
                 self.plasticity_func,
             )
 
-        return inputs, xs, ys, decisions, rewards, expected_rewards
+        data = [jnp.array(var) for var in
+                [inputs, xs, ys, decisions, rewards, expected_rewards]]
+
+        return data

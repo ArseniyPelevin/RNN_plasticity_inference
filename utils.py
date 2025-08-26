@@ -158,20 +158,16 @@ def truncated_sigmoid(x, epsilon=1e-6):
     return jnp.clip(jax.nn.sigmoid(x), epsilon, 1 - epsilon)
 
 
-def experiment_list_to_tensor(longest_trial_length, nested_list, list_type):
+def experiment_list_to_tensor(longest_trial_length, nested_list):
     """
     Converts a nested list of experimental data into a tensor, padding with NaNs or zeros as necessary.
 
     Args:
         longest_trial_length (int): The length of the longest trial.
         nested_list (list): A nested list containing the experimental data.
-        list_type (str): The type of data in the list. Must be one of "decisions", "odors", "xs", or "neural_recordings".
 
     Returns:
-        jnp.ndarray: A tensor representation of the nested list, padded with NaNs or zeros as appropriate.
-
-    Raises:
-        Exception: If the list_type is not one of "decisions", "odors", "xs", or "neural_recordings".
+        jnp.ndarray: A tensor representation of the nested list, padded with zeros.
     """
     print(
         f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
@@ -179,20 +175,19 @@ def experiment_list_to_tensor(longest_trial_length, nested_list, list_type):
     num_blocks = len(nested_list)
     trials_per_block = len(nested_list[0])
     num_trials = num_blocks * trials_per_block
-
-    if list_type == "inputs" or list_type == "decisions":
-        tensor = np.full((num_trials, longest_trial_length), np.nan)
-    elif list_type == "xs" or list_type == "ys":
-        element_dim = len(nested_list[0][0][0])
-        tensor = np.full((num_trials, longest_trial_length, element_dim), 0.0)
+    print(type(nested_list[0][0][0]))
+    element_dim = nested_list[0][0][0].shape
+    print(f"before: {len(nested_list)}, {len(nested_list[0])}, {len(nested_list[0][0])}, {element_dim}")
+    tensor = np.full((num_trials, int(longest_trial_length), *element_dim), 0.0)
 
     for i in range(num_blocks):
         for j in range(trials_per_block):
             trial = nested_list[i][j]
             for k in range(len(trial)):
                 tensor[i * trials_per_block + j][k] = trial[k]
-
-    return jnp.array(tensor)
+    tensor = jnp.array(tensor)
+    print(tensor.shape)
+    return tensor
 
 
 def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
