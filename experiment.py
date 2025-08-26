@@ -1,6 +1,8 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
-import numpy as np
+import mymodel
 from utils import experiment_list_to_tensor
 
 
@@ -44,6 +46,7 @@ class Experiment:
             * initial_params_scale,  # w
             jnp.zeros((cfg["num_hidden_post"],)),  # b
         )
+        # TODO loop inside a list for multilayer network
 
         data = self.generate_experiment(exp_key)
         data = self.experiment_lists_to_tensors(data)
@@ -73,7 +76,7 @@ class Experiment:
             [len(inputs[j][i]) for i in range(self.cfg.trials_per_block)]
             for j in range(self.cfg.num_blocks)
         ]
-        max_trial_length = np.max(np.array(trial_lengths))
+        max_trial_length = jnp.max(jnp.array(trial_lengths))
         print(f"Exp {self.exp_i}, longest trial length: {max_trial_length}")
 
         print(f"Inputs shape 1: {len(inputs)}, {len(inputs[0])}, {len(inputs[0][0])}")
@@ -86,8 +89,8 @@ class Experiment:
             max_trial_length, decisions, list_type="decisions"
         )
 
-        rewards = np.array(rewards, dtype=float).flatten()
-        expected_rewards = np.array(expected_rewards, dtype=float).flatten()
+        rewards = jnp.array(rewards, dtype=float).flatten()
+        expected_rewards = jnp.array(expected_rewards, dtype=float).flatten()
 
         # print("odors: ", odors[exp_i])
         # print("rewards: ", rewards[exp_i])
@@ -164,13 +167,35 @@ class Experiment:
 
             xs.append(x)
 
-            # TODO Compute postsynaptic layer activity
+            # Compute postsynaptic layer activity
+            w, b = self.params
+            y = jnp.dot(x, w) + b
+            ys.append(y)
 
-            # TODO Compute decision
+            # Compute decision
+            output = jnp.mean(y)
+            p_decision = jax.nn.sigmoid(output)
+            decision = jax.random.bernoulli(key, p_decision).astype(float)
+            decisions.append(decision)
 
             # TODO Compute reward
+            reward = 0
+            rewards.append(reward)
+            expected_reward = reward
+            expected_rewards.append(expected_reward)
 
-            # TODO Update parameters
-            self.params = self.params
+            # Update parameters
+            jit_update_params = partial(jax.jit, static_argnames=("plasticity_func",))(
+                mymodel.update_params
+            )
+            self.params = jit_update_params(
+                x,
+                y,
+                self.params,
+                reward,
+                expected_reward,
+                self.plasticity_coeff,
+                self.plasticity_func,
+            )
 
         return inputs, xs, ys, decisions, rewards, expected_rewards

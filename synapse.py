@@ -1,11 +1,12 @@
 """Module handling plasticity, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
 
-from utils import generate_gaussian, standardize_coeff_init
 import inspect
+import re
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-import re
+from utils import generate_gaussian, standardize_coeff_init
 
 
 def volterra_synapse_tensor(x, y, w, r):
@@ -118,11 +119,11 @@ def extract_numbers(s):
     print(
         f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
     )
-    x = int(re.search("X(\d+)", s).group(1))
-    y = int(re.search("Y(\d+)", s).group(1))
-    w = int(re.search("W(\d+)", s).group(1))
-    r = int(re.search("R(\d+)", s).group(1))
-    multiplier_match = re.search("^(-?\d+\.?\d*)", s)
+    x = int(re.search(r"X(\d+)", s).group(1))
+    y = int(re.search(r"Y(\d+)", s).group(1))
+    w = int(re.search(r"W(\d+)", s).group(1))
+    r = int(re.search(r"R(\d+)", s).group(1))
+    multiplier_match = re.search(r"^(-?\d+\.?\d*)", s)
     multiplier = float(multiplier_match.group(1)) if multiplier_match else 1.0
     assert x < 3 and y < 3 and w < 3 and r < 3, "X, Y, W, R must be between 0 and 2"
     return x, y, w, r, multiplier
@@ -193,7 +194,7 @@ def init_plasticity_mlp(key, layer_sizes, scale=0.01):
             generate_gaussian(key, (m, n), scale),
             generate_gaussian(key, (n,), scale),
         )
-        for m, n in zip(layer_sizes[:-1], layer_sizes[1:])
+        for m, n in zip(layer_sizes[:-1], layer_sizes[1:], strict=False)
     ]
     return mlp_params, mlp_plasticity_function
 
@@ -209,7 +210,6 @@ def init_plasticity(key, cfg, mode):
     print(
         f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
     )
-    print("new")
     if "generation" in mode:
         if cfg.generation_model == "volterra":
             cfg.generation_plasticity = standardize_coeff_init(
