@@ -29,15 +29,20 @@ class Experiment:
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
         self.input_params = jax.random.normal(
-            input_key, shape=(cfg["num_hidden_pre"], cfg["num_inputs"])
+            input_key, shape=(cfg["num_inputs"], cfg["num_hidden_pre"])
         )
+        # Standardize each input across classes
+        self.input_params -= jnp.mean(self.input_params, axis=0, keepdims=True)
+        self.input_params /= jnp.std(self.input_params, axis=0, keepdims=True) + 1e-8
+
         initial_params_scale = 0.01
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
         self.params = (
             jax.random.normal(
                 params_key, shape=(cfg["num_hidden_pre"], cfg["num_hidden_post"])
             )
-            * initial_params_scale
+            * initial_params_scale,  # w
+            jnp.zeros((cfg["num_hidden_post"],)),  # b
         )
 
         data = self.generate_experiment(exp_key)
@@ -149,13 +154,14 @@ class Experiment:
             key, _ = jax.random.split(key)
 
             # Generate input
-            input_ = jax.random.randint(key, (1), 0, self.cfg["num_inputs"])
-            inputs.append(input_)
+            new_input = jax.random.randint(key, (1), 0, self.cfg["num_inputs"])
+            inputs.append(new_input)
 
             # Embed input into (hidden) presynaptic layer
-            input_onehot = jax.nn.one_hot(input, self.cfg["num_inputs"]).squeeze()
+            input_onehot = jax.nn.one_hot(new_input, self.cfg["num_inputs"]).squeeze()
             input_noise = jax.random.normal(key, (self.cfg["num_hidden_pre"],)) * 0.1
-            x = jnp.dot(self.input_params, input_onehot) + input_noise
+            x = jnp.dot(input_onehot, self.input_params) + input_noise
+
             xs.append(x)
 
             # TODO Compute postsynaptic layer activity
