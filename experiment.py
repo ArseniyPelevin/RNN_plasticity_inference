@@ -1,7 +1,7 @@
 
 import jax
 import jax.numpy as jnp
-import mymodel
+import model
 from utils import experiment_lists_to_tensors, sample_truncated_normal
 
 
@@ -29,17 +29,17 @@ class Experiment:
         key, input_params_key, params_key, exp_key = jax.random.split(key, 4)
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
-        self.input_params = mymodel.initialize_input_parameters(
+        self.input_params = model.initialize_input_parameters(
             input_params_key, cfg["num_inputs"], cfg["num_hidden_pre"]
         )
 
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
-        self.params = mymodel.initialize_parameters(
+        self.params = model.initialize_parameters(
             params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
         )
 
         data = self.generate_experiment(exp_key, num_sessions)
-        data = experiment_lists_to_tensors(data)
+        data, self.mask, self.steps_per_session_list = experiment_lists_to_tensors(data)
         self.data = {
             "inputs": data[0],
             "xs": data[1],
@@ -128,7 +128,6 @@ class Experiment:
 
         inputs, xs, ys, decisions, rewards, expected_rewards = ([] for _ in range(6))
 
-        # TODO manage all keys
         for _step in range(num_steps):
             key, input_key, embed_key, decision_key = jax.random.split(key, 4)
 
@@ -137,28 +136,28 @@ class Experiment:
             inputs.append(new_input)
 
             # Embed input into (hidden) presynaptic layer
-            x = mymodel.embed_inputs_to_presynaptic(
+            x = model.embed_inputs_to_presynaptic(
                 embed_key, new_input,
                 self.cfg["num_inputs"], self.cfg["num_hidden_pre"],
                 self.input_params)
             xs.append(x)
 
             # Compute postsynaptic layer activity
-            y = mymodel.network_forward(x, self.params)
+            y = model.compute_postsynaptic(x, self.params)
             ys.append(y)
 
             # Compute decision
-            decision = mymodel.compute_decision(decision_key, y)
+            decision = model.compute_decision(decision_key, y)
             decisions.append(decision)
 
             # TODO Compute reward
-            reward = mymodel.compute_reward(decision)
+            reward = model.compute_reward(decision)
             rewards.append(reward)
             expected_reward = reward
             expected_rewards.append(expected_reward)
 
             # Update parameters
-            self.params = mymodel.update_params(
+            self.params = model.update_params(
                 x,
                 y,
                 self.params,

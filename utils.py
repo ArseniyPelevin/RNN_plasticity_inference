@@ -168,7 +168,7 @@ def sample_truncated_normal(key, mean, std):
 
 def experiment_lists_to_tensors(nested_lists):
     """
-    Converts a tuple of nested lists of experimental data into a tuple of tensors.
+    Converts a tuple of nested lists of one experiment's data into a tuple of tensors.
     Pads shorter trials with zeros.
 
     Args:
@@ -180,21 +180,20 @@ def experiment_lists_to_tensors(nested_lists):
             of the nested list, padded with zeros.
     """
 
-    def experiment_list_to_tensor(nested_list):
-        """ Converts a nested list into a tensor for one variable. """
+    def experiment_list_to_tensor(nested_list, dtype=float):
+        """ Converts a nested list into a per-session tensor for one variable. """
 
-        element_dim = nested_list[0][0][0].shape
-        tensor = np.full((num_trials_total, max_trial_length, *element_dim), 0.0)
+        # infer variable shape from first element
+        element_shape = np.asarray(nested_list[0][0][0]).shape
+        tensor = np.zeros((num_sessions, max_steps_per_session, *element_shape), dtype=dtype)
 
-        offset = 0
         for i in range(num_sessions):
-            num_trials_i = len(nested_list[i])
-            for j in range(num_trials_i):
+            offset = 0
+            for j in range(len(nested_list[i])):
                 trial = nested_list[i][j]
-                flat_index = offset + j
                 for k in range(len(trial)):
-                    tensor[flat_index][k] = trial[k]
-            offset += num_trials_i
+                    tensor[i, offset + k, ...] = np.asarray(trial[k], dtype=dtype)
+                offset += len(trial)
 
         return jnp.array(tensor)
 
@@ -202,19 +201,21 @@ def experiment_lists_to_tensors(nested_lists):
 
     # Use inputs as proxy for session/trial structure
     num_sessions = len(inputs)
-    trials_per_session_list = [len(inputs[s]) for s in range(num_sessions)]
-    num_trials_total = sum(trials_per_session_list)
+    # total number of steps per session (concatenating trials within session)
+    steps_per_session_list = [sum(len(trial) for trial in inputs[s]) for s in range(num_sessions)]
+    max_steps_per_session = int(max(steps_per_session_list))
 
-    max_trial_length = int(
-            max(len(inputs[s][t]) for s in range(num_sessions) 
-                for t in range(len(inputs[s])))
-        )
+    # max_trial_length = int(
+    #         max(len(inputs[s][t]) for s in range(num_sessions) 
+    #             for t in range(len(inputs[s])))
+    #     )
     tensors = [
         experiment_list_to_tensor(var) for var in
         [inputs, xs, ys, decisions, rewards, expected_rewards]
     ]
+    mask = experiment_list_to_tensor(decisions, dtype=bool)
 
-    return tensors
+    return tensors, mask, steps_per_session_list
 
 def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
     """
