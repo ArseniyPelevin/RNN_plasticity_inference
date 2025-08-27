@@ -21,6 +21,7 @@ import importlib
 
 import experiment
 import jax
+import mymodel
 import synapse
 from omegaconf import OmegaConf
 from utils import sample_truncated_normal
@@ -31,7 +32,7 @@ config = {
     "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp": 1,  # Number of experiments/trajectories/animals
+    "num_exp": 2,  # Number of experiments/trajectories/animals
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -99,10 +100,16 @@ for i in range(len(data)):
     print(data[i].data["inputs"].shape)
 
 # +
+importlib.reload(mymodel)
 
-
+key, init_plasticity_key, init_params_key = jax.random.split(key, 3)
 # Initialize parameters for training
-# params, plasticity_coeff, plasticity_func, key = initialize_parameters(cfg, key)
+generation_coeff, generation_func = synapse.init_plasticity(
+    init_plasticity_key, cfg, mode="plasticity_model"
+)
+params = mymodel.initialize_parameters(
+    init_params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
+)
 
 
 # +
