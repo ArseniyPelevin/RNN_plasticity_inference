@@ -207,9 +207,7 @@ def init_plasticity(key, cfg, mode):
             mode (str): Mode of operation ("generation" or "plasticity").
     Returns: A tuple containing the initialized parameters and the corresponding plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     if "generation" in mode:
         if cfg.generation_model == "volterra":
             cfg.generation_plasticity = standardize_coeff_init(

@@ -3,13 +3,13 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import mymodel
-from utils import experiment_list_to_tensor
+from utils import experiment_lists_to_tensors, sample_truncated_normal
 
 
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, exp_i, cfg, plasticity_coeff, plasticity_func):
+    def __init__(self, exp_i, cfg, plasticity_coeff, plasticity_func, num_sessions):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -27,11 +27,11 @@ class Experiment:
         # Generate random keys for different parts of the model
         seed = (cfg["expid"] + 1) * (exp_i + 1)
         key = jax.random.PRNGKey(seed)
-        input_key, params_key, exp_key = jax.random.split(key, 3)
+        key, input_params_key, params_key, exp_key = jax.random.split(key, 4)
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
         self.input_params = jax.random.normal(
-            input_key, shape=(cfg["num_inputs"], cfg["num_hidden_pre"])
+            input_params_key, shape=(cfg["num_inputs"], cfg["num_hidden_pre"])
         )
         # Standardize each input across classes
         self.input_params -= jnp.mean(self.input_params, axis=0, keepdims=True)
@@ -48,8 +48,14 @@ class Experiment:
         )
         # TODO loop inside a list for multilayer network
 
-        data = self.generate_experiment(exp_key)
-        data = self.experiment_lists_to_tensors(data)
+        # Compile JIT-optimized version of the update_params function
+        self.jit_update_params = partial(jax.jit,
+                                    static_argnames=("plasticity_func",))(
+                                         mymodel.update_params
+        )
+
+        data = self.generate_experiment(exp_key, num_sessions)
+        data = experiment_lists_to_tensors(data)
         self.data = {
             "inputs": data[0],
             "xs": data[1],
@@ -59,33 +65,7 @@ class Experiment:
             "expected_rewards": data[5],
         }
 
-    def experiment_lists_to_tensors(self, data):
-        """Convert lists of trials of different lengths to one trajectory tensor.
-
-        Args:
-            data: Dictionary of nested lists of trials for each variable.
-
-        Returns:
-            Tensor of the whole trajectory for each variable.
-        """
-
-        # TODO This function has a heavy dimensionality problem and does not work yet
-        inputs, xs, ys, decisions, rewards, expected_rewards = data
-
-        trial_lengths = [
-            [len(inputs[j][i]) for i in range(self.cfg.trials_per_session)]
-            for j in range(self.cfg.num_sessions)
-        ]
-        max_trial_length = int(jnp.max(jnp.array(trial_lengths)))
-        build_tensor = partial(experiment_list_to_tensor, max_trial_length)
-        data = [
-            build_tensor(var) for var in
-            [inputs, xs, ys, decisions, rewards, expected_rewards]
-        ]
-
-        return data
-
-    def generate_experiment(self, key):
+    def generate_experiment(self, key, num_sessions):
         """Generate a synthetic experiment for a single animal/trajectory.
         Returns lists of trials for each variable.
 
@@ -104,38 +84,51 @@ class Experiment:
                 of timeseries
         """
         inputs, xs, ys, decisions, rewards, expected_rewards = (
-            [
-                [[] for _ in range(self.cfg.trials_per_session)]
-                for _ in range(self.cfg.num_sessions)
-            ]
-            for _ in range(6)  # Nested lists for each of the 6 variables
-        )
+            [[] for _ in range(num_sessions)]
+            for _ in range(6)
+        )  # Nested lists for each of the 6 variables
 
-        for session in range(self.cfg.num_sessions):
-            for trial in range(self.cfg.trials_per_session):
-                key, _ = jax.random.split(key)
-
+        for session in range(num_sessions):
+            key, subkey = jax.random.split(key)
+            num_trials = sample_truncated_normal(
+                subkey,
+                self.cfg["mean_trials_per_session"],
+                self.cfg["sd_trials_per_session"])
+            for _trial in range(num_trials):
+                key, sample_kay, trial_key = jax.random.split(key, 3)
+                num_steps = sample_truncated_normal(
+                    sample_kay,
+                    self.cfg["mean_steps_per_trial"],
+                    self.cfg["sd_steps_per_trial"])
                 trial_data = self.generate_trial(
-                    key, trial_length=self.cfg["num_steps_per_trial"])
-                # In generation mode all trials have the same length(?)
+                    trial_key, num_steps)
 
+                # trial_data should be a tuple/list of 6 items:
                 (
-                    inputs[session][trial],
-                    xs[session][trial],
-                    ys[session][trial],
-                    decisions[session][trial],
-                    rewards[session][trial],
-                    expected_rewards[session][trial],
+                    trial_inputs,
+                    trial_xs,
+                    trial_ys,
+                    trial_decisions,
+                    trial_rewards,
+                    trial_expected_rewards,
                 ) = trial_data
+
+                # append trial-level entries to this session's lists
+                inputs[session].append(trial_inputs)
+                xs[session].append(trial_xs)
+                ys[session].append(trial_ys)
+                decisions[session].append(trial_decisions)
+                rewards[session].append(trial_rewards)
+                expected_rewards[session].append(trial_expected_rewards)
 
         return inputs, xs, ys, decisions, rewards, expected_rewards
 
-    def generate_trial(self, key, trial_length):
+    def generate_trial(self, key, num_steps):
         """Generate a timecourse of all variables for a single trial.
 
         Args:
             key: JAX random key.
-            trial_length: Length of the trial.
+            num_steps: Length of the trial.
 
         Returns:
             (inputs,
@@ -152,18 +145,18 @@ class Experiment:
         inputs, xs, ys, decisions, rewards, expected_rewards = ([] for _ in range(6))
 
         # TODO manage all keys
-        for _step in range(trial_length):
-            key, _ = jax.random.split(key)
+        for _step in range(num_steps):
+            key, input_key, embed_key, decision_key = jax.random.split(key, 4)
 
             # Generate input
-            new_input = jax.random.randint(key, (1), 0, self.cfg["num_inputs"])
+            new_input = jax.random.randint(input_key, (1), 0, self.cfg["num_inputs"])
             inputs.append(new_input)
 
             # Embed input into (hidden) presynaptic layer
             input_onehot = jax.nn.one_hot(new_input, self.cfg["num_inputs"]).squeeze()
-            input_noise = jax.random.normal(key, (self.cfg["num_hidden_pre"],)) * 0.1
+            input_noise = (jax.random.normal(embed_key, (self.cfg["num_hidden_pre"],))
+                           ) * 0.1
             x = jnp.dot(input_onehot, self.input_params) + input_noise
-
             xs.append(x)
 
             # Compute postsynaptic layer activity
@@ -174,7 +167,7 @@ class Experiment:
             # Compute decision
             output = jnp.mean(y)
             p_decision = jax.nn.sigmoid(output)
-            decision = jax.random.bernoulli(key, p_decision).astype(float)
+            decision = jax.random.bernoulli(decision_key, p_decision).astype(float)
             decisions.append(decision)
 
             # TODO Compute reward
@@ -184,10 +177,7 @@ class Experiment:
             expected_rewards.append(expected_reward)
 
             # Update parameters
-            jit_update_params = partial(jax.jit, static_argnames=("plasticity_func",))(
-                mymodel.update_params
-            )
-            self.params = jit_update_params(
+            self.params = self.jit_update_params( # Compiled at initialization
                 x,
                 y,
                 self.params,

@@ -23,6 +23,7 @@ import experiment
 import jax
 import synapse
 from omegaconf import OmegaConf
+from utils import sample_truncated_normal
 
 # +
 config = {
@@ -30,13 +31,24 @@ config = {
     "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp": 10,  # Number of experiments/trajectories
-    #TODO account for different number of sessions within one experiment?
-    "num_sessions": 5,  # Number of sessions/days per experiment/trajectory/animal
-    #TODO account for different number of trials within one session?
-    "trials_per_session": 12,  # Number of trials/runs in each session/session/day
-    #TODO account for different number of steps within one trial?
-    "num_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
+    "num_exp": 1,  # Number of experiments/trajectories/animals
+
+    # Below commented are real values as per CA1 recording article. Be modest for now
+    # "mean_num_sessions": 9,  # Number of sessions/days per experiment
+    # "sd_num_sessions": 3,  # Standard deviation of sessions/days per experiment
+    # "mean_trials_per_session": 124,  # Number of trials/runs in each session/day
+    # "sd_trials_per_session": 43,  # Standard deviation of trials in each session/day
+    # #TODO steps are seconds for now
+    # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
+    # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
+    "mean_num_sessions": 5,  # Number of sessions/days per experiment/trajectory/animal
+    "sd_num_sessions": 2,  # Standard deviation of sessions/days per animal
+    "mean_trials_per_session": 12,  # Number of trials/runs in each session/day
+    "sd_trials_per_session": 4,  # Standard deviation of trials in each session/day
+    #TODO steps are seconds for now
+    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
+    "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
+
     "num_epochs": 250,
     "expid": 1, # For saving results and seeding random
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
@@ -57,7 +69,13 @@ def generate_experiments(cfg, generation_coeff, generation_func, mode="generatio
     #TODO differentiate num_train and num_eval
     experiments = []
     for exp_i in range(cfg['num_exp']):
-        exp = experiment.Experiment(exp_i, cfg, generation_coeff, generation_func)
+        # Pick random number of sessions in this experiment given mean and std
+        num_sessions = sample_truncated_normal(
+            key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
+        )
+        exp = experiment.Experiment(exp_i, cfg,
+                                    generation_coeff, generation_func,
+                                    num_sessions)
         experiments.append(exp)
     return experiments
 
@@ -74,7 +92,11 @@ generation_coeff, generation_func = synapse.init_plasticity(
 data = generate_experiments(
     cfg, generation_coeff, generation_func, mode="generation"
 )
+# -
 
+
+for i in range(len(data)):
+    print(data[i].data["inputs"].shape)
 
 # +
 

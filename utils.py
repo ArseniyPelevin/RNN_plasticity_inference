@@ -157,38 +157,64 @@ def truncated_sigmoid(x, epsilon=1e-6):
     )
     return jnp.clip(jax.nn.sigmoid(x), epsilon, 1 - epsilon)
 
+def sample_truncated_normal(key, mean, std):
+        """ Samples value from a normal distribution that is >= (mean - std). """
+        while True:  # Pick again if less than mu - std
+            key, subkey = jax.random.split(key)
+            value = std * jax.random.normal(subkey, (1,)).item() + mean
+            if value >= (mean - std):
+                return int(value)
 
-def experiment_list_to_tensor(longest_trial_length, nested_list):
+
+def experiment_lists_to_tensors(nested_lists):
     """
-    Converts a nested list of experimental data into a tensor, padding with NaNs or zeros as necessary.
+    Converts a tuple of nested lists of experimental data into a tuple of tensors.
+    Pads shorter trials with zeros.
 
     Args:
-        longest_trial_length (int): The length of the longest trial.
-        nested_list (list): A nested list containing the experimental data.
+        max_trial_length (int): The length of the longest trial.
+        nested_list (list): Tuple of nested lists of all variables.
 
     Returns:
-        jnp.ndarray: A tensor representation of the nested list, padded with zeros.
+        tuple: A tuple of tensor (jnp.ndarray) representation 
+            of the nested list, padded with zeros.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
-    num_sessions = len(nested_list)
-    trials_per_session = len(nested_list[0])
-    num_trials = num_sessions * trials_per_session
-    print(type(nested_list[0][0][0]))
-    element_dim = nested_list[0][0][0].shape
-    print(f"before: {len(nested_list)}, {len(nested_list[0])}, {len(nested_list[0][0])}, {element_dim}")
-    tensor = np.full((num_trials, int(longest_trial_length), *element_dim), 0.0)
 
-    for i in range(num_sessions):
-        for j in range(trials_per_session):
-            trial = nested_list[i][j]
-            for k in range(len(trial)):
-                tensor[i * trials_per_session + j][k] = trial[k]
-    tensor = jnp.array(tensor)
-    print(tensor.shape)
-    return tensor
+    def experiment_list_to_tensor(nested_list):
+        """ Converts a nested list into a tensor for one variable. """
 
+        element_dim = nested_list[0][0][0].shape
+        tensor = np.full((num_trials_total, max_trial_length, *element_dim), 0.0)
+
+        offset = 0
+        for i in range(num_sessions):
+            num_trials_i = len(nested_list[i])
+            for j in range(num_trials_i):
+                trial = nested_list[i][j]
+                flat_index = offset + j
+                for k in range(len(trial)):
+                    tensor[flat_index][k] = trial[k]
+            offset += num_trials_i
+
+        return jnp.array(tensor)
+
+    inputs, xs, ys, decisions, rewards, expected_rewards = nested_lists
+
+    # Use inputs as proxy for session/trial structure
+    num_sessions = len(inputs)
+    trials_per_session_list = [len(inputs[s]) for s in range(num_sessions)]
+    num_trials_total = sum(trials_per_session_list)
+
+    max_trial_length = int(
+            max(len(inputs[s][t]) for s in range(num_sessions) 
+                for t in range(len(inputs[s])))
+        )
+    tensors = [
+        experiment_list_to_tensor(var) for var in
+        [inputs, xs, ys, decisions, rewards, expected_rewards]
+    ]
+
+    return tensors
 
 def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
     """
