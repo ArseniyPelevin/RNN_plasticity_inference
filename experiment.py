@@ -1,4 +1,3 @@
-from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -30,28 +29,13 @@ class Experiment:
         key, input_params_key, params_key, exp_key = jax.random.split(key, 4)
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
-        self.input_params = jax.random.normal(
-            input_params_key, shape=(cfg["num_inputs"], cfg["num_hidden_pre"])
+        self.input_params = mymodel.initialize_input_parameters(
+            input_params_key, cfg["num_inputs"], cfg["num_hidden_pre"]
         )
-        # Standardize each input across classes
-        self.input_params -= jnp.mean(self.input_params, axis=0, keepdims=True)
-        self.input_params /= jnp.std(self.input_params, axis=0, keepdims=True) + 1e-8
 
-        initial_params_scale = 0.01
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
-        self.params = (
-            jax.random.normal(
-                params_key, shape=(cfg["num_hidden_pre"], cfg["num_hidden_post"])
-            )
-            * initial_params_scale,  # w
-            jnp.zeros((cfg["num_hidden_post"],)),  # b
-        )
-        # TODO loop inside a list for multilayer network
-
-        # Compile JIT-optimized version of the update_params function
-        self.jit_update_params = partial(jax.jit,
-                                    static_argnames=("plasticity_func",))(
-                                         mymodel.update_params
+        self.params = mymodel.initialize_parameters(
+            params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
         )
 
         data = self.generate_experiment(exp_key, num_sessions)
@@ -153,31 +137,28 @@ class Experiment:
             inputs.append(new_input)
 
             # Embed input into (hidden) presynaptic layer
-            input_onehot = jax.nn.one_hot(new_input, self.cfg["num_inputs"]).squeeze()
-            input_noise = (jax.random.normal(embed_key, (self.cfg["num_hidden_pre"],))
-                           ) * 0.1
-            x = jnp.dot(input_onehot, self.input_params) + input_noise
+            x = mymodel.embed_inputs_to_presynaptic(
+                embed_key, new_input,
+                self.cfg["num_inputs"], self.cfg["num_hidden_pre"],
+                self.input_params)
             xs.append(x)
 
             # Compute postsynaptic layer activity
-            w, b = self.params
-            y = jnp.dot(x, w) + b
+            y = mymodel.network_forward(x, self.params)
             ys.append(y)
 
             # Compute decision
-            output = jnp.mean(y)
-            p_decision = jax.nn.sigmoid(output)
-            decision = jax.random.bernoulli(decision_key, p_decision).astype(float)
+            decision = mymodel.compute_decision(decision_key, y)
             decisions.append(decision)
 
             # TODO Compute reward
-            reward = 0
+            reward = mymodel.compute_reward(decision)
             rewards.append(reward)
             expected_reward = reward
             expected_rewards.append(expected_reward)
 
             # Update parameters
-            self.params = self.jit_update_params( # Compiled at initialization
+            self.params = mymodel.update_params(
                 x,
                 y,
                 self.params,
