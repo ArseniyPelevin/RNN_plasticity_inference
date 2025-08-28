@@ -8,19 +8,19 @@ from utils import experiment_lists_to_tensors, sample_truncated_normal
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, exp_i, cfg, plasticity_coeff, plasticity_func, num_sessions):
+    def __init__(self, exp_i, cfg, plasticity_coeffs, plasticity_func, num_sessions):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
             exp_i: Experiment index.
             cfg: Configuration dictionary.
-            plasticity_coeff: 4D tensor of plasticity coefficients.
+            plasticity_coeffs: 4D tensor of plasticity coefficients.
             plasticity_func: Function to compute plasticity.
         """
 
         self.exp_i = exp_i
         self.cfg = cfg
-        self.plasticity_coeff = plasticity_coeff
+        self.plasticity_coeffs = plasticity_coeffs
         self.plasticity_func = plasticity_func
 
         # Generate random keys for different parts of the model
@@ -159,7 +159,7 @@ class Experiment:
                 self.params,
                 reward,
                 expected_reward,
-                self.plasticity_coeff,
+                self.plasticity_coeffs,
                 self.plasticity_func,
             )
 

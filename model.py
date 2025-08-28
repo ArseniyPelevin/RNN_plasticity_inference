@@ -50,7 +50,8 @@ def network_forward(key, input_params, params, step_input, cfg):
 
     # Embed input integer into presynaptic layer activity
     input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
-    input_noise = (jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise)
+    input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
+    input_noise = input_noise * cfg.input_firing_std + cfg.input_firing_mean
     x = jnp.dot(input_onehot, input_params) + input_noise
 
     # Forward pass through plastic layer. x -- params --> y
@@ -143,3 +144,68 @@ def update_params(
     )  # TODO rewrite as list comprehension for multilayer
 
     return params
+
+@partial(jax.jit, static_argnames=("plasticity_func", "cfg"))
+def simulate_trajectory(
+    key,
+    input_params,
+    initial_params,
+    plasticity_coeffs,  # Our current plasticity coefficients estimate
+    plasticity_func,
+    exp_inputs,  # Data of one whole experiment, (N_sessions, N_steps_per_session_max)
+    exp_rewards,
+    exp_expected_rewards,
+    exp_mask,
+    cfg
+    ):
+    def simulate_session(params, session_data):
+        """ Simulate trajectory of parameters and activities within one session.
+
+        Args:
+            params: Initial parameters at the start of the session.
+            session_data: Tuple of (
+                session_inputs, (N_steps_per_session_max,)
+                session_rewards,
+                session_expected_rewards,
+                session_mask) for the session.
+
+        Returns:
+            params_session: Parameters at the end of the session.
+            (params_trajec_session, - trajectory of parameters within session
+             (x_trajec_session, - trajectory of presynaptic activities within session
+              y_trajec_session, - trajectory of postsynaptic activities within session
+              output_trajec_session - trajectory of outputs within session
+             )
+            )
+        """
+
+        def simulate_step(params, step_data):
+            step_input, step_reward, step_expected_reward, valid = step_data
+            x, y, output = network_forward(key,
+                                           input_params, params,
+                                           step_input, cfg)
+            params = jax.lax.cond(valid,
+                                  lambda p: update_params(
+                                      x, y, params, step_reward, step_expected_reward,
+                                      plasticity_coeffs, plasticity_func),
+                                  lambda p: p,
+                                  params)
+            return params, (x, y, output)
+
+        # Run inner scan over steps within one session
+        params_session, activity_trajec_session = jax.lax.scan(
+            simulate_step, params, session_data)
+
+        return params_session, activity_trajec_session
+
+    # Run outer scan over sessions
+    params_exp, activity_trajec_exp = jax.lax.scan(
+        simulate_session,
+        initial_params,
+        (exp_inputs,
+         exp_rewards,
+         exp_expected_rewards,
+         exp_mask)
+    )
+
+    return params_exp, activity_trajec_exp

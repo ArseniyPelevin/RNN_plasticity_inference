@@ -27,6 +27,7 @@ import model
 import numpy as np
 import optax
 import synapse
+import utils
 from omegaconf import OmegaConf
 from utils import sample_truncated_normal
 
@@ -37,12 +38,14 @@ coeff_mask = np.ones((3, 3, 3, 3))
 
 config = {
     "num_inputs": 6,  # Number of input classes
-    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 100,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp": 1,  # Number of experiments/trajectories/animals
 
-    "input_noise": 0.1,  # Standard deviation of noise added to presynaptic layer
+    "input_firing_mean": 0.75,
+    "input_firing_std": 0.01,  # Standard deviation of noise added to presynaptic layer
+    "learning_rate": 1e-3,
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -57,15 +60,29 @@ config = {
     "mean_trials_per_session": 7,  # Number of trials/runs in each session/day
     "sd_trials_per_session": 4,  # Standard deviation of trials in each session/day
     #TODO steps are seconds for now
-    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
+    "mean_steps_per_trial": 20,  # Number of sequential time steps in one trial/run
+    "sd_steps_per_trial": 5,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
     "expid": 1, # For saving results and seeding random
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
-    "plasticity_coeff_init": "random",
+    "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
+
+    "regularization_type": "l1",
+    "regularization_scale": 1e-2,
+
+        # if "neural" in cfg.fit_data:
+        # neural_loss = neural_mse_loss(  # TODO Look into and update
+        #     key,
+        #     mask,
+        #     cfg.neural_recording_sparsity,
+        #     cfg.measurement_noise_scale,
+
+    "fit_data": "neural",
+    "neural_recording_sparsity": 1,
+    "measurement_noise_scale": 0,
 
     # Restrictions on trainable plasticity parameters
     "trainable_coeffs": int(np.sum(coeff_mask)),
@@ -93,55 +110,102 @@ def generate_experiments(cfg, generation_coeff, generation_func, mode="generatio
                                     generation_coeff, generation_func,
                                     num_sessions)
         experiments.append(exp)
+        # experiments_data[exp_i] = exp.data
+
     return experiments
 
 
 # +
 importlib.reload(synapse)
 importlib.reload(experiment)
+importlib.reload(model)
+importlib.reload(losses)
+importlib.reload(utils)
 
 # Generate model activity
 #TODO add branching for experimental data
 generation_coeff, generation_func = synapse.init_plasticity(
     key, cfg, mode="generation_model"
 )
-data = generate_experiments(
+experiments = generate_experiments(
     cfg, generation_coeff, generation_func, mode="generation"
 )
 # -
 
 
-for i in range(len(data)):
-    print(data[i].data["inputs"].shape)
+print(len(experiments[0].data))
+for exp in experiments:
+    print(exp.data["inputs"].shape)
+    print(exp.steps_per_session)
+    print(type(exp.input_params))
+
 
 # +
-importlib.reload(mymodel)
+# importlib.reload(model)
 
 key, init_plasticity_key, init_params_key = jax.random.split(key, 3)
 # Initialize parameters for training
-generation_coeff, generation_func = synapse.init_plasticity(
+plasticity_coeffs, plasticity_func = synapse.init_plasticity(
     init_plasticity_key, cfg, mode="plasticity_model"
 )
-params = mymodel.initialize_parameters(
+
+print(f'{type(plasticity_coeffs)=}, {plasticity_coeffs.shape=}')
+
+#TODO
+# !!! Parameters should probably NOT be initialized just once!
+# They should be reassigned for each epoch and exp!
+initial_params = model.initialize_parameters(
     init_params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
 )
 
 
 # +
+# importlib.reload(synapse)
+# importlib.reload(experiment)
+# importlib.reload(model)
+# importlib.reload(losses)
+# importlib.reload(utils)
+
+# Return value (scalar) of the function (loss value)
+# and gradient wrt its parameter at argnum (plasticity_coeffs)
+loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
+optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+opt_state = optimizer.init(plasticity_coeffs)
+expdata: dict[str, Any] = {}
+# resampled_xs, neural_recordings, decisions, rewards, expected_rewards = data
+
+losses_list = []
+
+for epoch in range(cfg["num_epochs"] + 1):
+    for exp in experiments:
+        key, subkey = jax.random.split(key)
+        loss, meta_grads = loss_value_and_grad(
+            subkey,
+            exp.input_params,
+            initial_params,  # TODO update for each epoch/experiment
+            plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
+            plasticity_func,  # Static within losses
+            exp.data['inputs'],
+            # exp.data['xs'],  # Don't need it, will recompute based on input_parameters
+            exp.data['ys'],
+            exp.data['decisions'],
+            exp.data['rewards'],
+            exp.data['expected_rewards'],
+            exp.mask,
+            cfg,  # Static within losses
+        )
+        updates, opt_state = optimizer.update(
+            meta_grads, opt_state, plasticity_coeffs
+        )
+        plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
+
+    if epoch % cfg["logging_interval"] == 0:
+        print(loss)
+        losses_list.append(loss)
+print(plasticity_coeffs)
 
 
-# Training
+# -
 
-for epoch in range(config["num_epochs"]):
-    # Simulate
 
-    # Compute loss
 
-    # Compute gradients
-
-    # Update parameters
-
-    # Print loss every 10 epochs
-    if epoch % 10 == 0:
-        loss = []
-        print(f"Epoch {epoch}, Loss: {loss}")

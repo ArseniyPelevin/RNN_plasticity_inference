@@ -15,9 +15,6 @@ def volterra_synapse_tensor(x, y, w, r):
     Inputs: x, y, w, r (floats): Inputs to the Volterra synapse tensor.
     Returns: A 3x3x3x3 tensor representing the Volterra synapse tensor.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     synapse_tensor = jnp.array(
         [
             [
@@ -37,9 +34,6 @@ def volterra_plasticity_function(x, y, w, r, volterra_coefficients):
             volterra_coefficients (array): Coefficients for the Volterra plasticity function.
     Returns: The result of the Volterra plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     synapse_tensor = volterra_synapse_tensor(x, y, w, r)
     dw = jnp.sum(jnp.multiply(volterra_coefficients, synapse_tensor))
     return dw
@@ -52,9 +46,6 @@ def mlp_forward_pass(mlp_params, inputs):
             inputs (array): Input data.
     Returns: The logits output of the MLP.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     activation = inputs
     for w, b in mlp_params[:-1]:  # for all but the last layer
         activation = jax.nn.leaky_relu(jnp.dot(activation, w) + b)
@@ -71,25 +62,16 @@ def mlp_plasticity_function(x, y, w, r, mlp_params):
             mlp_params (list): MLP parameters.
     Returns: The result of the MLP plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     inputs = jnp.array([x, y, w, r])
     dw = mlp_forward_pass(mlp_params, inputs)
     return dw
 
 
 def init_zeros():
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     return np.zeros((3, 3, 3, 3))
 
 
 def init_random(key):
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     assert key is not None, "For random initialization, a random key has to be given"
     return generate_gaussian(key, (3, 3, 3, 3), scale=1e-5)
 
@@ -100,9 +82,6 @@ def split_init_string(s):
     Inputs: s (str): Initialization string.
     Returns: A list of matches.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     return [
         match.replace(" ", "")
         for match in re.findall(r"(-?\s*[A-Za-z0-9.]+[A-Za-z][0-9]*)", s)
@@ -116,9 +95,6 @@ def extract_numbers(s):
     Inputs: s (str): String to extract numbers from.
     Returns: A tuple of extracted numbers.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     x = int(re.search(r"X(\d+)", s).group(1))
     y = int(re.search(r"Y(\d+)", s).group(1))
     w = int(re.search(r"W(\d+)", s).group(1))
@@ -135,9 +111,6 @@ def init_generation_volterra(init):
     Inputs: init (str): Initialization string.
     Returns: A tuple containing the initialized parameters and the Volterra plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     parameters = np.zeros((3, 3, 3, 3))
     inits = split_init_string(init)
     for init in inits:
@@ -160,9 +133,6 @@ def init_plasticity_volterra(key, init):
             - jax.numpy.ndarray: Initialized parameters.
             - function: The Volterra plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     init_functions = {
         "zeros": init_zeros,
         "random": lambda: init_random(key),
@@ -186,9 +156,6 @@ def init_plasticity_mlp(key, layer_sizes, scale=0.01):
             - list of tuples: Each tuple contains the weights and biases for a layer in the MLP.
             - function: The MLP plasticity function.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
     mlp_params = [
         (
             generate_gaussian(key, (m, n), scale),
@@ -207,7 +174,7 @@ def init_plasticity(key, cfg, mode):
             mode (str): Mode of operation ("generation" or "plasticity").
     Returns: A tuple containing the initialized parameters and the corresponding plasticity function.
     """
-    
+
     if "generation" in mode:
         if cfg.generation_model == "volterra":
             cfg.generation_plasticity = standardize_coeff_init(
@@ -218,7 +185,7 @@ def init_plasticity(key, cfg, mode):
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
         if cfg.plasticity_model == "volterra":
-            return init_plasticity_volterra(key, init=cfg.plasticity_coeff_init)
+            return init_plasticity_volterra(key, init=cfg.plasticity_coeffs_init)
         elif cfg.plasticity_model == "mlp":
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
 

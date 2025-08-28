@@ -43,9 +43,7 @@ class ColoredFormatter(logging.Formatter):
 
 def setup_logging(level=logging.INFO) -> None:
     """Set up logging with colored output."""
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     handler = logging.StreamHandler()
     formatter = ColoredFormatter("%(levelname)s: %(message)s")
     handler.setFormatter(formatter)
@@ -57,9 +55,7 @@ def setup_logging(level=logging.INFO) -> None:
 
 def setup_platform(device: str) -> None:
     """Set up the environment based on the configuration."""
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     # Suppress JAX backend initialization messages if using CPU
     if device == "cpu":
         logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
@@ -78,9 +74,7 @@ def generate_gaussian(key, shape, scale=0.1):
     returns a random normal tensor of specified shape with zero mean and
     'scale' variance
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     assert type(shape) is tuple, "shape passed must be a tuple"
     return scale * jax.random.normal(key, shape)
 
@@ -96,9 +90,7 @@ def compute_neg_log_likelihoods(ys, decisions):
     Returns:
         float: The mean negative log-likelihood.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     not_ys = jnp.ones_like(ys) - ys
     neg_log_likelihoods = -2 * jnp.log(jnp.where(decisions == 1, ys, not_ys))
     return jnp.mean(neg_log_likelihoods)
@@ -115,9 +107,7 @@ def kl_divergence(logits1, logits2):
     Returns:
         float: The sum of the KL divergence between the two sets of logits.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     p = jax.nn.softmax(logits1)
     q = jax.nn.softmax(logits2)
     kl_matrix = kl_div(p, q)
@@ -135,9 +125,7 @@ def create_nested_list(num_outer, num_inner):
     Returns:
         list: A nested list where each outer list contains `num_inner` empty lists.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     return [[[] for _ in range(num_inner)] for _ in range(num_outer)]
 
 
@@ -220,41 +208,39 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
+def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
     """
     Logs and prints training information including epoch, loss, and plasticity coefficients.
 
     Args:
         cfg (object): Configuration object containing model settings and hyperparameters.
         expdata (dict): Dictionary to store experimental data.
-        plasticity_coeff (array-like): Array of plasticity coefficients.
+        plasticity_coeffs (array-like): Array of plasticity coefficients.
         epoch (int): Current epoch number.
         loss (float): Current loss value.
 
     Returns:
         dict: Updated experimental data dictionary.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     logging.info(f"Epoch: {epoch}")
     logging.info(f"Loss: {loss}")
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)
-        plasticity_coeff = np.multiply(plasticity_coeff, coeff_mask)
+        plasticity_coeffs = np.multiply(plasticity_coeffs, coeff_mask)
         for i in range(3):
             for j in range(3):
                 for k in range(3):
                     for l in range(3):
                         dict_key = f"A_{i}{j}{k}{l}"
                         expdata.setdefault(dict_key, []).append(
-                            plasticity_coeff[i, j, k, l]
+                            plasticity_coeffs[i, j, k, l]
                         )
 
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
         top_indices = np.argsort(
-            plasticity_coeff[ind_i, ind_j, ind_k, ind_l].flatten()
+            plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten()
         )[-5:]
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
@@ -276,12 +262,12 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
                 term_str += "R"
             elif ind_l[idx] == 2:
                 term_str += "R²"
-            coeff = plasticity_coeff[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
+            coeff = plasticity_coeffs[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
             print(f"{term_str:<10} {coeff:<20.5f}")
         print()
     else:
-        print("MLP plasticity coeffs: ", plasticity_coeff)
-        expdata.setdefault("mlp_params", []).append(plasticity_coeff)
+        print("MLP plasticity coeffs: ", plasticity_coeffs)
+        expdata.setdefault("mlp_params", []).append(plasticity_coeffs)
 
     expdata.setdefault("epoch", []).append(epoch)
     expdata.setdefault("loss", []).append(loss)
@@ -300,9 +286,7 @@ def save_logs(cfg, df):
     Returns:
         Path: The path where the logs were saved.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     local_random = random.Random()
     local_random.seed(os.urandom(10))
     sleep_duration = local_random.uniform(1, 5)
@@ -352,9 +336,7 @@ def validate_config(cfg: Any) -> Any:
     Raises:
         ValueError: If any of the configuration validations fail.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     # Configure logging
     logging.basicConfig(level=logging.INFO)
 
@@ -401,11 +383,11 @@ def validate_config(cfg: Any) -> Any:
             "Only 'l1', 'l2', and 'none' regularization types are supported!"
         )
 
-    # Validate plasticity_coeff_init for MLP
+    # Validate plasticity_coeffs_init for MLP
     if cfg.plasticity_model == "mlp":
-        if cfg.plasticity_coeff_init != "random":
+        if cfg.plasticity_coeffs_init != "random":
             raise ValueError(
-                "Only 'random' plasticity_coeff_init is supported for MLP!"
+                "Only 'random' plasticity_coeffs_init is supported for MLP!"
             )
 
     # Validate fit_data contains 'behavior' or 'neural'
@@ -447,9 +429,9 @@ def validate_config(cfg: Any) -> Any:
                 "log_mlp_plasticity must be False for 'volterra' plasticity!"
             )
 
-        if cfg.plasticity_coeff_init not in ["random", "zeros"]:
+        if cfg.plasticity_coeffs_init not in ["random", "zeros"]:
             raise ValueError(
-                "Only 'random' or 'zeros' plasticity_coeff_init supported for 'volterra'!"
+                "Only 'random' or 'zeros' plasticity_coeffs_init supported for 'volterra'!"
             )
 
     # Adjust cfg fields if not fitting neural data
@@ -470,9 +452,7 @@ def standardize_coeff_init(coeff_init):
     Returns:
         str: The standardized coefficient initialization string.
     """
-    print(
-        f"{inspect.stack()[1].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[1].function} -> {inspect.stack()[0].frame.f_globals.get('__name__','<module>').rsplit('.',1)[-1]}.{inspect.stack()[0].function}"
-    )
+    
     terms = re.split(r"(?=[+-])", coeff_init)
     formatted_terms = []
     for term in terms:
