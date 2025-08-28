@@ -172,27 +172,28 @@ def experiment_lists_to_tensors(nested_lists):
     Pads shorter trials with zeros.
 
     Args:
-        max_trial_length (int): The length of the longest trial.
         nested_list (list): Tuple of nested lists of all variables.
 
     Returns:
-        tuple: A tuple of tensor (jnp.ndarray) representation 
+        tensors (tuple): A tuple of tensor (jnp.ndarray) representation
             of the nested list, padded with zeros.
+        mask (jnp.ndarray): A mask indicating valid (not padded) time steps.
+        steps_per_session (jnp.ndarray): The number of steps per session.
     """
 
-    def experiment_list_to_tensor(nested_list, dtype=float):
+    def experiment_list_to_tensor(nested_list):
         """ Converts a nested list into a per-session tensor for one variable. """
 
         # infer variable shape from first element
         element_shape = np.asarray(nested_list[0][0][0]).shape
-        tensor = np.zeros((num_sessions, max_steps_per_session, *element_shape), dtype=dtype)
+        tensor = np.zeros((num_sessions, max_steps_per_session, *element_shape), dtype=float)
 
         for i in range(num_sessions):
             offset = 0
             for j in range(len(nested_list[i])):
                 trial = nested_list[i][j]
                 for k in range(len(trial)):
-                    tensor[i, offset + k, ...] = np.asarray(trial[k], dtype=dtype)
+                    tensor[i, offset + k, ...] = np.asarray(trial[k], dtype=float)
                 offset += len(trial)
 
         return jnp.array(tensor)
@@ -202,8 +203,11 @@ def experiment_lists_to_tensors(nested_lists):
     # Use inputs as proxy for session/trial structure
     num_sessions = len(inputs)
     # total number of steps per session (concatenating trials within session)
-    steps_per_session_list = [sum(len(trial) for trial in inputs[s]) for s in range(num_sessions)]
-    max_steps_per_session = int(max(steps_per_session_list))
+    steps_per_session = [sum(len(trial) for trial in inputs[s]) for s in range(num_sessions)]
+    steps_per_session = jnp.array(steps_per_session)
+    max_steps_per_session = jnp.max(steps_per_session)
+
+    mask = (jnp.arange(max_steps_per_session)[None, :] < steps_per_session[:, None])
 
     # max_trial_length = int(
     #         max(len(inputs[s][t]) for s in range(num_sessions) 
@@ -213,9 +217,8 @@ def experiment_lists_to_tensors(nested_lists):
         experiment_list_to_tensor(var) for var in
         [inputs, xs, ys, decisions, rewards, expected_rewards]
     ]
-    mask = experiment_list_to_tensor(decisions, dtype=bool)
 
-    return tensors, mask, steps_per_session_list
+    return tensors, mask, steps_per_session
 
 def print_and_log_training_info(cfg, expdata, plasticity_coeff, epoch, loss):
     """
