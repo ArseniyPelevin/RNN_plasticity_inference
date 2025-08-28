@@ -44,56 +44,38 @@ def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
     biases = jnp.zeros((num_post,))
     return weights, biases
 
-def embed_inputs_to_presynaptic(key, input_idx, num_input, num_pre, input_params):
-    """ Embed input integer into presynaptic layer activity.
+@partial(jax.jit, static_argnames=("cfg"))
+def network_forward(key, input_params, params, step_input, cfg):
+    """ Propagate through all layers from input to output. """
 
-    Args:
-        key: JAX random key.
-        input_idx: Input integer.
-        num_input: Number of input classes.
-        num_pre: Number of presynaptic neurons.
-        input_params: Input parameters for the embedding, fixed for one experiment
-            ? and shared with training model ?.
-
-    Returns:
-        x: (n_pre,) Array of presynaptic layer activity.
-    """
-    input_onehot = jax.nn.one_hot(input_idx, num_input).squeeze()
-    input_noise = (jax.random.normal(key, (num_pre,)) * 0.1)
+    # Embed input integer into presynaptic layer activity
+    input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
+    input_noise = (jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise)
     x = jnp.dot(input_onehot, input_params) + input_noise
-    return x
 
-def network_forward(x, params):
-    """
-    Forward pass through the network.
-    x -- params --> y
-
-    Args:
-        x (num_hidden_pre,): Input array.
-        params (tuple): Tuple of (weights, biases). #TODO List of tuples for each layer?
-
-    Returns:
-        y (num_hidden_post,): Output array.
-    """
-    # for w, b in params:
+    # Forward pass through plastic layer. x -- params --> y
     w, b = params
-    return jax.nn.sigmoid(x @ w + b)
+    y = jax.nn.sigmoid(x @ w + b)
 
-def compute_decision(key, y):
-    """ Compute binary decision based on output layer activity.
+    # Compute output probability ((1,) logit) based on postsynaptic layer activity
+    output = jnp.mean(y)
+    output = jax.nn.sigmoid(output)
+
+    return x, y, output
+
+def compute_decision(key, output):
+    """ Make binary decision based on output (probability of decision).
     To lick or not to lick at this step.
 
     Args:
         key: JAX random key.
-        y (num_hidden_post,): Output layer activity.
+        output (1,): Average of postsynaptic activity - probability of decision.
 
     Returns:
         decision (float): Binary decision (0 or 1).
     """
-    output = jnp.mean(y)
-    p_decision = jax.nn.sigmoid(output)
-    decision = jax.random.bernoulli(key, p_decision).astype(float)
-    return decision
+
+    return jax.random.bernoulli(key, output).astype(float)
 
 def compute_reward(decision):
     """ Compute reward based on binary decision.
@@ -140,15 +122,15 @@ def update_params(
     # reward_term = reward
 
     w, b = params
-    # vmap over output neurons
-    vmap_outputs = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
-    # vmap over input neurons, with nested vmap_outputs it's vmap over each synapse
-    vmap_synapses = jax.vmap(vmap_outputs, in_axes=(0, None, 0, None, None))
+    # vmap over postsynaptic neurons
+    vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
+    # vmap over postsynaptic neurons, with nested vmap_outputs it's vmap over synapses
+    vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
     dw = vmap_synapses(x, y, w, reward_term, plasticity_coeffs)
 
     # TODO decide whether to update bias or not
     db = jnp.zeros_like(b)
-    # db = vmap_inputs(1.0, reward_term, b, plasticity_coeffs)
+    # db = vmap_post(1.0, reward_term, b, plasticity_coeffs)
 
     assert (
         dw.shape == w.shape and db.shape == b.shape

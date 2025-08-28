@@ -39,7 +39,7 @@ class Experiment:
         )
 
         data = self.generate_experiment(exp_key, num_sessions)
-        data, self.mask, self.steps_per_session_list = experiment_lists_to_tensors(data)
+        data, self.mask, self.steps_per_session = experiment_lists_to_tensors(data)
         self.data = {
             "inputs": data[0],
             "xs": data[1],
@@ -132,22 +132,18 @@ class Experiment:
             key, input_key, embed_key, decision_key = jax.random.split(key, 4)
 
             # Generate input
-            new_input = jax.random.randint(input_key, (1), 0, self.cfg["num_inputs"])
-            inputs.append(new_input)
+            step_input = jax.random.randint(input_key, (1), 0, self.cfg["num_inputs"])
+            inputs.append(step_input)
 
-            # Embed input into (hidden) presynaptic layer
-            x = model.embed_inputs_to_presynaptic(
-                embed_key, new_input,
-                self.cfg["num_inputs"], self.cfg["num_hidden_pre"],
-                self.input_params)
-            xs.append(x)
+            x, y, output = model.network_forward(key,
+                                                 self.input_params, self.params,
+                                                 step_input,
+                                                 self.cfg)
+            xs.append(x)  # presynaptic activity
+            ys.append(y)  # postsynaptic activity
 
-            # Compute postsynaptic layer activity
-            y = model.compute_postsynaptic(x, self.params)
-            ys.append(y)
-
-            # Compute decision
-            decision = model.compute_decision(decision_key, y)
+            # Compute decision based on output (probability of decision)
+            decision = model.compute_decision(decision_key, output)
             decisions.append(decision)
 
             # TODO Compute reward
