@@ -151,7 +151,7 @@ def sample_truncated_normal(key, mean, std):
             key, subkey = jax.random.split(key)
             value = std * jax.random.normal(subkey, (1,)).item() + mean
             if value >= (mean - std):
-                return int(value)
+                return key, int(value)
 
 
 def experiment_lists_to_tensors(nested_lists):

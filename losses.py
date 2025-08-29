@@ -103,11 +103,9 @@ def loss(
         else:
             loss = 0.0
 
-    key, subkey = jax.random.split(key)
-
     # Return simulated trajectory of one experiment
     _params_final, activations = model.simulate_trajectory(
-        subkey,
+        key,
         input_params,
         initial_params,
         plasticity_coeffs,  # Our current plasticity coefficients estimate

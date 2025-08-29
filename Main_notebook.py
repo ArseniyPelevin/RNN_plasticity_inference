@@ -38,10 +38,11 @@ coeff_mask = np.ones((3, 3, 3, 3))
 
 config = {
     "num_inputs": 6,  # Number of input classes
-    "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 100,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp": 1,  # Number of experiments/trajectories/animals
+    "num_exp_train": 10,  # Number of experiments/trajectories/animals
+    "num_exp_eval": 5,
 
     "input_firing_mean": 0.75,
     "input_firing_std": 0.01,  # Standard deviation of noise added to presynaptic layer
@@ -96,14 +97,22 @@ key = jax.random.PRNGKey(cfg["expid"])
 
 # -
 
-def generate_experiments(cfg, generation_coeff, generation_func, mode="generation"):
+def generate_experiments(key, cfg,
+                         generation_coeff, generation_func,
+                         mode="generation"):
     # Generate all experiments/trajectories
-    #TODO differentiate num_train and num_eval
+    if mode == "train":
+        num_experiments = cfg.num_exp_train
+        print(f"\nGenerating {num_experiments} trajectories")
+    else:
+        num_experiments = cfg.num_exp_eval
+        print(f"\nGenerating {num_experiments} trajectories")
+
     experiments = []
     # experiments_data = {}
-    for exp_i in range(cfg['num_exp']):
+    for exp_i in range(num_experiments):
         # Pick random number of sessions in this experiment given mean and std
-        num_sessions = sample_truncated_normal(
+        key, num_sessions = sample_truncated_normal(
             key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
         )
         exp = experiment.Experiment(exp_i, cfg,
@@ -111,8 +120,9 @@ def generate_experiments(cfg, generation_coeff, generation_func, mode="generatio
                                     num_sessions)
         experiments.append(exp)
         # experiments_data[exp_i] = exp.data
+        print(f"Generated experiment {exp_i} with {num_sessions} sessions")
 
-    return experiments
+    return key, experiments
 
 
 # +
@@ -123,12 +133,13 @@ importlib.reload(losses)
 importlib.reload(utils)
 
 # Generate model activity
+key, subkey = jax.random.split(key)
 #TODO add branching for experimental data
 generation_coeff, generation_func = synapse.init_plasticity(
-    key, cfg, mode="generation_model"
+    subkey, cfg, mode="generation_model"
 )
-experiments = generate_experiments(
-    cfg, generation_coeff, generation_func, mode="generation"
+key, experiments = generate_experiments(
+    key, cfg, generation_coeff, generation_func, mode="generation"
 )
 # -
 
@@ -180,7 +191,7 @@ for epoch in range(cfg["num_epochs"] + 1):
     for exp in experiments:
         key, subkey = jax.random.split(key)
         loss, meta_grads = loss_value_and_grad(
-            subkey,
+            subkey,  # Pass subkey this time, because loss will not return key
             exp.input_params,
             initial_params,  # TODO update for each epoch/experiment
             plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
@@ -200,7 +211,7 @@ for epoch in range(cfg["num_epochs"] + 1):
         plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
 
     if epoch % cfg["logging_interval"] == 0:
-        print(loss)
+        print(f'{epoch=}, {loss=}')
         losses_list.append(loss)
 print(plasticity_coeffs)
 

@@ -26,7 +26,7 @@ class Experiment:
         # Generate random keys for different parts of the model
         seed = (cfg["expid"] + 1) * (exp_i + 1)
         key = jax.random.PRNGKey(seed)
-        key, input_params_key, params_key, exp_key = jax.random.split(key, 4)
+        key, input_params_key, params_key = jax.random.split(key, 3)
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
         self.input_params = model.initialize_input_parameters(
@@ -38,7 +38,7 @@ class Experiment:
             params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
         )
 
-        data = self.generate_experiment(exp_key, num_sessions)
+        key, data = self.generate_experiment(key, num_sessions)
         data, self.mask, self.steps_per_session = experiment_lists_to_tensors(data)
         self.data = {
             "inputs": data[0],
@@ -73,19 +73,16 @@ class Experiment:
         )  # Nested lists for each of the 6 variables
 
         for session in range(num_sessions):
-            key, subkey = jax.random.split(key)
-            num_trials = sample_truncated_normal(
-                subkey,
+            key, num_trials = sample_truncated_normal(
+                key,
                 self.cfg["mean_trials_per_session"],
                 self.cfg["sd_trials_per_session"])
             for _trial in range(num_trials):
-                key, sample_kay, trial_key = jax.random.split(key, 3)
-                num_steps = sample_truncated_normal(
-                    sample_kay,
+                key, num_steps = sample_truncated_normal(
+                    key,
                     self.cfg["mean_steps_per_trial"],
                     self.cfg["sd_steps_per_trial"])
-                trial_data = self.generate_trial(
-                    trial_key, num_steps)
+                key, trial_data = self.generate_trial(key, num_steps)
 
                 # trial_data should be a tuple/list of 6 items:
                 (
@@ -105,7 +102,7 @@ class Experiment:
                 rewards[session].append(trial_rewards)
                 expected_rewards[session].append(trial_expected_rewards)
 
-        return inputs, xs, ys, decisions, rewards, expected_rewards
+        return key, (inputs, xs, ys, decisions, rewards, expected_rewards)
 
     def generate_trial(self, key, num_steps):
         """Generate a timecourse of all variables for a single trial.
@@ -129,13 +126,13 @@ class Experiment:
         inputs, xs, ys, decisions, rewards, expected_rewards = ([] for _ in range(6))
 
         for _step in range(num_steps):
-            key, input_key, embed_key, decision_key = jax.random.split(key, 4)
+            key, input_key, input_noise_key, decision_key = jax.random.split(key, 4)
 
             # Generate input
             step_input = jax.random.randint(input_key, (1), 0, self.cfg["num_inputs"])
             inputs.append(step_input)
 
-            x, y, output = model.network_forward(key,
+            x, y, output = model.network_forward(input_noise_key,
                                                  self.input_params, self.params,
                                                  step_input,
                                                  self.cfg)
@@ -166,4 +163,4 @@ class Experiment:
         data = [jnp.array(var) for var in
                 [inputs, xs, ys, decisions, rewards, expected_rewards]]
 
-        return data
+        return key, data
