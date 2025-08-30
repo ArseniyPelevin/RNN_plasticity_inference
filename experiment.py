@@ -158,6 +158,7 @@ class Experiment:
                 expected_reward,
                 self.plasticity_coeffs,
                 self.plasticity_func,
+                self.cfg
             )
 
         data = [jnp.array(var) for var in

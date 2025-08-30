@@ -90,9 +90,9 @@ def compute_reward(decision):
     # TODO: Implement reward function
     return 0
 
-@partial(jax.jit,static_argnames=("plasticity_func",))
+@partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_params(
-    x, y, params, reward, expected_reward, plasticity_coeffs, plasticity_func, lr=1.0
+    x, y, params, reward, expected_reward, plasticity_coeffs, plasticity_func, cfg
 ):
     """
     Updates parameters in one layer
@@ -123,11 +123,17 @@ def update_params(
     # reward_term = reward
 
     w, b = params
-    # vmap over postsynaptic neurons
-    vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
-    # vmap over postsynaptic neurons, with nested vmap_outputs it's vmap over synapses
-    vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
-    dw = vmap_synapses(x, y, w, reward_term, plasticity_coeffs)
+
+    # Use vectorized volterra_plasticity_function
+    if cfg.plasticity_model == "volterra":
+        dw = plasticity_func(x, y, w, reward_term, plasticity_coeffs)
+    # Use per-synapse mlp_plasticity_function
+    elif cfg.plasticity_model == "mlp":
+        # vmap over postsynaptic neurons
+        vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
+        # vmap over presynaptic neurons now, i.e. together vmap over synapses
+        vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
+        dw = vmap_synapses(x, y, w, reward_term, plasticity_coeffs)
 
     # TODO decide whether to update bias or not
     db = jnp.zeros_like(b)
@@ -184,10 +190,11 @@ def simulate_trajectory(
             x, y, output = network_forward(key,
                                            input_params, params,
                                            step_input, cfg)
+
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
                                       x, y, params, step_reward, step_expected_reward,
-                                      plasticity_coeffs, plasticity_func),
+                                      plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
             return params, (x, y, output)

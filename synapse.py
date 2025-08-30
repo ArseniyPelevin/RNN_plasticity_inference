@@ -9,6 +9,29 @@ import numpy as np
 from utils import generate_gaussian, standardize_coeff_init
 
 
+def volterra_plasticity_function(x, y, w, r, coeff):
+    """
+    Vectorized Volterra/Taylor plasticity:
+      dw_{j,i} = sum_{a,b,c,d=0..2} coeff[a,b,c,d] * x_j^a * y_i^b * w_{j,i}^c * r^d
+    Shapes:
+      x: (N_pre,), y: (N_post,), w: (N_pre, N_post), r: scalar, coeff: (3,3,3,3)
+      returns dw: (N_pre, N_post)
+    """
+    # basis powers
+    X = jnp.stack([jnp.ones_like(x), x, x * x], axis=0)  # (3, N_pre)
+    Y = jnp.stack([jnp.ones_like(y), y, y * y], axis=0)  # (3, N_post)
+    W = jnp.stack([jnp.ones_like(w), w, w * w], axis=0)  # (3, N_pre, N_post)
+    R = jnp.array([1.0, r, r * r])  # (3,)
+
+    # successive contractions to keep memory stable:
+    # 1) contract coeff over r-powers -> (3,3,3)
+    theta_R = jnp.tensordot(coeff, R, axes=(3, 0))  # (a,b,c)
+    # 2) mix in weight powers -> (3,3,N_pre,N_post)
+    theta_WR = jnp.einsum('abc,cji->abji', theta_R, W)  # (a,b,j,i)
+    # 3) combine with x- and y-powers -> (N_pre, N_post)
+    dw = jnp.einsum('aj,bi,abji->ji', X, Y, theta_WR)  # (j,i)
+    return dw
+
 def volterra_synapse_tensor(x, y, w, r):
     """
     Functionality: Computes the Volterra synapse tensor for given inputs.
@@ -26,8 +49,7 @@ def volterra_synapse_tensor(x, y, w, r):
     )
     return synapse_tensor
 
-
-def volterra_plasticity_function(x, y, w, r, volterra_coefficients):
+def volterra_plasticity_function_old(x, y, w, r, volterra_coefficients):
     """
     Functionality: Computes the Volterra plasticity function for given inputs and coefficients.
     Inputs: x, y, w, r (floats): Inputs to the Volterra plasticity function.
