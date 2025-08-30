@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 
 
-def initialize_input_parameters(key, num_inputs, num_pre):
+def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
     """Initialize input parameters for the embedding layer.
 
     num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
@@ -20,7 +20,7 @@ def initialize_input_parameters(key, num_inputs, num_pre):
     input_params = jax.random.normal(key, (num_inputs, num_pre))
     input_params -= jnp.mean(input_params, axis=0, keepdims=True)
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
-    return input_params
+    return input_params * input_params_scale
 
 def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
     """Initialize parameters for the network.
@@ -50,9 +50,11 @@ def network_forward(key, input_params, params, step_input, cfg):
 
     # Embed input integer into presynaptic layer activity
     input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
-    input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
-    input_noise = input_noise * cfg.input_firing_std + cfg.input_firing_mean
-    x = jnp.dot(input_onehot, input_params) + input_noise
+    x = jnp.dot(input_onehot, input_params)
+    x = x * cfg.input_firing_std + cfg.input_firing_mean
+
+    input_noise = jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise_std
+    x += input_noise
 
     # Forward pass through plastic layer. x -- params --> y
     w, b = params
@@ -116,7 +118,6 @@ def update_params(
     assert params[0].shape[1] == y.shape[0], "Output size must match weight shape"
     assert params[1].shape[0] == y.shape[0], "Output size must match bias shape"
 
-    lr /= x.shape[0]
     # using expected reward or just the reward:
     # 0 if expected_reward == reward
     reward_term = reward - expected_reward
@@ -144,6 +145,7 @@ def update_params(
     ), "dw and w should be of the same shape to prevent broadcasting \
         while adding"
 
+    lr = cfg.synapse_learning_rate / x.shape[0]
     params = (
         w + lr * dw,
         b + lr * db,

@@ -5,8 +5,6 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import model
-
-# import plasticity.data_loader as data_loader
 import optax
 
 
@@ -49,8 +47,9 @@ def neural_mse_loss(
     """
     exp_traj_ys_masked = exp_traj_ys * mask[..., None]
     sim_traj_ys_masked = sim_traj_ys * mask[..., None]
-    ce = optax.squared_error(sim_traj_ys_masked, exp_traj_ys_masked)
-    mse_loss = jnp.sum(ce) / jnp.sum(mask)
+    se = optax.squared_error(exp_traj_ys_masked, sim_traj_ys_masked)
+    norm = jnp.sum(mask) * exp_traj_ys.shape[-1]  # N_steps * N_neurons
+    mse_loss = jnp.sum(se) / norm
     return mse_loss
 
 

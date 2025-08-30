@@ -149,7 +149,7 @@ def sample_truncated_normal(key, mean, std):
         """ Samples value from a normal distribution that is >= (mean - std). """
         while True:  # Pick again if less than mu - std
             key, subkey = jax.random.split(key)
-            value = std * jax.random.normal(subkey, (1,)).item() + mean
+            value = std * jax.random.normal(subkey, ()) + mean
             if value >= (mean - std):
                 return key, int(value)
 
@@ -240,7 +240,7 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
 
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
         top_indices = np.argsort(
-            plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten()
+            np.abs(plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten())
         )[-5:]
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))

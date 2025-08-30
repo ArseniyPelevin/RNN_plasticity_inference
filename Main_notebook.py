@@ -22,7 +22,9 @@ from typing import Any  # TODO get rid of
 
 import experiment
 import jax
+import jax.numpy as jnp
 import losses
+import matplotlib.pyplot as plt
 import model
 import numpy as np
 import optax
@@ -34,19 +36,24 @@ from utils import sample_truncated_normal
 # +
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
-coeff_mask = np.ones((3, 3, 3, 3))
+coeff_mask = np.ones((3, 3, 3, 0))
 
 config = {
-    "num_inputs": 6,  # Number of input classes
-    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
+    "num_inputs": 6000,  # Number of input classes
+    "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp_train": 10,  # Number of experiments/trajectories/animals
+    "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_eval": 5,
 
-    "input_firing_mean": 0.75,
-    "input_firing_std": 0.01,  # Standard deviation of noise added to presynaptic layer
+    "input_firing_mean": 0,
+    "input_firing_std": 0.1,  # Standard deviation of input firing rates
+    "input_noise_std": 0.01,  # Standard deviation of noise added to presynaptic layer
+    "synapse_learning_rate": 1e-3,
     "learning_rate": 1e-3,
+
+    "input_params_scale": 1,
+    "initial_params_scale": 0.01,
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -56,23 +63,24 @@ config = {
     # #TODO steps are seconds for now
     # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
     # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
-    "mean_num_sessions": 5,  # Number of sessions/days per experiment/trajectory/animal
-    "sd_num_sessions": 2,  # Standard deviation of sessions/days per animal
-    "mean_trials_per_session": 7,  # Number of trials/runs in each session/day
-    "sd_trials_per_session": 4,  # Standard deviation of trials in each session/day
+    "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
+    "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
+    "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
+    "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
     #TODO steps are seconds for now
-    "mean_steps_per_trial": 20,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 5,  # Standard deviation of steps in each trial/run
+    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
+    "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
-    "expid": 1, # For saving results and seeding random
+    "expid": 2, # For saving results and seeding random
+
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
     "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
 
     "regularization_type": "l1",
-    "regularization_scale": 1e-2,
+    "regularization_scale": 0.01,
 
         # if "neural" in cfg.fit_data:
         # neural_loss = neural_mse_loss(  # TODO Look into and update
@@ -99,14 +107,16 @@ key = jax.random.PRNGKey(cfg["expid"])
 
 def generate_experiments(key, cfg,
                          generation_coeff, generation_func,
-                         mode="generation"):
+                         mode="train"):
     # Generate all experiments/trajectories
     if mode == "train":
         num_experiments = cfg.num_exp_train
         print(f"\nGenerating {num_experiments} trajectories")
-    else:
+    elif mode == "eval":
         num_experiments = cfg.num_exp_eval
         print(f"\nGenerating {num_experiments} trajectories")
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
 
     experiments = []
     # experiments_data = {}
@@ -139,43 +149,89 @@ generation_coeff, generation_func = synapse.init_plasticity(
     subkey, cfg, mode="generation_model"
 )
 key, experiments = generate_experiments(
-    key, cfg, generation_coeff, generation_func, mode="generation"
+    key, cfg, generation_coeff, generation_func, mode="train"
 )
-# -
 
+
+# +
+fig, ax = plt.subplots(1, 3, figsize=(12, 6))
+exp= 0
+session = 0
+
+
+inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
+xs     = experiments[exp].data["xs"]       # (n_sess, n_steps, xdim)
+ys     = experiments[exp].data["ys"]       # (n_sess, n_steps, ydim)
+
+n_sess = inputs.shape[0]
+
+# compute per-session order of step indices (ascending)
+order = jnp.argsort(jnp.squeeze(inputs, -1), axis=1)   # (n_sess, n_steps)
+
+# build row index for broadcasting:
+rows = jnp.arange(n_sess)[:, None]                      # (n_sess, 1)
+
+# apply same permutation to xs and ys:
+xs_sorted = xs[rows, order]   # (n_sess, n_steps, xdim)
+ys_sorted = ys[rows, order]   # (n_sess, n_steps, ydim)
+
+xs_ax = ax[0].imshow(xs_sorted[session], aspect='auto',
+                     cmap='viridis', interpolation='none')
+ys_ax = ax[1].imshow(ys_sorted[session], aspect='auto',
+                     cmap='viridis', interpolation='none')
+ws_ax = ax[2].imshow(experiments[exp].data['params'][0][0], aspect='auto',
+                     cmap='viridis', interpolation='none')
+fig.colorbar(xs_ax, ax=ax[0])
+fig.colorbar(ys_ax, ax=ax[1])
+fig.colorbar(ws_ax, ax=ax[2])
+plt.show()
+
+# -
 
 print(len(experiments[0].data))
 for exp in experiments:
-    print(exp.data["inputs"].shape)
-    print(exp.steps_per_session)
-    print(type(exp.input_params))
+    print(f'{exp.exp_i=}')
+    print(f'{exp.data["inputs"].shape=}')
+    print(f'{exp.data["xs"].shape=}')
+    print(f'{exp.data["ys"].shape=}')
+    print(f'{jnp.mean(exp.input_params)=}')
+    print(f'{exp.steps_per_session=}')
+    print(f'{exp.params[0].shape=}')
+
+
+# fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+# for exp_i, exp in enumerate(experiments[:5]):
+#     ax[0].plot(exp.data["xs"][0].mean(axis=-1), label=f"Experiment {exp_i}")
+#     ax[1].plot(exp.data["ys"][0].mean(axis=-1), label=f"Experiment {exp_i}")
+fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+for y in experiments[0].data["ys"][0].T:
+    ax.plot(y, alpha=0.1, color="blue")
 
 
 # +
 # importlib.reload(model)
 
-key, init_plasticity_key, init_params_key = jax.random.split(key, 3)
+key, init_plasticity_key, *init_params_keys = jax.random.split(key, len(experiments)+2)
 # Initialize parameters for training
 plasticity_coeffs, plasticity_func = synapse.init_plasticity(
     init_plasticity_key, cfg, mode="plasticity_model"
 )
 
-print(f'{type(plasticity_coeffs)=}, {plasticity_coeffs.shape=}')
-
-#TODO
-# !!! Parameters should probably NOT be initialized just once!
-# They should be reassigned for each epoch and exp!
-initial_params = model.initialize_parameters(
-    init_params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
-)
+# TODO use this for real training
+# for exp in experiments:
+#     exp.new_initial_params = model.initialize_parameters(
+#             init_params_keys[exp.exp_i],
+#             cfg["num_hidden_pre"], cfg["num_hidden_post"],
+#             initial_params_scale=cfg["initial_params_scale"]
+#             )
 
 
 # +
-# importlib.reload(synapse)
-# importlib.reload(experiment)
-# importlib.reload(model)
-# importlib.reload(losses)
-# importlib.reload(utils)
+importlib.reload(synapse)
+importlib.reload(experiment)
+importlib.reload(model)
+importlib.reload(losses)
+importlib.reload(utils)
 
 # Return value (scalar) of the function (loss value)
 # and gradient wrt its parameter at argnum (plasticity_coeffs)
@@ -186,6 +242,7 @@ expdata: dict[str, Any] = {}
 # resampled_xs, neural_recordings, decisions, rewards, expected_rewards = data
 
 losses_list = []
+expdata = {}
 
 for epoch in range(cfg["num_epochs"] + 1):
     for exp in experiments:
@@ -193,7 +250,7 @@ for epoch in range(cfg["num_epochs"] + 1):
         loss, meta_grads = loss_value_and_grad(
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_params,
-            initial_params,  # TODO update for each epoch/experiment
+            exp.initial_params,  # <--- TODO exp.new_initial_params,
             plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
             plasticity_func,  # Static within losses
             exp.data['inputs'],
@@ -210,13 +267,9 @@ for epoch in range(cfg["num_epochs"] + 1):
         )
         plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
 
-    if epoch % cfg["logging_interval"] == 0:
-        print(f'{epoch=}, {loss=}')
-        losses_list.append(loss)
-print(plasticity_coeffs)
-
+    if epoch % 10 == 0:
+        utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
 
 # -
-
 
 

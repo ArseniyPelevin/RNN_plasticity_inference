@@ -30,13 +30,18 @@ class Experiment:
 
         # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
         self.input_params = model.initialize_input_parameters(
-            input_params_key, cfg["num_inputs"], cfg["num_hidden_pre"]
+            input_params_key,
+            cfg["num_inputs"], cfg["num_hidden_pre"],
+            input_params_scale=cfg["initial_params_scale"]
         )
 
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
-        self.params = model.initialize_parameters(
-            params_key, cfg["num_hidden_pre"], cfg["num_hidden_post"]
+        self.initial_params = model.initialize_parameters(
+            params_key,
+            cfg["num_hidden_pre"], cfg["num_hidden_post"],
+            initial_params_scale=cfg["initial_params_scale"]
         )
+        self.params = self.initial_params  # Save to test model
 
         key, data = self.generate_experiment(key, num_sessions)
         data, self.mask, self.steps_per_session = experiment_lists_to_tensors(data)

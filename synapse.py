@@ -95,7 +95,7 @@ def init_zeros():
 
 def init_random(key):
     assert key is not None, "For random initialization, a random key has to be given"
-    return generate_gaussian(key, (3, 3, 3, 3), scale=1e-5)
+    return generate_gaussian(key, (3, 3, 3, 3), scale=1e-4)
 
 
 def split_init_string(s):
