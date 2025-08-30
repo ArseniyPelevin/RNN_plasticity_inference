@@ -178,10 +178,11 @@ def init_plasticity_mlp(key, layer_sizes, scale=0.01):
             - list of tuples: Each tuple contains the weights and biases for a layer in the MLP.
             - function: The MLP plasticity function.
     """
+    w_key, b_key = jax.random.split(key)
     mlp_params = [
         (
-            generate_gaussian(key, (m, n), scale),
-            generate_gaussian(key, (n,), scale),
+            generate_gaussian(w_key, (m, n), scale),
+            generate_gaussian(b_key, (n,), scale),
         )
         for m, n in zip(layer_sizes[:-1], layer_sizes[1:], strict=False)
     ]

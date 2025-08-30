@@ -186,8 +186,8 @@ def simulate_trajectory(
         """
 
         def simulate_step(params, step_data):
-            step_input, step_reward, step_expected_reward, valid = step_data
-            x, y, output = network_forward(key,
+            step_input, step_reward, step_expected_reward, valid, step_key = step_data
+            x, y, output = network_forward(step_key,
                                            input_params, params,
                                            step_input, cfg)
 
@@ -205,6 +205,13 @@ def simulate_trajectory(
 
         return params_session, activity_trajec_session
 
+    # Pre-split keys for each session and step
+    n_sessions = exp_mask.shape[0]
+    n_steps = exp_mask.shape[1]
+    total_keys = int(n_sessions * n_steps)
+    flat_keys = jax.random.split(key, total_keys + 1)[1:]
+    session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
+
     # Run outer scan over sessions
     params_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
@@ -212,7 +219,8 @@ def simulate_trajectory(
         (exp_inputs,
          exp_rewards,
          exp_expected_rewards,
-         exp_mask)
+         exp_mask,
+         session_step_keys)
     )
 
     return params_exp, activity_trajec_exp
