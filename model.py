@@ -49,10 +49,13 @@ def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
 def network_forward(key, input_params, params, step_input, cfg):
     """ Propagate through all layers from input to output. """
 
-    # Embed input integer into presynaptic layer activity
-    input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
-    x = jnp.dot(input_onehot, input_params)
-    x = x * cfg.input_firing_std + cfg.input_firing_mean
+    # # Embed input integer into presynaptic layer activity
+    # input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
+    # x = jnp.dot(input_onehot, input_params)
+
+    # Makeshift for input firing (TODO)
+    x = step_input
+    x = x * cfg.input_firing_std + cfg.input_firing_mean  # N(0, 0.1)
 
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise_std
     x += input_noise

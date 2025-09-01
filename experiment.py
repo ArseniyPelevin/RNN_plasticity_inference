@@ -133,8 +133,12 @@ class Experiment:
         for _step in range(num_steps):
             key, input_key, input_noise_key, decision_key = jax.random.split(key, 4)
 
-            # Generate input
-            step_input = jax.random.randint(input_key, (1), 0, self.cfg["num_inputs"])
+            # # Generate input - one integer out of number of classes num_inputs
+            # step_input = jax.random.randint(input_key, shape=(1),
+            #                                 minval=0, maxval=self.cfg.num_inputs)
+
+            # Generate makeshift presynaptic input (TODO)
+            step_input = jax.random.normal(input_key, shape=(self.cfg.num_hidden_pre,))
             inputs.append(step_input)
 
             x, y, output = model.network_forward(input_noise_key,
