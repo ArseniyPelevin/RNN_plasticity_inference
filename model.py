@@ -18,6 +18,7 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
         input_params: (num_inputs, num_pre) Array of input parameters.
     """
     input_params = jax.random.normal(key, (num_inputs, num_pre))
+    # Standardize for each neuron across all classes
     input_params -= jnp.mean(input_params, axis=0, keepdims=True)
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
     return input_params * input_params_scale
@@ -145,7 +146,7 @@ def update_params(
     ), "dw and w should be of the same shape to prevent broadcasting \
         while adding"
 
-    lr = cfg.synapse_learning_rate / x.shape[0]
+    lr = cfg.synapse_learning_rate # / x.shape[0]
     params = (
         w + lr * dw,
         b + lr * db,
