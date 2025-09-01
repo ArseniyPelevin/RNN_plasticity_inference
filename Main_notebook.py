@@ -82,7 +82,7 @@ config = {
     "plasticity_coeffs_init_scale": 1e-4,
 
     "regularization_type": "l1",
-    "regularization_scale": 0.01,
+    "regularization_scale": 0,
 
         # if "neural" in cfg.fit_data:
         # neural_loss = neural_mse_loss(  # TODO Look into and update
