@@ -40,7 +40,7 @@ def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
     # TODO loop inside a list for multilayer network
     weights = (
         jax.random.normal(key, shape=(num_pre, num_post))
-        * initial_params_scale
+        * 1 / (num_pre + num_post) # Use ""Xavier normal"" (paper's Kaiming)
     )
     biases = jnp.zeros((num_post,))
     return weights, biases

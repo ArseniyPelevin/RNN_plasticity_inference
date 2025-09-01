@@ -54,7 +54,7 @@ config = {
     "learning_rate": 1e-3,
 
     "input_params_scale": 1,
-    "initial_params_scale": 0.01,
+    # "initial_params_scale": 0.01,  # Initialize with Xavier normal
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
