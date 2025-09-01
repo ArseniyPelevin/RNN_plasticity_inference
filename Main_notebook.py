@@ -109,6 +109,7 @@ key = jax.random.PRNGKey(cfg["expid"])
 
 def generate_experiments(key, cfg,
                          generation_coeff, generation_func,
+                         global_teacher_init_params,
                          mode="train"):
     # Generate all experiments/trajectories
     if mode == "train":
@@ -129,7 +130,8 @@ def generate_experiments(key, cfg,
         )
         exp = experiment.Experiment(exp_i, cfg,
                                     generation_coeff, generation_func,
-                                    num_sessions)
+                                    num_sessions,
+                                    global_teacher_init_params)
         experiments.append(exp)
         # experiments_data[exp_i] = exp.data
         print(f"Generated experiment {exp_i} with {num_sessions} sessions")
@@ -145,13 +147,18 @@ importlib.reload(losses)
 importlib.reload(utils)
 
 # Generate model activity
-key, subkey = jax.random.split(key)
+key, plasticity_key, params_key = jax.random.split(key, 3)
 #TODO add branching for experimental data
 generation_coeff, generation_func = synapse.init_plasticity(
-    subkey, cfg, mode="generation_model"
+    plasticity_key, cfg, mode="generation_model"
+)
+global_teacher_init_params = model.initialize_parameters(
+    params_key,
+    cfg["num_hidden_pre"], cfg["num_hidden_post"]
 )
 key, experiments = generate_experiments(
-    key, cfg, generation_coeff, generation_func, mode="train"
+    key, cfg, generation_coeff, generation_func, 
+    global_teacher_init_params, mode="train",
 )
 
 
@@ -219,13 +226,19 @@ plasticity_coeffs, plasticity_func = synapse.init_plasticity(
     init_plasticity_key, cfg, mode="plasticity_model"
 )
 
+global_student_init_params = model.initialize_parameters(
+    init_params_keys[0],
+    cfg["num_hidden_pre"], cfg["num_hidden_post"]
+)
 # TODO use this for real training
-# for exp in experiments:
-#     exp.new_initial_params = model.initialize_parameters(
-#             init_params_keys[exp.exp_i],
-#             cfg["num_hidden_pre"], cfg["num_hidden_post"],
-#             initial_params_scale=cfg["initial_params_scale"]
-#             )
+for exp in experiments:
+    # Prepare for different initial synaptic weights for each simulated experiment,
+    # but for now use the same initialization for all students
+    exp.new_initial_params = global_student_init_params
+    # exp.new_initial_params = model.initialize_parameters(
+    #         init_params_keys[exp.exp_i],
+    #         cfg["num_hidden_pre"], cfg["num_hidden_post"]
+    #         )
 
 
 # +

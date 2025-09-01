@@ -8,7 +8,8 @@ from utils import experiment_lists_to_tensors, sample_truncated_normal
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, exp_i, cfg, plasticity_coeffs, plasticity_func, num_sessions):
+    def __init__(self, exp_i, cfg, plasticity_coeffs, plasticity_func, num_sessions,
+                 global_teacher_init_params):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -36,11 +37,13 @@ class Experiment:
         )
 
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
-        self.initial_params = model.initialize_parameters(
-            params_key,
-            cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            initial_params_scale=cfg["initial_params_scale"]
-        )
+        # Prepare for different initial synaptic weights for each experiment,
+        # but for now use the same initialization for all teachers
+        self.initial_params = global_teacher_init_params
+        # self.initial_params = model.initialize_parameters(
+        #     params_key,
+        #     cfg["num_hidden_pre"], cfg["num_hidden_post"]
+        # )
         self.params = self.initial_params  # Save to test model
 
         key, data = self.generate_experiment(key, num_sessions)
