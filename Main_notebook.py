@@ -251,7 +251,12 @@ importlib.reload(utils)
 # Return value (scalar) of the function (loss value)
 # and gradient wrt its parameter at argnum (plasticity_coeffs)
 loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
-optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+
+# optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+optimizer = optax.chain(
+    optax.clip_by_global_norm(0.2),  # Apply gradient clipping as in the article
+    optax.adam(learning_rate=cfg["learning_rate"]),
+)
 opt_state = optimizer.init(plasticity_coeffs)
 expdata: dict[str, Any] = {}
 # resampled_xs, neural_recordings, decisions, rewards, expected_rewards = data
