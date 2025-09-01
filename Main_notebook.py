@@ -36,10 +36,11 @@ from utils import sample_truncated_normal
 # +
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
-coeff_mask = np.ones((3, 3, 3, 0))
+coeff_mask = np.ones((3, 3, 3, 3))
+coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
-    "num_inputs": 6000,  # Number of input classes
+    "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
     "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
