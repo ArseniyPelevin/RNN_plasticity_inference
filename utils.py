@@ -296,14 +296,6 @@ def save_logs(cfg, df):
 
     logdata_path = Path(cfg.log_dir)
     if cfg.log_expdata:
-        if cfg.use_experimental_data:
-            logdata_path = (
-                logdata_path / "expdata" / cfg.exp_name / cfg.plasticity_model
-            )
-        else:
-            logdata_path = (
-                logdata_path / "simdata" / cfg.exp_name / cfg.plasticity_model
-            )
 
         logdata_path.mkdir(parents=True, exist_ok=True)
         csv_file = logdata_path / f"exp_{cfg.expid}.csv"

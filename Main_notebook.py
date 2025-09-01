@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import model
 import numpy as np
 import optax
+import pandas as pd
 import synapse
 import utils
 from omegaconf import OmegaConf
@@ -40,12 +41,14 @@ coeff_mask = np.ones((3, 3, 3, 3))
 coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
+    "use_experimental_data": False,
+
     "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
     "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
-    "num_exp_eval": 5,
+    "num_exp_eval": 0,
 
     "input_firing_mean": 0,
     "input_firing_std": 0.1,  # Standard deviation of input firing rates
@@ -84,13 +87,6 @@ config = {
     "regularization_type": "l1",
     "regularization_scale": 0,
 
-        # if "neural" in cfg.fit_data:
-        # neural_loss = neural_mse_loss(  # TODO Look into and update
-        #     key,
-        #     mask,
-        #     cfg.neural_recording_sparsity,
-        #     cfg.measurement_noise_scale,
-
     "fit_data": "neural",
     "neural_recording_sparsity": 1,
     "measurement_noise_scale": 0,
@@ -98,6 +94,10 @@ config = {
     # Restrictions on trainable plasticity parameters
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
+
+    "log_expdata": True,
+    "data_dir": "../../../../03_data/01_original_data/",
+    "log_dir": "../../../../03_data/02_training_data/",
 }
 
 cfg = OmegaConf.create(config)
@@ -157,7 +157,7 @@ global_teacher_init_params = model.initialize_parameters(
     cfg["num_hidden_pre"], cfg["num_hidden_post"]
 )
 key, experiments = generate_experiments(
-    key, cfg, generation_coeff, generation_func, 
+    key, cfg, generation_coeff, generation_func,
     global_teacher_init_params, mode="train",
 )
 
@@ -291,5 +291,47 @@ for epoch in range(cfg["num_epochs"] + 1):
         utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
 
 # -
+def evaluate_model(
+    cfg: dict[str, Any],
+    plasticity_coeff: Any,
+    plasticity_func: Any,
+    key: jax.random.PRNGKey,
+    expdata: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate the trained model."""
+    if cfg["num_exp_eval"] > 0:
+        r2_score, percent_deviance = model.evaluate(
+            key,
+            cfg,
+            plasticity_coeff,
+            plasticity_func,
+        )
+        expdata["percent_deviance"] = percent_deviance
+        if not cfg["use_experimental_data"]:
+            expdata["r2_weights"] = r2_score["weights"]
+            expdata["r2_activity"] = r2_score["activity"]
+    return expdata
+def save_results(
+    cfg: dict[str, Any], expdata: dict[str, Any], train_time: float
+) -> str:
+    """Save training logs and parameters."""
+    df = pd.DataFrame.from_dict(expdata)
+    df["train_time"] = train_time
+
+    # Add configuration parameters to DataFrame
+    for cfg_key, cfg_value in cfg.items():
+        if isinstance(cfg_value, (float | int | str)):
+            df[cfg_key] = cfg_value
+
+    logdata_path = utils.save_logs(cfg, df)
+    return logdata_path
+# Training time = 30 minutes:
+train_time = 30*60+6  # TODO hard code for now, implement counter later
+key, _ = jax.random.split(key)
+expdata = evaluate_model(cfg, plasticity_coeffs, plasticity_func, key, expdata)
+logdata_path = save_results(cfg, expdata, train_time)
+
+
+expdata_stashed = expdata.copy()
 
 
