@@ -32,7 +32,7 @@ class Experiment:
         self.input_params = model.initialize_input_parameters(
             input_params_key,
             cfg["num_inputs"], cfg["num_hidden_pre"],
-            input_params_scale=cfg["initial_params_scale"]
+            input_params_scale=cfg["input_params_scale"]  # N(0, 1)
         )
 
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
