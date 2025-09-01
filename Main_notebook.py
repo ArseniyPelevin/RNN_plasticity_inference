@@ -78,6 +78,7 @@ config = {
     "generation_model": "volterra",
     "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
+    "plasticity_coeffs_init_scale": 1e-4,
 
     "regularization_type": "l1",
     "regularization_scale": 0.01,

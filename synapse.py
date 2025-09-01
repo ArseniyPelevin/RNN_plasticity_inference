@@ -93,9 +93,9 @@ def init_zeros():
     return np.zeros((3, 3, 3, 3))
 
 
-def init_random(key):
+def init_random(key, scale):
     assert key is not None, "For random initialization, a random key has to be given"
-    return generate_gaussian(key, (3, 3, 3, 3), scale=1e-4)
+    return generate_gaussian(key, (3, 3, 3, 3), scale=scale)
 
 
 def split_init_string(s):
@@ -142,7 +142,7 @@ def init_generation_volterra(init):
     return jnp.array(parameters), volterra_plasticity_function
 
 
-def init_plasticity_volterra(key, init):
+def init_plasticity_volterra(key, init, scale):
     """
     Initializes the parameters for the Volterra plasticity model.
 
@@ -157,7 +157,7 @@ def init_plasticity_volterra(key, init):
     """
     init_functions = {
         "zeros": init_zeros,
-        "random": lambda: init_random(key),
+        "random": lambda: init_random(key, scale=scale),
     }
 
     parameters = init_functions[init]()
@@ -208,7 +208,9 @@ def init_plasticity(key, cfg, mode):
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
         if cfg.plasticity_model == "volterra":
-            return init_plasticity_volterra(key, init=cfg.plasticity_coeffs_init)
+            return init_plasticity_volterra(key, 
+                                            init=cfg.plasticity_coeffs_init,
+                                            scale=cfg.plasticity_coeffs_init_scale)
         elif cfg.plasticity_model == "mlp":
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
 

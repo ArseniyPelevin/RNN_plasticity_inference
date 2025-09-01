@@ -242,6 +242,7 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
         top_indices = np.argsort(
             np.abs(plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten())
         )[-5:]
+        print(f'{epoch=}, loss={loss}')
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
         for idx in reversed(top_indices):
