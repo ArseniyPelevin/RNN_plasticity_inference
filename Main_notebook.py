@@ -44,8 +44,8 @@ config = {
     "use_experimental_data": False,
 
     "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_eval": 0,
@@ -252,11 +252,11 @@ importlib.reload(utils)
 # and gradient wrt its parameter at argnum (plasticity_coeffs)
 loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
 
-# optimizer = optax.adam(learning_rate=cfg["learning_rate"])
-optimizer = optax.chain(
-    optax.clip_by_global_norm(0.2),  # Apply gradient clipping as in the article
-    optax.adam(learning_rate=cfg["learning_rate"]),
-)
+optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+# optimizer = optax.chain(
+#     optax.clip_by_global_norm(0.2),  # Apply gradient clipping as in the article
+#     optax.adam(learning_rate=cfg["learning_rate"]),
+# )
 opt_state = optimizer.init(plasticity_coeffs)
 expdata: dict[str, Any] = {}
 # resampled_xs, neural_recordings, decisions, rewards, expected_rewards = data
