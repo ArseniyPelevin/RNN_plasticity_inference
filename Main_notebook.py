@@ -49,7 +49,7 @@ config = {
 
     "input_firing_mean": 0,
     "input_firing_std": 0.1,  # Standard deviation of input firing rates
-    "input_noise_std": 0.01,  # Standard deviation of noise added to presynaptic layer
+    "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
     "synapse_learning_rate": 1e-3,
     "learning_rate": 1e-3,
 
