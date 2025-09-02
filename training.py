@@ -134,6 +134,7 @@ def training_loop(key, cfg, experiments,
                 exp.mask,
                 cfg,  # Static within losses
             )
+            # loss.block_until_ready() # For printing from inside plasticity func
             updates, opt_state = optimizer.update(
                 meta_grads, opt_state, plasticity_coeffs
             )
@@ -156,7 +157,6 @@ def train(key, cfg, experiments):
         cfg (dict): Configuration dictionary containing training parameters.
         experiments (list): List of experiments from class Experiment.
     """
-    print("New")
 
     key, plasticity_coeffs, plasticity_func, experiments = (
         initialize_training_params(key, cfg, experiments)

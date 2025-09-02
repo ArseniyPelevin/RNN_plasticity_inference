@@ -311,15 +311,15 @@ def plot_coeff_trajectories(exp_id, params_table):
     return fig
 
 
-
 # Set parameters and run experiment
-cfg.expid += 1
+# reload synapse
+cfg.expid = 31
 cfg.num_exp_train = 25
-cfg.num_hidden_pre = 100
-cfg.num_hidden_post = 100
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
 cfg.input_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 'Xavier'
+cfg.init_params_scale = 0.01
 run_experiment()
 
 # +
@@ -328,13 +328,13 @@ params_table = {
      10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
           "N_in": 100, "N_out": 1000, "N_exp": 50},
      11: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
+          "N_in": 100, "N_out": 1000, "N_exp": 50},  # nan
      12: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
           "N_in": 100, "N_out": 1000, "N_exp": 50},
      13: {'input_std': 1.0, 'synapse_lr': 1.0, 'init_w_std': 0.1,
           "N_in": 100, "N_out": 1000, "N_exp": 50},
      14: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.05,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
+          "N_in": 100, "N_out": 1000, "N_exp": 50},  # nan
      15: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.01,
           "N_in": 100, "N_out": 1000, "N_exp": 50},
      16: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.1,
@@ -364,7 +364,15 @@ params_table = {
      28: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
          "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
      29: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/100+100)',
-         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""}
+         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""},
+     30: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""},
+     31: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 10, "N_out": 10, "N_exp": 25},  # nan
+     32: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+     33: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 10, "N_out": 10, "N_exp": 25}  # nan
 }
 
 fig = plot_coeff_trajectories(cfg.expid, params_table)
