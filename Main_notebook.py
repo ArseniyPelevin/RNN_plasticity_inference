@@ -164,7 +164,7 @@ key, experiments = generate_experiments(
 
 
 # +
-fig, ax = plt.subplots(1, 3, figsize=(12, 6))
+fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 exp= 0
 session = 0
 
@@ -173,40 +173,56 @@ inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
 xs     = experiments[exp].data["xs"]       # (n_sess, n_steps, xdim)
 ys     = experiments[exp].data["ys"]       # (n_sess, n_steps, ydim)
 
-n_sess = inputs.shape[0]
+# n_sess = inputs.shape[0]
 
-# compute per-session order of step indices (ascending)
-order = jnp.argsort(jnp.squeeze(inputs, -1), axis=1)   # (n_sess, n_steps)
+# # compute per-session order of step indices (ascending)
+# order = jnp.argsort(jnp.squeeze(inputs, -1), axis=1)   # (n_sess, n_steps)
 
-# build row index for broadcasting:
-rows = jnp.arange(n_sess)[:, None]                      # (n_sess, 1)
+# # build row index for broadcasting:
+# rows = jnp.arange(n_sess)[:, None]                      # (n_sess, 1)
 
-# apply same permutation to xs and ys:
-xs_sorted = xs[rows, order]   # (n_sess, n_steps, xdim)
-ys_sorted = ys[rows, order]   # (n_sess, n_steps, ydim)
+# # apply same permutation to xs and ys:
+# xs_sorted = xs[rows, order]   # (n_sess, n_steps, xdim)
+# ys_sorted = ys[rows, order]   # (n_sess, n_steps, ydim)
 
-xs_ax = ax[0].imshow(xs_sorted[session], aspect='auto',
+xs_ax = ax[0].imshow(xs[session], aspect='auto',
                      cmap='viridis', interpolation='none')
-ys_ax = ax[1].imshow(ys_sorted[session], aspect='auto',
+ys_ax = ax[1].imshow(ys[session], aspect='auto',
                      cmap='viridis', interpolation='none')
-ws_ax = ax[2].imshow(experiments[exp].data['params'][0][0], aspect='auto',
-                     cmap='viridis', interpolation='none')
+# ws_ax = ax[2].imshow(experiments[exp].data['params'][0][0], aspect='auto',
+                    #  cmap='viridis', interpolation='none')
 fig.colorbar(xs_ax, ax=ax[0])
 fig.colorbar(ys_ax, ax=ax[1])
-fig.colorbar(ws_ax, ax=ax[2])
+# fig.colorbar(ws_ax, ax=ax[2])
+ax[0].set_title('Presynaptic')
+ax[1].set_title('Postsynaptic')
+ax[0].set_ylabel('Time step')
+ax[0].set_xlabel('Neuron')
+ax[1].set_xlabel('Neuron')
+ax[0].set_xlim(0-0.5, config["num_hidden_pre"])
+ax[0].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
+ax[1].set_xlim(0-0.5, config["num_hidden_post"])
+ax[1].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
 plt.show()
 
 # -
 
 print(len(experiments[0].data))
+yrange = 0
 for exp in experiments:
-    print(f'{exp.exp_i=}')
-    print(f'{exp.data["inputs"].shape=}')
-    print(f'{exp.data["xs"].shape=}')
-    print(f'{exp.data["ys"].shape=}')
-    print(f'{jnp.mean(exp.input_params)=}')
-    print(f'{exp.steps_per_session=}')
-    print(f'{exp.params[0].shape=}')
+    # print(f'{exp.exp_i=}')
+    # print(f'{exp.data["inputs"].shape=}')
+    # print(f'{exp.data["xs"].shape=}')
+    # print(f'{exp.data["ys"].shape=}')
+    # print(f'{jnp.mean(exp.input_params)=}')
+    # print(f'{exp.steps_per_session=}')
+    # print(f'{exp.params[0].shape=}')
+    yrange += jnp.max(exp.data["ys"][0, -1]) - jnp.min(exp.data["ys"][0, -1])
+print(f'{exp.data["ys"].shape=}')
+print(f'{jnp.min(exp.data["xs"])=}, {jnp.max(exp.data["xs"])=}')
+print(f'{jnp.min(exp.data["ys"][0, 0])=}, {jnp.max(exp.data["ys"][0, 0])=}')
+print(f'{jnp.min(exp.data["ys"][0, -1])=}, {jnp.max(exp.data["ys"][0, -1])=}')
+print(f'Average yrange: {yrange / len(experiments)}')
 
 
 # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
