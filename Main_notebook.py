@@ -89,80 +89,85 @@ config = {
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
 }
-
 cfg = OmegaConf.create(config)
 #TODO cfg = validate_config(cfg)
-key = jax.random.PRNGKey(cfg["expid"])
+# -
 
+def run_experiment():
+
+    key = jax.random.PRNGKey(cfg["expid"])
+
+    key, experiments = training.generate_data(key, cfg)
+
+    time_start = time.time()
+    key, plasticity_coeffs, plasticity_func, expdata = training.train(
+        key, cfg, experiments)
+    train_time = time.time() - time_start
+
+    expdata = training.evaluate_model(key, cfg,
+                                      plasticity_coeffs, plasticity_func,
+                                      expdata)
+
+    training.save_results(cfg, expdata, train_time)
+
+
+# +
+print("\nEXPERIMENT 10")
+cfg.expid = 10
+cfg.input_firing_std = 0.5
+run_experiment()
+
+print("\nEXPERIMENT 11")
+cfg.expid = 11
+cfg.input_firing_std = 0.1
+run_experiment()
+
+cfg.input_firing_std = 1
+
+print("\nEXPERIMENT 12")
+cfg.expid = 12
+cfg.synapse_learning_rate = 0.5
+run_experiment()
+
+print("\nEXPERIMENT 13")
+cfg.expid = 13
+cfg.synapse_learning_rate = 1
+run_experiment()
+
+cfg.synapse_learning_rate = 0.1
+
+print("\nEXPERIMENT 14")
+cfg.expid = 14
+cfg.initial_params_scale = 0.05
+run_experiment()
+
+print("\nEXPERIMENT 15")
+cfg.expid = 15
+cfg.initial_params_scale = 0.01
+run_experiment()
+
+cfg.initial_params_scale = 0.1
+
+print("\nEXPERIMENT 16")
+cfg.expid = 16
+run_experiment()
 
 # -
 
-def generate_experiments(key, cfg,
-                         generation_coeff, generation_func,
-                         global_teacher_init_params,
-                         mode="train"):
-    # Generate all experiments/trajectories
-    if mode == "train":
-        num_experiments = cfg.num_exp_train
-        print(f"\nGenerating {num_experiments} trajectories")
-    elif mode == "eval":
-        num_experiments = cfg.num_exp_eval
-        print(f"\nGenerating {num_experiments} trajectories")
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-
-    experiments = []
-    # experiments_data = {}
-    for exp_i in range(num_experiments):
-        # Pick random number of sessions in this experiment given mean and std
-        key, num_sessions = sample_truncated_normal(
-            key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
-        )
-        exp = experiment.Experiment(exp_i, cfg,
-                                    generation_coeff, generation_func,
-                                    num_sessions,
-                                    global_teacher_init_params)
-        experiments.append(exp)
-        # experiments_data[exp_i] = exp.data
-        print(f"Generated experiment {exp_i} with {num_sessions} sessions")
-
-    return key, experiments
-
+key = jax.random.PRNGKey(cfg["expid"])
+key, experiments = training.generate_data(key, cfg)
 
 # +
-importlib.reload(synapse)
-importlib.reload(experiment)
-importlib.reload(model)
-importlib.reload(losses)
-importlib.reload(utils)
-
-# Generate model activity
-key, plasticity_key, params_key = jax.random.split(key, 3)
-#TODO add branching for experimental data
-generation_coeff, generation_func = synapse.init_plasticity(
-    plasticity_key, cfg, mode="generation_model"
-)
-global_teacher_init_params = model.initialize_parameters(
-    params_key,
-    cfg["num_hidden_pre"], cfg["num_hidden_post"],
-    cfg["initial_params_scale"]
-)
-key, experiments = generate_experiments(
-    key, cfg, generation_coeff, generation_func,
-    global_teacher_init_params, mode="train",
-)
-
-
-# +
+# Plot xs and ys
 fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 exp= 0
 session = 0
-
 
 inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
 xs     = experiments[exp].data["xs"]       # (n_sess, n_steps, xdim)
 ys     = experiments[exp].data["ys"]       # (n_sess, n_steps, ydim)
 
+# # Sort by input (if discrete input classes)
 # n_sess = inputs.shape[0]
 
 # # compute per-session order of step indices (ascending)
