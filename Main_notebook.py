@@ -50,7 +50,7 @@ config = {
     "learning_rate": 3e-3,
 
     "input_params_scale": 1,
-    "initial_params_scale": 0.1,  # float or 'Xavier'
+    "init_params_scale": 0.1,  # float or 'Xavier'
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -144,15 +144,15 @@ cfg.synapse_learning_rate = 0.1
 
 print("\nEXPERIMENT 14")
 cfg.expid = 14
-cfg.initial_params_scale = 0.05
+cfg.init_params_scale = 0.05
 run_experiment()
 
 print("\nEXPERIMENT 15")
 cfg.expid = 15
-cfg.initial_params_scale = 0.01
+cfg.init_params_scale = 0.01
 run_experiment()
 
-cfg.initial_params_scale = 0.1
+cfg.init_params_scale = 0.1
 
 print("\nEXPERIMENT 16")
 cfg.expid = 16
@@ -315,52 +315,63 @@ def plot_coeff_trajectories(exp_id, params_table):
 # Set parameters and run experiment
 cfg.expid += 1
 cfg.num_exp_train = 25
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
+cfg.num_hidden_pre = 100
+cfg.num_hidden_post = 100
 cfg.input_firing_std = 1
-cfg.synapse_learning_rate = 0.1
-cfg.initial_params_scale = 'Xavier'
+cfg.synapse_learning_rate = 1
+cfg.init_params_scale = 'Xavier'
 run_experiment()
 
+# +
 # parameters table to include in subplot titles
 params_table = {
-    10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    11: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    12: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    13: {'input_std': 1.0, 'synapse_lr': 1.0, 'init_w_std': 0.1,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    14: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.05,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    15: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.01,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    16: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-         "N_in": 100, "N_out": 1000, "N_exp": 50},
-    17: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+     10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     11: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     12: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     13: {'input_std': 1.0, 'synapse_lr': 1.0, 'init_w_std': 0.1,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     14: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.05,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     15: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.01,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     16: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+          "N_in": 100, "N_out": 1000, "N_exp": 50},
+     17: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
          "N_in": 50, "N_out": 500, "N_exp": 25},
-    18: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+     18: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
          "N_in": 10, "N_out": 10, "N_exp": 50},
-    19: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+     19: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+          "N_in": 10, "N_out": 10, "N_exp": 25},
+     20: {'input_std': 0.1, 'synapse_lr': 1.0, 'init_w_std': 'Xavier (1/10+10)',
+          "N_in": 10, "N_out": 10, "N_exp": 25},
+     21: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
+          "N_in": 10, "N_out": 10, "N_exp": 25},
+     22: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
+          "N_in": 10, "N_out": 10, "N_exp": 25},
+     23: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
          "N_in": 10, "N_out": 10, "N_exp": 25},
-    20: {'input_std': 0.1, 'synapse_lr': 1.0, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-    21: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-    22: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-    23: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-    24: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/100+100)',
+     24: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/100+100)',
          "N_in": 100, "N_out": 100, "N_exp": 25},
-    25: {'input_std': 1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25}
+     25: {'input_std': 1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+     26: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
+     27: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
+     28: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
+     29: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/100+100)',
+         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""}
 }
+
 fig = plot_coeff_trajectories(cfg.expid, params_table)
 fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
+# -
 
 key = jax.random.PRNGKey(cfg["expid"])
 key, experiments = training.generate_data(key, cfg)

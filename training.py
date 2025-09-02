@@ -54,7 +54,7 @@ def generate_data(key, cfg, mode="train"):
     global_teacher_init_params = model.initialize_parameters(
         params_key,
         cfg["num_hidden_pre"], cfg["num_hidden_post"],
-        cfg["initial_params_scale"]
+        cfg["init_params_scale"]
     )
     key, experiments = generate_experiments(
         key, cfg, generation_coeff, generation_func,
@@ -63,25 +63,29 @@ def generate_data(key, cfg, mode="train"):
 
     return key, experiments
 
-def initialize_training_params(key, cfg, experiments):
+def initialize_training_params(key, cfg, experiments, new_params=None):
     key, init_plasticity_key, *init_params_keys = jax.random.split(
-        key, cfg["num_exp_train"]+2)
+        key, len(experiments)+2)
     # Initialize parameters for training
     plasticity_coeffs, plasticity_func = synapse.init_plasticity(
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    global_student_init_params = model.initialize_parameters(
-        init_params_keys[0],
-        cfg["num_hidden_pre"], cfg["num_hidden_post"],
-        cfg["initial_params_scale"]
-    )
+    if new_params is not None:
+        # TODO a temporary solution for same initial params
+        global_student_init_params = new_params
+    else:
+        global_student_init_params = model.initialize_parameters(
+            init_params_keys[0],
+            cfg["num_hidden_pre"], cfg["num_hidden_post"],
+            cfg["init_params_scale"]
+        )
     # TODO use this for real training
     for exp in experiments:
         # Prepare different initial synaptic weights for each simulated experiment,
         # but for now use the same initialization for all students
-        exp.new_initial_params = global_student_init_params
-        # exp.new_initial_params = model.initialize_parameters(
+        exp.new_init_params = global_student_init_params
+        # exp.new_init_params = model.initialize_parameters(
         #         init_params_keys[exp.exp_i],
         #         cfg["num_hidden_pre"], cfg["num_hidden_post"]
         #         )
@@ -97,7 +101,7 @@ def _compute_test_loss(key, cfg,
         loss = losses.loss(
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_params,
-            exp.initial_params,  # TODO <-- exp.new_initial_params,
+            exp.new_init_params,
             # Current plasticity coeffs, updated on each iteration:
             plasticity_coeffs,
             plasticity_func,  # Static within losses
@@ -122,7 +126,7 @@ def training_loop(key, cfg, experiments,
             loss, meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_params,
-                exp.initial_params,  # TODO <-- exp.new_initial_params,
+                exp.new_init_params,
                 # Current plasticity coeffs, updated on each iteration:
                 plasticity_coeffs,
                 plasticity_func,  # Static within losses
@@ -152,13 +156,18 @@ def train(key, cfg, experiments):
         cfg (dict): Configuration dictionary containing training parameters.
         experiments (list): List of experiments from class Experiment.
     """
+    print("New")
 
-    key, train_key = jax.random.split(key)
     key, plasticity_coeffs, plasticity_func, experiments = (
-        initialize_training_params(train_key, cfg, experiments)
+        initialize_training_params(key, cfg, experiments)
     )
 
     key, test_experiments = generate_data(key, cfg, mode="eval")
+    key, _plasticity_coeffs, _plasticity_func, test_experiments = (
+        initialize_training_params(key, cfg, test_experiments,
+                                   #TODO a temporary solution for same init_params
+                                   new_params=experiments[0].new_init_params)
+    )
     globals()['compute_test_loss'] = partial(_compute_test_loss,
                                              test_experiments=test_experiments)
 

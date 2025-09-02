@@ -39,12 +39,12 @@ class Experiment:
         # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
         # Prepare for different initial synaptic weights for each experiment,
         # but for now use the same initialization for all teachers
-        self.initial_params = global_teacher_init_params
-        # self.initial_params = model.initialize_parameters(
+        self.init_params = global_teacher_init_params
+        # self.init_params = model.initialize_parameters(
         #     params_key,
         #     cfg["num_hidden_pre"], cfg["num_hidden_post"]
         # )
-        self.params = self.initial_params  # Save to test model
+        self.params = self.init_params  # Save to test model
 
         key, data = self.generate_experiment(key, num_sessions)
         data, self.mask, self.steps_per_session = experiment_lists_to_tensors(data)

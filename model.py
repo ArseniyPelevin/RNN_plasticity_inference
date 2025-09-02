@@ -23,7 +23,7 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
     return input_params * input_params_scale
 
-def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
+def initialize_parameters(key, num_pre, num_post, init_params_scale=0.01):
     """Initialize parameters for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
@@ -32,18 +32,18 @@ def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
         key: JAX random key.
         num_pre: Number of presynaptic neurons.
         num_post: Number of postsynaptic neurons.
-        initial_params_scale: Scale for initializing parameters.
+        init_params_scale: Scale for initializing parameters.
 
     Returns:
         params: Tuple of (weights, biases) for the layer.
     """
     # Use ""Xavier normal"" (paper's Kaiming)
-    if initial_params_scale == 'Xavier':
-        initial_params_scale = 1 / jnp.sqrt(num_pre + num_post)
+    if init_params_scale == 'Xavier':
+        init_params_scale = 1 / jnp.sqrt(num_pre + num_post)
     # TODO loop inside a list for multilayer network
     weights = (
         jax.random.normal(key, shape=(num_pre, num_post))
-        * initial_params_scale
+        * init_params_scale
     )
     biases = jnp.zeros((num_post,))
     return weights, biases
@@ -165,7 +165,7 @@ def update_params(
 def simulate_trajectory(
     key,
     input_params,
-    initial_params,
+    init_params,
     plasticity_coeffs,  # Our current plasticity coefficients estimate
     plasticity_func,
     exp_inputs,  # Data of one whole experiment, (N_sessions, N_steps_per_session_max)
@@ -225,7 +225,7 @@ def simulate_trajectory(
     # Run outer scan over sessions
     params_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
-        initial_params,
+        init_params,
         (exp_inputs,
          exp_rewards,
          exp_expected_rewards,

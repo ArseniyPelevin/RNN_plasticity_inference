@@ -57,7 +57,7 @@ def neural_mse_loss(
 def loss(
     key,
     input_params,
-    initial_params,  # TODO update for each epoch/experiment
+    init_params,  # TODO update for each epoch/experiment
     plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
     data,
@@ -113,7 +113,7 @@ def loss(
     _params_final, activations = model.simulate_trajectory(
         key,
         input_params,
-        initial_params,
+        init_params,
         plasticity_coeffs,  # Our current plasticity coefficients estimate
         plasticity_func,
         inputs,  # Data of one whole experiment
