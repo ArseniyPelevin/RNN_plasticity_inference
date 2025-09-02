@@ -66,6 +66,7 @@ def network_forward(key, input_params, params, step_input, cfg):
     # Forward pass through plastic layer. x -- params --> y
     w, b = params
     y = jax.nn.sigmoid(x @ w + b)
+    # y = jnp.tanh(x @ w + b)
 
     # Compute output probability ((1,) logit) based on postsynaptic layer activity
     output = jnp.mean(y)

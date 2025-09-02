@@ -44,16 +44,16 @@ config = {
     "use_experimental_data": False,
 
     "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_eval": 0,
 
     "input_firing_mean": 0,
-    "input_firing_std": 0.1,  # Standard deviation of input firing rates
+    "input_firing_std": 1,  # Standard deviation of input firing rates
     "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
-    "synapse_learning_rate": 1,
+    "synapse_learning_rate": 0.05,
     "learning_rate": 1e-3,
 
     "input_params_scale": 1,
@@ -76,7 +76,7 @@ config = {
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
-    "expid": 2, # For saving results and seeding random
+    "expid": 6, # For saving results and seeding random
 
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
@@ -309,6 +309,9 @@ for epoch in range(cfg["num_epochs"] + 1):
         utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
 
 # -
+utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
+
+
 def evaluate_model(
     cfg: dict[str, Any],
     plasticity_coeff: Any,
@@ -344,7 +347,7 @@ def save_results(
     logdata_path = utils.save_logs(cfg, df)
     return logdata_path
 # Training time = 30 minutes:
-train_time = 30*60+6  # TODO hard code for now, implement counter later
+train_time = 10 * 60  # TODO hard code for now, implement counter later
 key, _ = jax.random.split(key)
 expdata = evaluate_model(cfg, plasticity_coeffs, plasticity_func, key, expdata)
 logdata_path = save_results(cfg, expdata, train_time)
