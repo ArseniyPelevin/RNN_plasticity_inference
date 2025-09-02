@@ -15,24 +15,14 @@
 # %load_ext autoreload
 # %autoreload 2
 
-# +
+import time
 
-import importlib
-from typing import Any  # TODO get rid of
-
-import experiment
 import jax
 import jax.numpy as jnp
-import losses
 import matplotlib.pyplot as plt
-import model
 import numpy as np
-import optax
-import pandas as pd
-import synapse
-import utils
+import training
 from omegaconf import OmegaConf
-from utils import sample_truncated_normal
 
 # +
 # coeff_mask = np.zeros((3, 3, 3, 3))
@@ -44,20 +34,20 @@ config = {
     "use_experimental_data": False,
 
     "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 50, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 500,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp_train": 25,  # Number of experiments/trajectories/animals
+    "num_exp_train": 50,  # Number of experiments/trajectories/animals
     "num_exp_eval": 0,
 
     "input_firing_mean": 0,
     "input_firing_std": 1,  # Standard deviation of input firing rates
     "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
-    "synapse_learning_rate": 0.05,
-    "learning_rate": 1e-3,
+    "synapse_learning_rate": 0.1,
+    "learning_rate": 3e-3,
 
     "input_params_scale": 1,
-    "initial_params_scale": 0.01,  # float or 'Xavier'
+    "initial_params_scale": 0.1,  # float or 'Xavier'
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -76,7 +66,7 @@ config = {
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
-    "expid": 6, # For saving results and seeding random
+    "expid": 10, # For saving results and seeding random
 
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
@@ -207,6 +197,7 @@ plt.show()
 
 # -
 
+# Print data
 print(len(experiments[0].data))
 yrange = 0
 for exp in experiments:
@@ -223,136 +214,4 @@ print(f'{jnp.min(exp.data["xs"])=}, {jnp.max(exp.data["xs"])=}')
 print(f'{jnp.min(exp.data["ys"][0, 0])=}, {jnp.max(exp.data["ys"][0, 0])=}')
 print(f'{jnp.min(exp.data["ys"][0, -1])=}, {jnp.max(exp.data["ys"][0, -1])=}')
 print(f'Average yrange: {yrange / len(experiments)}')
-
-
-# fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-# for exp_i, exp in enumerate(experiments[:5]):
-#     ax[0].plot(exp.data["xs"][0].mean(axis=-1), label=f"Experiment {exp_i}")
-#     ax[1].plot(exp.data["ys"][0].mean(axis=-1), label=f"Experiment {exp_i}")
-fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-for y in experiments[0].data["ys"][0].T:
-    ax.plot(y, alpha=0.1, color="blue")
-
-
-# +
-# importlib.reload(model)
-
-key, init_plasticity_key, *init_params_keys = jax.random.split(key, len(experiments)+2)
-# Initialize parameters for training
-plasticity_coeffs, plasticity_func = synapse.init_plasticity(
-    init_plasticity_key, cfg, mode="plasticity_model"
-)
-
-global_student_init_params = model.initialize_parameters(
-    init_params_keys[0],
-    cfg["num_hidden_pre"], cfg["num_hidden_post"],
-    cfg["initial_params_scale"]
-)
-# TODO use this for real training
-for exp in experiments:
-    # Prepare for different initial synaptic weights for each simulated experiment,
-    # but for now use the same initialization for all students
-    exp.new_initial_params = global_student_init_params
-    # exp.new_initial_params = model.initialize_parameters(
-    #         init_params_keys[exp.exp_i],
-    #         cfg["num_hidden_pre"], cfg["num_hidden_post"]
-    #         )
-
-
-# +
-importlib.reload(synapse)
-importlib.reload(experiment)
-importlib.reload(model)
-importlib.reload(losses)
-importlib.reload(utils)
-
-# Return value (scalar) of the function (loss value)
-# and gradient wrt its parameter at argnum (plasticity_coeffs)
-loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
-
-optimizer = optax.adam(learning_rate=cfg["learning_rate"])
-# optimizer = optax.chain(
-#     optax.clip_by_global_norm(0.2),  # Apply gradient clipping as in the article
-#     optax.adam(learning_rate=cfg["learning_rate"]),
-# )
-opt_state = optimizer.init(plasticity_coeffs)
-expdata: dict[str, Any] = {}
-# resampled_xs, neural_recordings, decisions, rewards, expected_rewards = data
-
-losses_list = []
-expdata = {}
-
-for epoch in range(cfg["num_epochs"] + 1):
-    for exp in experiments:
-        key, subkey = jax.random.split(key)
-        loss, meta_grads = loss_value_and_grad(
-            subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_params,
-            exp.initial_params,  # <--- TODO exp.new_initial_params,
-            plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
-            plasticity_func,  # Static within losses
-            exp.data['inputs'],
-            # exp.data['xs'],  # Don't need it, will recompute based on input_parameters
-            exp.data['ys'],
-            exp.data['decisions'],
-            exp.data['rewards'],
-            exp.data['expected_rewards'],
-            exp.mask,
-            cfg,  # Static within losses
-        )
-        updates, opt_state = optimizer.update(
-            meta_grads, opt_state, plasticity_coeffs
-        )
-        plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
-
-    if epoch % 10 == 0:
-        utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
-
-# -
-utils.print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss)
-
-
-def evaluate_model(
-    cfg: dict[str, Any],
-    plasticity_coeff: Any,
-    plasticity_func: Any,
-    key: jax.random.PRNGKey,
-    expdata: dict[str, Any],
-) -> dict[str, Any]:
-    """Evaluate the trained model."""
-    if cfg["num_exp_eval"] > 0:
-        r2_score, percent_deviance = model.evaluate(
-            key,
-            cfg,
-            plasticity_coeff,
-            plasticity_func,
-        )
-        expdata["percent_deviance"] = percent_deviance
-        if not cfg["use_experimental_data"]:
-            expdata["r2_weights"] = r2_score["weights"]
-            expdata["r2_activity"] = r2_score["activity"]
-    return expdata
-def save_results(
-    cfg: dict[str, Any], expdata: dict[str, Any], train_time: float
-) -> str:
-    """Save training logs and parameters."""
-    df = pd.DataFrame.from_dict(expdata)
-    df["train_time"] = train_time
-
-    # Add configuration parameters to DataFrame
-    for cfg_key, cfg_value in cfg.items():
-        if isinstance(cfg_value, (float | int | str)):
-            df[cfg_key] = cfg_value
-
-    logdata_path = utils.save_logs(cfg, df)
-    return logdata_path
-# Training time = 30 minutes:
-train_time = 10 * 60  # TODO hard code for now, implement counter later
-key, _ = jax.random.split(key)
-expdata = evaluate_model(cfg, plasticity_coeffs, plasticity_func, key, expdata)
-logdata_path = save_results(cfg, expdata, train_time)
-
-
-expdata_stashed = expdata.copy()
-
 
