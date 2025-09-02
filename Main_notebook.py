@@ -57,7 +57,7 @@ config = {
     "learning_rate": 1e-3,
 
     "input_params_scale": 1,
-    # "initial_params_scale": 0.01,  # Initialize with Xavier normal
+    "initial_params_scale": 0.01,  # float or 'Xavier'
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -84,7 +84,7 @@ config = {
     "plasticity_model": "volterra",
     "plasticity_coeffs_init_scale": 1e-4,
 
-    "regularization_type": "l1",
+    "regularization_type": "none",  # "l1", "l2", "none"
     "regularization_scale": 0,
 
     "fit_data": "neural",
@@ -154,7 +154,8 @@ generation_coeff, generation_func = synapse.init_plasticity(
 )
 global_teacher_init_params = model.initialize_parameters(
     params_key,
-    cfg["num_hidden_pre"], cfg["num_hidden_post"]
+    cfg["num_hidden_pre"], cfg["num_hidden_post"],
+    cfg["initial_params_scale"]
 )
 key, experiments = generate_experiments(
     key, cfg, generation_coeff, generation_func,
@@ -228,7 +229,8 @@ plasticity_coeffs, plasticity_func = synapse.init_plasticity(
 
 global_student_init_params = model.initialize_parameters(
     init_params_keys[0],
-    cfg["num_hidden_pre"], cfg["num_hidden_post"]
+    cfg["num_hidden_pre"], cfg["num_hidden_post"],
+    cfg["initial_params_scale"]
 )
 # TODO use this for real training
 for exp in experiments:

@@ -37,10 +37,13 @@ def initialize_parameters(key, num_pre, num_post, initial_params_scale=0.01):
     Returns:
         params: Tuple of (weights, biases) for the layer.
     """
+    # Use ""Xavier normal"" (paper's Kaiming)
+    if initial_params_scale == 'Xavier':
+        initial_params_scale = 1 / jnp.sqrt(num_pre + num_post)
     # TODO loop inside a list for multilayer network
     weights = (
         jax.random.normal(key, shape=(num_pre, num_post))
-        * 1 / (num_pre + num_post) # Use ""Xavier normal"" (paper's Kaiming)
+        * initial_params_scale
     )
     biases = jnp.zeros((num_post,))
     return weights, biases
