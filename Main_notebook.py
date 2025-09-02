@@ -15,13 +15,16 @@
 # %load_ext autoreload
 # %autoreload 2
 
+import os
 import time
 
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import training
+from matplotlib.lines import Line2D
 from omegaconf import OmegaConf
 
 # +
@@ -89,6 +92,7 @@ config = {
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
+    "fig_dir": "../../../../05_figures/"
 }
 cfg = OmegaConf.create(config)
 #TODO cfg = validate_config(cfg)
@@ -156,6 +160,208 @@ run_experiment()
 
 # -
 
+def plot_coeff_trajectories(exp_id, params_table):
+    """
+    Plot a single experiment's loss (top) and coefficient trajectories (bottom).
+
+    Args:
+        exp_id (int): single experiment id
+        params_table (dict): mapping exp_id -> dict of parameters for subplot title
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # single file path for the single experiment
+    path = r"..\\..\\..\\..\\03_data\\02_training_data\\"
+    fpath = os.path.join(path, f"exp_{exp_id}.csv")
+
+    # highlight a few columns (if they exist)
+    highlight = {"A_1100", "A_0210"}
+
+    # top = Loss, bottom = coeff trajectories
+    fig, axs = plt.subplots(2, 1, figsize=(12, 7))
+    top_ax, coeff_ax = axs
+
+    # --- read data ---
+    df = pd.read_csv(fpath)
+
+    # --- Top: loss subplot (backwards-compatible) ---
+    epochs = df['epoch']
+
+    if 'train_loss' in df.columns and 'test_loss' in df.columns:
+        top_ax.plot(epochs, df['train_loss'], color='blue', label='train_loss')
+        top_ax.plot(epochs, df['test_loss'], color='red', label='test_loss')
+    elif 'loss' in df.columns:
+        # older files had only 'loss' column — plot it as 'train_loss'
+        top_ax.plot(epochs, df['loss'], color='blue', label='train_loss')
+
+    top_ax.set_title("Loss")
+    top_ax.legend(loc='upper right')
+    top_ax.grid(True)
+    top_ax.set_yscale('log')
+    top_ax.set_ylabel('Loss (log scale)')
+
+    # --- Bottom: coefficient trajectories ---
+    # Heuristic: columns that end with a 4-digit suffix like "_abcd"
+    # and we prefer those ending with '0'
+    candidate_cols = [c for c in df.columns[:200]
+                      if len(str(c).split('_')[-1]) == 4]
+    data_cols = [c for c in candidate_cols
+                 if str(c).split('_')[-1].endswith('0')]
+
+    # Fallback: if nothing found, use all columns except loss/epoch
+    if not data_cols:
+        excluded = {'epoch', 'loss', 'train_loss', 'test_loss'}
+        data_cols = [c for c in df.columns if c not in excluded]
+
+    if not data_cols:
+        coeff_ax.text(0.5, 0.5, "No coefficient columns found in CSV",
+                      ha='center', va='center')
+        plt.show()
+        return
+
+    # group by w-exponent (third digit of suffix) for coloring / styling
+    groups = {}
+    for c in data_cols:
+        suffix = str(c).split('_')[-1]
+        a, b, w, r = map(int, list(suffix))
+        groups.setdefault(w, []).append(c)
+
+    # deterministic ordering key
+    def col_key(col):
+        s = str(col).split('_')[-1]
+        return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
+                else (0, 0, 0, 0))
+
+    # assign colors within each w-group
+    color_map = {}
+    for _wexp, cols in groups.items():
+        cols_sorted = sorted(cols, key=col_key)
+        n = len(cols_sorted)
+        cmap = plt.get_cmap('Set1')
+        colors = [cmap(0.5)] if n == 1 else [cmap(t)
+                                             for t in np.linspace(0, 1, n)]
+        for col, colcolor in zip(cols_sorted, colors, strict=False):
+            color_map[col] = colcolor
+
+    # pretty labels
+    def pretty_label(col):
+        suffix = str(col).split('_')[-1]
+        a, b, c_, d = map(int, list(suffix))
+        parts = []
+        for exp, var in ((a, 'x'), (b, 'y'), (c_, 'w'), (d, 'r')):
+            if exp == 0:
+                continue
+            if exp == 1:
+                parts.append(var)
+            else:
+                parts.append(f"{var}^{{{exp}}}")
+        return f"${''.join(parts)}$" if parts else col
+
+    label_map = {c: pretty_label(c) for c in data_cols}
+    linestyle_map = {0: '-', 1: '--', 2: ':'}
+
+    x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
+    ax = coeff_ax
+    for c in data_cols:
+        suffix = str(c).split('_')[-1]
+        wexp = int(suffix[2])
+        lw = 3 if c in highlight else 2
+        ls = linestyle_map.get(wexp, '-')
+        ax.plot(x, df[c], label=label_map.get(c, c), linewidth=lw, linestyle=ls,
+                color=color_map.get(c))
+
+    # title with params if available
+    basename = os.path.basename(fpath)
+    exp_num = int(basename.split('_')[1].split('.')[0])
+    if exp_num is not None and exp_num in params_table:
+        p = params_table[exp_num]
+        param_str = ', '.join(f'{key}={value}' for key, value in p.items())
+        ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+    else:
+        ax.set_title(basename, fontsize=12)
+
+    ax.grid(True)
+    ax.set_xlabel('epoch')
+
+    # single legend with pretty labels (ordered by data_cols)
+    legend_handles = []
+    legend_labels = []
+    for c in data_cols:
+        suffix = str(c).split('_')[-1]
+        wexp = int(suffix[2])
+        legend_handles.append(Line2D([0], [0], color=color_map.get(c),
+                                     lw=(3 if c in highlight else 2),
+                                     linestyle=linestyle_map.get(wexp, '-')))
+        legend_labels.append(label_map.get(c, c))
+
+    fig.subplots_adjust(bottom=0.2, hspace=0.35)
+
+    # place legend below the figure (centered)
+    fig.legend(legend_handles, legend_labels,
+               loc='lower center',
+               bbox_to_anchor=(0.5, -0.04),
+               ncol=9,
+               fontsize=12,
+               frameon=False,
+               handlelength=2.0)
+
+    plt.show()
+
+    return fig
+
+
+
+# Set parameters and run experiment
+cfg.expid += 1
+cfg.num_exp_train = 25
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
+cfg.input_firing_std = 1
+cfg.synapse_learning_rate = 0.1
+cfg.initial_params_scale = 'Xavier'
+run_experiment()
+
+# parameters table to include in subplot titles
+params_table = {
+    10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    11: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    12: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    13: {'input_std': 1.0, 'synapse_lr': 1.0, 'init_w_std': 0.1,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    14: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.05,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    15: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.01,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    16: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.1,
+         "N_in": 100, "N_out": 1000, "N_exp": 50},
+    17: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+         "N_in": 50, "N_out": 500, "N_exp": 25},
+    18: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 50},
+    19: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+    20: {'input_std': 0.1, 'synapse_lr': 1.0, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+    21: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+    22: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+    23: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+    24: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/100+100)',
+         "N_in": 100, "N_out": 100, "N_exp": 25},
+    25: {'input_std': 1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
+         "N_in": 10, "N_out": 10, "N_exp": 25}
+}
+fig = plot_coeff_trajectories(cfg.expid, params_table)
+fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
+            dpi=300, bbox_inches="tight")
+plt.close(fig)
+
 key = jax.random.PRNGKey(cfg["expid"])
 key, experiments = training.generate_data(key, cfg)
 
@@ -196,9 +402,9 @@ ax[1].set_title('Postsynaptic')
 ax[0].set_ylabel('Time step')
 ax[0].set_xlabel('Neuron')
 ax[1].set_xlabel('Neuron')
-ax[0].set_xlim(0-0.5, config["num_hidden_pre"])
+ax[0].set_xlim(0-0.5, cfg["num_hidden_pre"])
 ax[0].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
-ax[1].set_xlim(0-0.5, config["num_hidden_post"])
+ax[1].set_xlim(0-0.5, cfg["num_hidden_post"])
 ax[1].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
 plt.show()
 
