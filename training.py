@@ -1,4 +1,5 @@
 
+from functools import partial
 from typing import Any  # TODO get rid of
 
 import experiment
@@ -43,7 +44,7 @@ def generate_experiments(key, cfg,
 
     return key, experiments
 
-def generate_data(key, cfg):
+def generate_data(key, cfg, mode="train"):
     # Generate model activity
     key, plasticity_key, params_key = jax.random.split(key, 3)
     #TODO add branching for experimental data
@@ -57,7 +58,7 @@ def generate_data(key, cfg):
     )
     key, experiments = generate_experiments(
         key, cfg, generation_coeff, generation_func,
-        global_teacher_init_params, mode="train",
+        global_teacher_init_params, mode,
     )
 
     return key, experiments
@@ -87,26 +88,45 @@ def initialize_training_params(key, cfg, experiments):
 
     return key, plasticity_coeffs, plasticity_func, experiments
 
+def _compute_test_loss(key, cfg,
+                      plasticity_coeffs, plasticity_func,
+                      test_experiments):
+    test_loss = 0
+    for exp in test_experiments:
+        key, subkey = jax.random.split(key)
+        loss = losses.loss(
+            subkey,  # Pass subkey this time, because loss will not return key
+            exp.input_params,
+            exp.initial_params,  # TODO <-- exp.new_initial_params,
+            # Current plasticity coeffs, updated on each iteration:
+            plasticity_coeffs,
+            plasticity_func,  # Static within losses
+            exp.data,
+            exp.mask,
+            cfg,  # Static within losses
+        )
+
+        test_loss += loss
+
+    test_loss /= len(test_experiments)
+    return key, test_loss
+
 def training_loop(key, cfg, experiments,
                   loss_value_and_grad, optimizer, opt_state,
                   plasticity_coeffs, plasticity_func,
                   expdata):
     for epoch in range(cfg["num_epochs"] + 1):
+
         for exp in experiments:
             key, subkey = jax.random.split(key)
             loss, meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_params,
-                exp.initial_params,  # <--- TODO exp.new_initial_params,
+                exp.initial_params,  # TODO <-- exp.new_initial_params,
                 # Current plasticity coeffs, updated on each iteration:
                 plasticity_coeffs,
                 plasticity_func,  # Static within losses
-                exp.data['inputs'],
-                # exp.data['xs'],  # Not needed, will recompute from input_parameters
-                exp.data['ys'],
-                exp.data['decisions'],
-                exp.data['rewards'],
-                exp.data['expected_rewards'],
+                exp.data,
                 exp.mask,
                 cfg,  # Static within losses
             )
@@ -115,9 +135,13 @@ def training_loop(key, cfg, experiments,
             )
             plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
 
-        if epoch % 10 == 0:
+        if epoch % cfg.log_interval == 0:
+            key, test_loss = compute_test_loss(
+                key, cfg, plasticity_coeffs, plasticity_func
+            )
             expdata = utils.print_and_log_training_info(
-                cfg, expdata, plasticity_coeffs, epoch, loss)
+                cfg, expdata, plasticity_coeffs, epoch, loss, test_loss
+            )
     return key, plasticity_coeffs, plasticity_func, expdata
 
 def train(key, cfg, experiments):
@@ -134,15 +158,20 @@ def train(key, cfg, experiments):
         initialize_training_params(train_key, cfg, experiments)
     )
 
+    key, test_experiments = generate_data(key, cfg, mode="eval")
+    globals()['compute_test_loss'] = partial(_compute_test_loss,
+                                             test_experiments=test_experiments)
+
     # Return value (scalar) of the function (loss value)
     # and gradient wrt its parameter at argnum (plasticity_coeffs)
     loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
 
-    optimizer = optax.adam(learning_rate=cfg["learning_rate"])
-    # optimizer = optax.chain(
-    #     optax.clip_by_global_norm(0.2),  # Apply gradient clipping as in the article
-    #     optax.adam(learning_rate=cfg["learning_rate"]),
-    # )
+    # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+    # Apply gradient clipping as in the article
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(0.2),
+        optax.adam(learning_rate=cfg["learning_rate"]),
+    )
     opt_state = optimizer.init(plasticity_coeffs)
     expdata = {}
 
@@ -155,25 +184,28 @@ def train(key, cfg, experiments):
     return key, plasticity_coeffs, plasticity_func, expdata
 
 def evaluate_model(
-    key: jax.random.PRNGKey,
-    cfg: dict[str, Any],
-    plasticity_coeff: Any,
-    plasticity_func: Any,
-    expdata: dict[str, Any],
-) -> dict[str, Any]:
+    key,
+    cfg,
+    plasticity_coeffs,
+    plasticity_func,
+    expdata
+):
     """Evaluate the trained model."""
     if cfg["num_exp_eval"] > 0:
-        r2_score, percent_deviance = model.evaluate(
-            key,
-            cfg,
-            plasticity_coeff,
-            plasticity_func,
-        )
-        expdata["percent_deviance"] = percent_deviance
-        if not cfg["use_experimental_data"]:
-            expdata["r2_weights"] = r2_score["weights"]
-            expdata["r2_activity"] = r2_score["activity"]
-    return expdata
+        pass
+
+        # r2_score, percent_deviance = model.evaluate(
+        #     key,
+        #     cfg,
+        #     plasticity_coeff,
+        #     plasticity_func,
+        #     activations?
+        # )
+        # expdata["percent_deviance"] = percent_deviance
+        # if not cfg["use_experimental_data"]:
+        #     expdata["r2_weights"] = r2_score["weights"]
+        #     expdata["r2_activity"] = r2_score["activity"]
+    return key, expdata
 
 def save_results(
     cfg: dict[str, Any], expdata: dict[str, Any], train_time: float

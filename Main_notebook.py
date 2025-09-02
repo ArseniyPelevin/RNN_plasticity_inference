@@ -38,7 +38,7 @@ config = {
     "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "num_exp_train": 50,  # Number of experiments/trajectories/animals
-    "num_exp_eval": 0,
+    "num_exp_eval": 5,
 
     "input_firing_mean": 0,
     "input_firing_std": 1,  # Standard deviation of input firing rates
@@ -66,7 +66,7 @@ config = {
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
-    "expid": 10, # For saving results and seeding random
+    "expid": 17, # For saving results and seeding random
 
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
@@ -86,6 +86,7 @@ config = {
     "coeff_mask": coeff_mask.tolist(),
 
     "log_expdata": True,
+    "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
 }
@@ -104,7 +105,7 @@ def run_experiment():
         key, cfg, experiments)
     train_time = time.time() - time_start
 
-    expdata = training.evaluate_model(key, cfg,
+    key, expdata = training.evaluate_model(key, cfg,
                                       plasticity_coeffs, plasticity_func,
                                       expdata)
 
@@ -112,6 +113,7 @@ def run_experiment():
 
 
 # +
+# Run Exp10-16
 print("\nEXPERIMENT 10")
 cfg.expid = 10
 cfg.input_firing_std = 0.5

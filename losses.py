@@ -60,11 +60,7 @@ def loss(
     initial_params,  # TODO update for each epoch/experiment
     plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
-    inputs,
-    exp_traj_ys,  # For computing the neural loss
-    exp_traj_decisions,  # For computing the behavior loss
-    rewards,
-    expected_rewards,
+    data,
     mask,
     cfg,  # Static within losses
 ):
@@ -86,6 +82,17 @@ def loss(
     Returns:
         float: Loss for the cross entropy model.
     """
+
+    (inputs,
+    exp_traj_ys,  # For computing the neural loss
+    exp_traj_decisions,  # For computing the behavior loss
+    rewards,
+    expected_rewards) = (data['inputs'],
+                         # data['xs'],  # Not needed, will recompute from inputs
+                         data['ys'],
+                         data['decisions'],
+                         data['rewards'],
+                         data['expected_rewards'])
 
     if cfg.plasticity_model == "volterra":
         # Apply mask to plasticity coefficients to enforce constraints

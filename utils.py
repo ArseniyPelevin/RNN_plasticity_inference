@@ -208,7 +208,8 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
+def print_and_log_training_info(cfg, expdata, plasticity_coeffs, 
+                                epoch, train_loss, test_loss):
     """
     Logs and prints training information including epoch, loss, and plasticity coefficients.
 
@@ -224,7 +225,8 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
     """
     
     logging.info(f"Epoch: {epoch}")
-    logging.info(f"Loss: {loss}")
+    logging.info(f"Loss: {train_loss}")
+    logging.info(f"Test Loss: {test_loss}")
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)
@@ -241,8 +243,8 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
         top_indices = np.argsort(
             np.abs(plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten())
-        )[-10:]
-        print(f'{epoch=}, loss={loss}')
+        )[-5:]
+        print(f'epoch={epoch}, train_loss={train_loss}, test_loss={test_loss}')
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
         for idx in reversed(top_indices):
@@ -271,7 +273,8 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
         expdata.setdefault("mlp_params", []).append(plasticity_coeffs)
 
     expdata.setdefault("epoch", []).append(epoch)
-    expdata.setdefault("loss", []).append(loss)
+    expdata.setdefault("train_loss", []).append(train_loss)
+    expdata.setdefault("test_loss", []).append(test_loss)
 
     return expdata
 
