@@ -15,16 +15,20 @@
 # %load_ext autoreload
 # %autoreload 2
 
+import importlib
 import os
 import time
 
 import jax
 import jax.numpy as jnp
+import losses
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import synapse
 import training
 from matplotlib.lines import Line2D
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from omegaconf import OmegaConf
 
 # +
@@ -429,14 +433,17 @@ key = jax.random.PRNGKey(cfg["expid"])
 key, experiments = training.generate_data(key, cfg)
 
 # +
-# Plot xs and ys
-fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-exp= 0
+# Plot xs and ys, optionally evolution of weights
+
+# fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+exp = 0
 session = 0
 
-inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
-xs     = experiments[exp].data["xs"]       # (n_sess, n_steps, xdim)
-ys     = experiments[exp].data["ys"]       # (n_sess, n_steps, ydim)
+# inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
+xs = experiments[exp].data["xs"][0]  # (n_sess, n_steps, xdim)
+ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
+# xs = x_bad
+# ys = y_bad
 
 # # Sort by input (if discrete input classes)
 # n_sess = inputs.shape[0]
@@ -451,26 +458,62 @@ ys     = experiments[exp].data["ys"]       # (n_sess, n_steps, ydim)
 # xs_sorted = xs[rows, order]   # (n_sess, n_steps, xdim)
 # ys_sorted = ys[rows, order]   # (n_sess, n_steps, ydim)
 
-xs_ax = ax[0].imshow(xs[session], aspect='auto',
-                     cmap='viridis', interpolation='none')
-ys_ax = ax[1].imshow(ys[session], aspect='auto',
-                     cmap='viridis', interpolation='none')
-# ws_ax = ax[2].imshow(experiments[exp].data['params'][0][0], aspect='auto',
-                    #  cmap='viridis', interpolation='none')
-fig.colorbar(xs_ax, ax=ax[0])
-fig.colorbar(ys_ax, ax=ax[1])
-# fig.colorbar(ws_ax, ax=ax[2])
-ax[0].set_title('Presynaptic')
-ax[1].set_title('Postsynaptic')
-ax[0].set_ylabel('Time step')
-ax[0].set_xlabel('Neuron')
-ax[1].set_xlabel('Neuron')
-ax[0].set_xlim(0-0.5, cfg["num_hidden_pre"])
-ax[0].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
-ax[1].set_xlim(0-0.5, cfg["num_hidden_post"])
-ax[1].set_ylim(cfg["mean_steps_per_trial"], 0-0.5)
-plt.show()
+vmin, vmax = -30, 3
+fig = plt.figure(figsize=(12, 6))
+gs = fig.add_gridspec(1, 1)
+# two rows: top - x and y, bottom - w evolution
+# gs = fig.add_gridspec(2, 1, height_ratios=[1, 2], hspace=0.25)
 
+# Top: plot x and y
+top_gs = gs[0].subgridspec(1, 2, wspace=0.25)
+ax_xs = fig.add_subplot(top_gs[0, 0])
+ax_ys = fig.add_subplot(top_gs[0, 1])
+
+im_xs = ax_xs.imshow(xs, aspect='auto', cmap='viridis', interpolation='none')
+im_ys = ax_ys.imshow(ys, aspect='auto', cmap='viridis', interpolation='none')
+
+# colorbars for top axes (narrow to the right)
+for ax, im in [(ax_xs, im_xs), (ax_ys, im_ys)]:
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="3%", pad=0.05)
+    fig.colorbar(im, cax=cax)
+
+ax_xs.set_title('Presynaptic')
+ax_ys.set_title('Postsynaptic')
+ax_xs.set_ylabel('Time step')
+ax_xs.set_xlabel('Neuron')
+ax_ys.set_xlabel('Neuron')
+
+ax_xs.set_xlim(-0.5, cfg["num_hidden_pre"])
+ax_xs.set_ylim(cfg["mean_steps_per_trial"], -0.5)
+ax_ys.set_xlim(-0.5, cfg["num_hidden_post"])
+ax_ys.set_ylim(cfg["mean_steps_per_trial"], -0.5)
+
+# Bottom: w evolution
+# bot_gs = gs[1].subgridspec(4, 5, hspace=0.35, wspace=0.25)
+# axs = []
+# for r in range(4):
+#     for c in range(5):
+#         axs.append(fig.add_subplot(bot_gs[r, c]))
+
+# for idx, step in enumerate(range(30, 50)):
+#     ax = axs[idx]
+#     im = ax.imshow(w[step], aspect='equal', cmap='viridis',
+#                    interpolation='none', vmin=vmin, vmax=vmax)
+#     ax.set_title(f'step {step}')
+#     ax.set_xticks([]); ax.set_yticks([])
+
+#     # small colorbar to the right of each image
+#     divider = make_axes_locatable(ax)
+#     cax = divider.append_axes("right", size="4%", pad=0.04)
+#     fig.colorbar(im, cax=cax)
+
+# # remove any unused axes (if any)
+# for j in range(len(range(30,50)), len(axs)):
+#     fig.delaxes(axs[j])
+
+plt.tight_layout()
+plt.show()
 # -
 
 # Print data
