@@ -98,7 +98,7 @@ def _compute_test_loss(key, cfg,
     test_loss = 0
     for exp in test_experiments:
         key, subkey = jax.random.split(key)
-        loss = losses.loss(
+        loss, _activations = losses.loss(
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_params,
             exp.new_init_params,
@@ -119,11 +119,12 @@ def training_loop(key, cfg, experiments,
                   loss_value_and_grad, optimizer, opt_state,
                   plasticity_coeffs, plasticity_func,
                   expdata):
-    for epoch in range(cfg["num_epochs"] + 1):
-
+    activation_trajs = [[None for _ in range(len(experiments))]
+                        for _ in range(cfg["num_epochs"] + 1)]
+    for epoch in range(cfg["num_epochs"] + 1):  # +1 so that we have 250th epoch
         for exp in experiments:
             key, subkey = jax.random.split(key)
-            loss, meta_grads = loss_value_and_grad(
+            (loss, activations), meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_params,
                 exp.new_init_params,
@@ -134,7 +135,7 @@ def training_loop(key, cfg, experiments,
                 exp.mask,
                 cfg,  # Static within losses
             )
-            # loss.block_until_ready() # For printing from inside plasticity func
+            activation_trajs[epoch][exp.exp_i] = activations
             updates, opt_state = optimizer.update(
                 meta_grads, opt_state, plasticity_coeffs
             )
@@ -147,7 +148,7 @@ def training_loop(key, cfg, experiments,
             expdata = utils.print_and_log_training_info(
                 cfg, expdata, plasticity_coeffs, epoch, loss, test_loss
             )
-    return key, plasticity_coeffs, plasticity_func, expdata
+    return key, plasticity_coeffs, plasticity_func, expdata, activation_trajs
 
 def train(key, cfg, experiments):
     """Train the model with the given configuration and experiments.
@@ -172,11 +173,11 @@ def train(key, cfg, experiments):
                                              test_experiments=test_experiments)
 
     # Return value (scalar) of the function (loss value)
-    # and gradient wrt its parameter at argnum (plasticity_coeffs)
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3) # !Check argnums!
+    # and gradient wrt its parameter at argnum (plasticity_coeffs) - !Check argnums!
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3, has_aux=True)
 
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
-    # Apply gradient clipping as in the article
+    # Apply gradient clipping as in the article. Works on grad(coeffs), not weights!
     optimizer = optax.chain(
         optax.clip_by_global_norm(0.2),
         optax.adam(learning_rate=cfg["learning_rate"]),
@@ -184,13 +185,13 @@ def train(key, cfg, experiments):
     opt_state = optimizer.init(plasticity_coeffs)
     expdata = {}
 
-    key, plasticity_coeffs, plasticity_func, expdata = training_loop(
+    key, plasticity_coeffs, plasticity_func, expdata, activation_trajs = training_loop(
         key, cfg, experiments,
         loss_value_and_grad, optimizer, opt_state,
         plasticity_coeffs, plasticity_func,
         expdata)
 
-    return key, plasticity_coeffs, plasticity_func, expdata
+    return key, plasticity_coeffs, plasticity_func, expdata, activation_trajs
 
 def evaluate_model(
     key,

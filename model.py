@@ -207,6 +207,8 @@ def simulate_trajectory(
                                       plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
+            if cfg.return_params_trajectory:
+                return params, (params, x, y, output)
             return params, (x, y, output)
 
         # Run inner scan over steps within one session

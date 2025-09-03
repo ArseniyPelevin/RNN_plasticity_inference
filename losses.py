@@ -123,8 +123,12 @@ def loss(
         cfg
     )
 
-    _sim_traj_xs, sim_traj_ys, sim_traj_outputs = activations
+    if cfg.return_params_trajectory:
+        _sim_traj_params, _sim_traj_xs, sim_traj_ys, sim_traj_outputs = activations
+    else:
+        _sim_traj_xs, sim_traj_ys, sim_traj_outputs = activations
 
+    # Allow python 'if' in jitted function because cfg is static
     if "neural" in cfg.fit_data:
         neural_loss = neural_mse_loss(
             # subkey,
@@ -139,6 +143,8 @@ def loss(
     if "behavior" in cfg.fit_data:
         behavior_loss = behavior_ce_loss(exp_traj_decisions, sim_traj_outputs)
         loss += behavior_loss
-
     # loss = regularization + neural_loss + behavior_loss
-    return loss
+
+    if cfg.return_trajectories:
+        return loss, activations
+    return loss, None

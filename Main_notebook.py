@@ -88,6 +88,9 @@ config = {
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
 
+    "return_trajectories": False,
+    "return_params_trajectory": False,
+
     "log_expdata": True,
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
@@ -105,7 +108,7 @@ def run_experiment():
     key, experiments = training.generate_data(key, cfg)
 
     time_start = time.time()
-    key, plasticity_coeffs, plasticity_func, expdata = training.train(
+    key, plasticity_coeffs, plasticity_func, expdata, activation_trajs = training.train(
         key, cfg, experiments)
     train_time = time.time() - time_start
 
@@ -114,6 +117,8 @@ def run_experiment():
                                       expdata)
 
     training.save_results(cfg, expdata, train_time)
+
+    return activation_trajs
 
 
 # +
