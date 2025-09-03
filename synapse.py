@@ -18,61 +18,26 @@ def volterra_plasticity_function(x, y, w, r, coeff):
       returns dw: (N_pre, N_post)
     """
 
-    _ = jax.lax.cond(jnp.any(jnp.isnan(x)),
-                     lambda: (jax.debug.print('In plasticity_function x on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(y)),
-                     lambda: (jax.debug.print('In plasticity_function y on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(w)),
-                     lambda: (jax.debug.print('In plasticity_function w on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(r)),
-                     lambda: (jax.debug.print('In plasticity_function r on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(coeff)),
-                     lambda: (jax.debug.print('In plasticity_function coeff on input is NaN'), 0)[1],
-                     lambda: 0)
-
     # basis powers
     X = jnp.stack([jnp.ones_like(x), x, x * x], axis=0)  # (3, N_pre)
     Y = jnp.stack([jnp.ones_like(y), y, y * y], axis=0)  # (3, N_post)
     W = jnp.stack([jnp.ones_like(w), w, w * w], axis=0)  # (3, N_pre, N_post)
     R = jnp.array([1.0, r, r * r])  # (3,)
 
-    _ = jax.lax.cond(jnp.any(jnp.isnan(X)),
-                     lambda: (jax.debug.print('In plasticity_function X on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(Y)),
-                     lambda: (jax.debug.print('In plasticity_function Y on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(W)),
-                     lambda: (jax.debug.print('In plasticity_function W on input is NaN'), 0)[1],
-                     lambda: 0)
-    _ = jax.lax.cond(jnp.any(jnp.isnan(R)),
-                     lambda: (jax.debug.print('In plasticity_function R on input is NaN'), 0)[1],
-                     lambda: 0)
-
     # successive contractions to keep memory stable:
     # 1) contract coeff over r-powers -> (3,3,3)
     theta_R = jnp.tensordot(coeff, R, axes=(3, 0))  # (a,b,c)
     # 2) mix in weight powers -> (3,3,N_pre,N_post)
-
-    _ = jax.lax.cond(jnp.any(jnp.isnan(theta_R)),
-                     lambda: (jax.debug.print('In plasticity_function theta_R is NaN'), 0)[1],
-                     lambda: 0)
-    
     theta_WR = jnp.einsum('abc,cji->abji', theta_R, W)  # (a,b,j,i)
-
-    _ = jax.lax.cond(jnp.any(jnp.isnan(theta_WR)),
-                     lambda: (jax.debug.print('In plasticity_function theta_WR is NaN'), 0)[1],
-                     lambda: 0)
     # 3) combine with x- and y-powers -> (N_pre, N_post)
     dw = jnp.einsum('aj,bi,abji->ji', X, Y, theta_WR)  # (j,i)
 
-    _ = jax.lax.cond(jnp.any(jnp.isnan(dw)),
-                     lambda: (jax.debug.print('In plasticity_function dw is NaN:\nX:\n{}\nY:\n{}\ntheta_WR:\n{}\ntheta_R:\n{}\nW:\n{}\n', X, Y, theta_WR, theta_R, W), 0)[1],
-                     lambda: 0)
+    # Use if NaN needs to be inspected
+    # _ = jax.lax.cond(jnp.any(jnp.isnan(dw)),
+    #                  lambda: (jax.debug.print('In plasticity_function dw is NaN:\n',
+    #     'X:\n{}\nY:\n{}\nW:\n{}\nR:\n{}\ncoeff:\n{}\ntheta_R:\n{}\ntheta_WR:\n{}\n\n',
+    #     X, Y, W, R, coeff, theta_R, theta_WR), 0)[1],
+    #                  lambda: 0)
     return dw
 
 def volterra_synapse_tensor(x, y, w, r):
@@ -137,7 +102,6 @@ def init_zeros():
 
 
 def init_random(key, scale):
-    assert key is not None, "For random initialization, a random key has to be given"
     return generate_gaussian(key, (3, 3, 3, 3), scale=scale)
 
 
