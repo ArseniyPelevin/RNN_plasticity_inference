@@ -317,15 +317,52 @@ def plot_coeff_trajectories(exp_id, params_table):
 
 
 # Set parameters and run experiment
+# # Reload synapse module:
+importlib.reload(synapse)
+importlib.reload(training)
+importlib.reload(losses)
 # reload synapse
-cfg.expid = 31
+cfg.expid = 34
 cfg.num_exp_train = 25
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
 cfg.input_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 0.01
-run_experiment()
+cfg.init_params_scale = 0.1
+activation_trajs = run_experiment()
+
+# +
+# Diagnose trajectories for NaN
+print(len(activation_trajs)) # num epochs
+print(len(activation_trajs[0])) # num experiments
+print(len(activation_trajs[0][0])) # (x, y, output)
+print(activation_trajs[0][0][0][0].shape)  # w.shape
+print(activation_trajs[0][0][0][1].shape)  # b.shape
+print(activation_trajs[0][0][1].shape)  # x.shape
+print(activation_trajs[0][0][2].shape)  # y.shape
+print(activation_trajs[0][0][3].shape)  # output.shape
+
+def find_first_nan_y(activation_trajs):
+    """
+    Returns (epoch_idx, exp_idx, y_array(50,10)) for the first y containing NaN.
+    If none found returns (None, None, None).
+    """
+    for e_idx, epoch in enumerate(activation_trajs):
+        for ex_idx, trajs in enumerate(epoch):
+            y = np.asarray(trajs[2]).squeeze()
+            x = np.asarray(trajs[1]).squeeze()
+            mask_rows = np.any(np.isnan(y), axis=1)
+            rows = np.where(mask_rows)[0]
+            if rows.size:
+                return e_idx, ex_idx, int(rows[0]), x, y
+    return None, None, None
+
+# example usage:
+epoch_i, exp_i, step_i, x_bad, y_bad = find_first_nan_y(activation_trajs)
+print(epoch_i, exp_i, step_i)
+# x_bad = activation_trajs[57][20][1][0]
+# y_bad = activation_trajs[57][20][2][0]
+# w = activation_trajs[57][20][0][0][0]
 
 # +
 # parameters table to include in subplot titles
@@ -373,11 +410,13 @@ params_table = {
      30: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
          "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""},
      31: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 10, "N_out": 10, "N_exp": 25},  # nan
-     32: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
          "N_in": 10, "N_out": 10, "N_exp": 25},
-     33: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 10, "N_out": 10, "N_exp": 25}  # nan
+     32: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+     33: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.0001,
+         "N_in": 10, "N_out": 10, "N_exp": 25},
+     34: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 25},
 }
 
 fig = plot_coeff_trajectories(cfg.expid, params_table)
