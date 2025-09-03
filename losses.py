@@ -94,6 +94,7 @@ def loss(
                          data['rewards'],
                          data['expected_rewards'])
 
+    # Allow python 'if' in jitted function because cfg is static
     if cfg.plasticity_model == "volterra":
         # Apply mask to plasticity coefficients to enforce constraints
         plasticity_coeffs = jnp.multiply(plasticity_coeffs,

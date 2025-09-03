@@ -119,6 +119,7 @@ def update_params(
     Returns: Updated parameters.
     """
 
+    # Will only be checked at compile time
     assert x.ndim == 1, "Input must be a vector"
     assert y.ndim == 1, "Output must be a vector"
     assert len(params) == 2, "Params must be a tuple (weights, biases)"
@@ -133,6 +134,7 @@ def update_params(
 
     w, b = params
 
+    # Allow python 'if' in jitted function because cfg is static
     # Use vectorized volterra_plasticity_function
     if cfg.plasticity_model == "volterra":
         dw = plasticity_func(x, y, w, reward_term, plasticity_coeffs)
