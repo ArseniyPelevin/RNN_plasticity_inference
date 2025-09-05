@@ -17,7 +17,9 @@
 
 import os
 import time
+from importlib import reload
 
+import experiment
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -41,7 +43,7 @@ config = {
     "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 10,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp_train": 5,  # Number of experiments/trajectories/animals
+    "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_test": 5,
 
     "input_firing_mean": 0,
@@ -62,18 +64,18 @@ config = {
     # #TODO steps are seconds for now
     # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
     # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
-    "mean_num_sessions": 3,  # Number of sessions/days per experiment/trajectory/animal
+    "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
     "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
-    "mean_trials_per_session": 3,  # Number of trials/runs in each session/day
+    "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
     "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
     #TODO steps are seconds for now
-    "mean_steps_per_trial": 25,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 5,  # Standard deviation of steps in each trial/run
+    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
+    "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
-    "num_epochs": 25,
+    "num_epochs": 300,
     "expid": 17, # For saving results and seeding random
 
-    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
+    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0-0.5X0Y0W1R0+0.3X1Y2W0R0", # Oja's rule
     "generation_model": "volterra",
     "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
@@ -90,7 +92,6 @@ config = {
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
 
-    # "return_trajectories": False,
     "_return_params_trajec": False,  # For debugging
 
     "log_expdata": True,
@@ -119,9 +120,7 @@ def run_experiment():
                                            test_experiments,
                                            plasticity_coeffs, plasticity_func,
                                            expdata)
-
     training.save_results(cfg, expdata, train_time)
-
     return _activation_trajs
 
 
@@ -402,6 +401,7 @@ print(f'{epoch_i=}, {exp_i=}, {sess_i=}, {step_i=}')
 # +
 # Set parameters and run experiment
 training = reload(training)
+experiment = reload(experiment)
 
 # parameters table to include in subplot titles
 params_table = {
@@ -464,37 +464,54 @@ params_table = {
          "N_in": 100, "N_out": 10, "N_exp": 25},
      38: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
          "N_in": 100, "N_out": 1000, "N_exp": 25},
+     # Softclip synaptic weights
+     39: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     40: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     41: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 1,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     42: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.0001,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     43: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 0.0001,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"}
 }
 
-
-cfg.expid = -3
+cfg.expid = 43
 # cfg.num_exp_train = 25
-# cfg.num_hidden_pre = 100
-# cfg.num_hidden_post = 1000
-# cfg.input_firing_std = 1
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
+cfg.input_firing_std = 0.1
 # cfg.synapse_learning_rate = 1
-# cfg.init_params_scale = 0.01
+cfg.init_params_scale = 0.0001
 _activation_trajs = run_experiment()
 
 fig = plot_coeff_trajectories(cfg.expid, params_table)
 fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
-# -
-
-key = jax.random.PRNGKey(cfg["expid"])
-key, experiments = training.generate_data(key, cfg)
 
 # +
 # Plot xs and ys, optionally evolution of weights
 
+# _activation_trajs, _model_activations, _null_activations = run_experiment()
+
 # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-exp = 0
+epoch = 8
+exp = 3
 session = 0
 
 # inputs = experiments[exp].data["inputs"]   # (n_sess, n_steps, 1)
-xs = experiments[exp].data["xs"][0]  # (n_sess, n_steps, xdim)
-ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
+# xs = experiments[exp].data["xs"][0]  # (n_sess, n_steps, xdim)
+# ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
+xs = _activation_trajs[epoch][exp]['xs'][session]
+ys = _activation_trajs[epoch][exp]['ys'][session]
+w = _activation_trajs[epoch][exp]['params'][0][session]
 # xs = x_bad
 # ys = y_bad
 
@@ -511,11 +528,13 @@ ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
 # xs_sorted = xs[rows, order]   # (n_sess, n_steps, xdim)
 # ys_sorted = ys[rows, order]   # (n_sess, n_steps, ydim)
 
-vmin, vmax = -30, 3
-fig = plt.figure(figsize=(12, 6))
-gs = fig.add_gridspec(1, 1)
+vmin, vmax = -2, 30
+print(jnp.min(w), jnp.max(w))
+# vmin, vmax = jnp.min(w), jnp.max(w)
+fig = plt.figure(figsize=(12, 12))
+# gs = fig.add_gridspec(1, 1)
 # two rows: top - x and y, bottom - w evolution
-# gs = fig.add_gridspec(2, 1, height_ratios=[1, 2], hspace=0.25)
+gs = fig.add_gridspec(2, 1, height_ratios=[1, 2], hspace=0.2)
 
 # Top: plot x and y
 top_gs = gs[0].subgridspec(1, 2, wspace=0.25)
@@ -543,33 +562,38 @@ ax_ys.set_xlim(-0.5, cfg["num_hidden_post"])
 ax_ys.set_ylim(cfg["mean_steps_per_trial"], -0.5)
 
 # Bottom: w evolution
-# bot_gs = gs[1].subgridspec(4, 5, hspace=0.35, wspace=0.25)
-# axs = []
-# for r in range(4):
-#     for c in range(5):
-#         axs.append(fig.add_subplot(bot_gs[r, c]))
+num_rows = 4
+bot_gs = gs[1].subgridspec(num_rows, 5, hspace=0.35, wspace=0.25)
+axs = []
+for r in range(num_rows):
+    for c in range(5):
+        axs.append(fig.add_subplot(bot_gs[r, c]))
 
-# for idx, step in enumerate(range(30, 50)):
-#     ax = axs[idx]
-#     im = ax.imshow(w[step], aspect='equal', cmap='viridis',
-#                    interpolation='none', vmin=vmin, vmax=vmax)
-#     ax.set_title(f'step {step}')
-#     ax.set_xticks([]); ax.set_yticks([])
+for idx, step in enumerate(range(20, 40)):
+    ax = axs[idx]
+    im = ax.imshow(w[step], aspect='equal', cmap='viridis',
+                   interpolation='none', vmin=vmin, vmax=vmax)
+    ax.set_title(f'step {step}')
+    ax.set_xticks([])
+    ax.set_yticks([])
 
-#     # small colorbar to the right of each image
-#     divider = make_axes_locatable(ax)
-#     cax = divider.append_axes("right", size="4%", pad=0.04)
-#     fig.colorbar(im, cax=cax)
+    # small colorbar to the right of each image
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="4%", pad=0.04)
+    fig.colorbar(im, cax=cax)
 
-# # remove any unused axes (if any)
-# for j in range(len(range(30,50)), len(axs)):
-#     fig.delaxes(axs[j])
+# remove any unused axes (if any)
+for j in range(len(range(20, 40)), len(axs)):
+    fig.delaxes(axs[j])
 
 plt.tight_layout()
 plt.show()
-# -
 
+# +
 # Print data
+key = jax.random.PRNGKey(cfg["expid"])
+key, experiments = training.generate_data(key, cfg)
+
 print(len(experiments[0].data))
 yrange = 0
 for exp in experiments:
@@ -587,3 +611,15 @@ print(f'{jnp.min(exp.data["ys"][0, 0])=}, {jnp.max(exp.data["ys"][0, 0])=}')
 print(f'{jnp.min(exp.data["ys"][0, -1])=}, {jnp.max(exp.data["ys"][0, -1])=}')
 print(f'Average yrange: {yrange / len(experiments)}')
 
+# -
+
+# Plot weights distribution
+flat = np.concatenate([exp['params'][0].ravel() for epoch in _activation_trajs
+                       for exp in epoch])
+print(flat.shape)
+flat = flat[flat < 50]
+fig, ax = plt.subplots()
+ax.hist(flat, bins=100)
+ax.set_xlabel("Synaptic weight")
+ax.set_xlim(-5, 5)
+plt.show()
