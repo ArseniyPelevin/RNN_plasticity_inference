@@ -2,6 +2,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import utils
 
 
 def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
@@ -162,10 +163,9 @@ def update_params(
         while adding"
 
     lr = cfg.synapse_learning_rate # / x.shape[0]
-    params = (
-        w + lr * dw,
-        b + lr * db,
-    )  # TODO rewrite as list comprehension for multilayer
+    params = (utils.softclip(w + lr * dw, cap=cfg.synaptic_weight_threshold),
+              b + lr * db
+              )  # TODO rewrite as list comprehension for multilayer
 
     return params
 

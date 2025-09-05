@@ -48,6 +48,7 @@ config = {
     "input_firing_std": 1,  # Standard deviation of input firing rates
     "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
     "synapse_learning_rate": 1,
+    "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
     "learning_rate": 3e-3,
 
     "input_params_scale": 1,

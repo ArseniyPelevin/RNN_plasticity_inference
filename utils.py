@@ -124,7 +124,9 @@ def binary_deviance(predicted_outputs, decisions):
 def sse_deviance(predicted_activations, observed_activations):
     """Sum of squared errors (scalar)."""
     return jnp.sum((observed_activations - predicted_activations) ** 2)
-
+    
+def softclip(x, cap, p=10):
+    return x / ((1.0 + jnp.abs(x / cap) ** p) ** (1.0 / p))
 
 def create_nested_list(num_outer, num_inner):
     """
