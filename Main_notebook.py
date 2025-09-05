@@ -109,11 +109,12 @@ def run_experiment():
 
     key = jax.random.PRNGKey(cfg["expid"])
 
-    key, experiments = training.generate_data(key, cfg)
+    key, experiments = training.generate_data(key, cfg, mode='train')
+    key, test_experiments = training.generate_data(key, cfg, mode='test')
 
     time_start = time.time()
-    key, plasticity_coeffs, plasticity_func, expdata, activation_trajs = training.train(
-        key, cfg, experiments)
+    key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs = (
+        training.train(key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
     key, expdata = training.evaluate_model(key, cfg,
@@ -122,7 +123,7 @@ def run_experiment():
 
     training.save_results(cfg, expdata, train_time)
 
-    return activation_trajs
+    return _activation_trajs
 
 
 # +
@@ -197,9 +198,25 @@ def plot_coeff_trajectories(exp_id, params_table):
     # --- Top: loss subplot (backwards-compatible) ---
     epochs = df['epoch']
 
-    if 'train_loss' in df.columns and 'test_loss' in df.columns:
+    if all(col in df.columns for col in ['train_loss_mean','train_loss_std',
+                                        'test_loss_mean','test_loss_std']):
+        # plot train loss with shaded std
+        top_ax.plot(epochs, df['train_loss_mean'], color='blue', label='train_loss')
+        top_ax.fill_between(epochs,
+                            df['train_loss_mean'] - df['train_loss_std'],
+                            df['train_loss_mean'] + df['train_loss_std'],
+                            color='blue', alpha=0.2)
+        # plot test loss with shaded std
+        top_ax.plot(epochs, df['test_loss_mean'], color='red', label='test_loss')
+        top_ax.fill_between(epochs,
+                            df['test_loss_mean'] - df['test_loss_std'],
+                            df['test_loss_mean'] + df['test_loss_std'],
+                            color='red', alpha=0.2)
+
+    elif 'train_loss' in df.columns and 'test_loss' in df.columns:
         top_ax.plot(epochs, df['train_loss'], color='blue', label='train_loss')
         top_ax.plot(epochs, df['test_loss'], color='red', label='test_loss')
+
     elif 'loss' in df.columns:
         # older files had only 'loss' column — plot it as 'train_loss'
         top_ax.plot(epochs, df['loss'], color='blue', label='train_loss')
@@ -337,21 +354,23 @@ activation_trajs = run_experiment()
 
 # +
 # Diagnose trajectories for NaN
-print(len(activation_trajs)) # num epochs
-print(len(activation_trajs[0])) # num experiments
-print(len(activation_trajs[0][0])) # (x, y, output)
-print(activation_trajs[0][0][0][0].shape)  # w.shape
-print(activation_trajs[0][0][0][1].shape)  # b.shape
-print(activation_trajs[0][0][1].shape)  # x.shape
-print(activation_trajs[0][0][2].shape)  # y.shape
-print(activation_trajs[0][0][3].shape)  # output.shape
 
-def find_first_nan_y(activation_trajs):
+_activation_trajs = run_experiment()
+print(len(_activation_trajs)) # num epochs
+print(len(_activation_trajs[0])) # num experiments
+print(len(_activation_trajs[0][0])) # (x, y, output)
+print(_activation_trajs[0][0][0][0].shape)  # w.shape
+print(_activation_trajs[0][0][0][1].shape)  # b.shape
+print(_activation_trajs[0][0][1].shape)  # x.shape
+print(_activation_trajs[0][0][2].shape)  # y.shape
+print(_activation_trajs[0][0][3].shape)  # output.shape
+
+def find_first_nan_y(_activation_trajs):
     """
     Returns (epoch_idx, exp_idx, y_array(50,10)) for the first y containing NaN.
     If none found returns (None, None, None).
     """
-    for e_idx, epoch in enumerate(activation_trajs):
+    for e_idx, epoch in enumerate(_activation_trajs):
         for ex_idx, trajs in enumerate(epoch):
             y = np.asarray(trajs[2]).squeeze()
             x = np.asarray(trajs[1]).squeeze()
@@ -362,11 +381,11 @@ def find_first_nan_y(activation_trajs):
     return None, None, None
 
 # example usage:
-epoch_i, exp_i, step_i, x_bad, y_bad = find_first_nan_y(activation_trajs)
+epoch_i, exp_i, step_i, x_bad, y_bad = find_first_nan_y(_activation_trajs)
 print(epoch_i, exp_i, step_i)
-# x_bad = activation_trajs[57][20][1][0]
-# y_bad = activation_trajs[57][20][2][0]
-# w = activation_trajs[57][20][0][0][0]
+# x_bad = _activation_trajs[57][20][1][0]
+# y_bad = _activation_trajs[57][20][2][0]
+# w = _activation_trajs[57][20][0][0][0]
 
 # +
 # parameters table to include in subplot titles
@@ -421,7 +440,25 @@ params_table = {
          "N_in": 10, "N_out": 10, "N_exp": 25},
      34: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
          "N_in": 10, "N_out": 10, "N_exp": 25},
+     35: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
+         "N_in": 10, "N_out": 10, "N_exp": 25},  # Same as 34, but without NaN
+     36: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 10, "N_out": 100, "N_exp": 25},
+     37: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 100, "N_out": 10, "N_exp": 25},
+     38: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+         "N_in": 100, "N_out": 1000, "N_exp": 25},
 }
+
+
+cfg.expid = -2
+# cfg.num_exp_train = 25
+# cfg.num_hidden_pre = 100
+# cfg.num_hidden_post = 1000
+# cfg.input_firing_std = 1
+# cfg.synapse_learning_rate = 1
+# cfg.init_params_scale = 0.01
+_activation_trajs = run_experiment()
 
 fig = plot_coeff_trajectories(cfg.expid, params_table)
 fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",

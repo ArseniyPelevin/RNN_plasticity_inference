@@ -21,8 +21,8 @@ def generate_experiments(key, cfg,
     if mode == "train":
         num_experiments = cfg.num_exp_train
         print(f"\nGenerating {num_experiments} trajectories")
-    elif mode == "eval":
-        num_experiments = cfg.num_exp_eval
+    elif mode == "test":
+        num_experiments = cfg.num_exp_test
         print(f"\nGenerating {num_experiments} trajectories")
     else:
         raise ValueError(f"Unknown mode: {mode}")
@@ -92,39 +92,19 @@ def initialize_training_params(key, cfg, experiments, new_params=None):
 
     return key, plasticity_coeffs, plasticity_func, experiments
 
-def _compute_test_loss(key, cfg,
-                      plasticity_coeffs, plasticity_func,
-                      test_experiments):
-    test_loss = 0
-    for exp in test_experiments:
-        key, subkey = jax.random.split(key)
-        loss, _activations = losses.loss(
-            subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_params,
-            exp.new_init_params,
-            # Current plasticity coeffs, updated on each iteration:
-            plasticity_coeffs,
-            plasticity_func,  # Static within losses
-            exp.data,
-            exp.mask,
-            cfg,  # Static within losses
-        )
-
-        test_loss += loss
-
-    test_loss /= len(test_experiments)
-    return key, test_loss
-
-def training_loop(key, cfg, experiments,
+def training_loop(key, cfg,
+                  train_experiments, test_experiments,
                   loss_value_and_grad, optimizer, opt_state,
                   plasticity_coeffs, plasticity_func,
                   expdata):
-    activation_trajs = [[None for _ in range(len(experiments))]
+    # Return simulation trajectory - for debugging purposes only,
+    # set cfg._return_params_trajectory=True
+    _activation_trajs = [[None for _ in range(len(train_experiments))]
                         for _ in range(cfg["num_epochs"] + 1)]
     for epoch in range(cfg["num_epochs"] + 1):  # +1 so that we have 250th epoch
-        for exp in experiments:
+        for exp in train_experiments:
             key, subkey = jax.random.split(key)
-            (loss, activations), meta_grads = loss_value_and_grad(
+            (_loss, _activations), meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_params,
                 exp.new_init_params,
@@ -135,22 +115,25 @@ def training_loop(key, cfg, experiments,
                 exp.mask,
                 cfg,  # Static within losses
             )
-            activation_trajs[epoch][exp.exp_i] = activations
+            _activation_trajs[epoch][exp.exp_i] = _activations
             updates, opt_state = optimizer.update(
                 meta_grads, opt_state, plasticity_coeffs
             )
             plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
 
         if epoch % cfg.log_interval == 0:
-            key, test_loss = compute_test_loss(
-                key, cfg, plasticity_coeffs, plasticity_func
+            key, train_losses = evaluate_loss(
+                key, cfg, plasticity_coeffs, plasticity_func, train_experiments
+            )
+            key, test_losses = evaluate_loss(
+                key, cfg, plasticity_coeffs, plasticity_func, test_experiments
             )
             expdata = utils.print_and_log_training_info(
-                cfg, expdata, plasticity_coeffs, epoch, loss, test_loss
+                cfg, expdata, plasticity_coeffs, epoch, train_losses, test_losses
             )
-    return key, plasticity_coeffs, plasticity_func, expdata, activation_trajs
+    return key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs
 
-def train(key, cfg, experiments):
+def train(key, cfg, experiments, test_experiments):
     """Train the model with the given configuration and experiments.
 
     Args:
@@ -163,14 +146,11 @@ def train(key, cfg, experiments):
         initialize_training_params(key, cfg, experiments)
     )
 
-    key, test_experiments = generate_data(key, cfg, mode="eval")
     key, _plasticity_coeffs, _plasticity_func, test_experiments = (
         initialize_training_params(key, cfg, test_experiments,
                                    #TODO a temporary solution for same init_params
                                    new_params=experiments[0].new_init_params)
     )
-    globals()['compute_test_loss'] = partial(_compute_test_loss,
-                                             test_experiments=test_experiments)
 
     # Return value (scalar) of the function (loss value)
     # and gradient wrt its parameter at argnum (plasticity_coeffs) - !Check argnums!
@@ -185,17 +165,41 @@ def train(key, cfg, experiments):
     opt_state = optimizer.init(plasticity_coeffs)
     expdata = {}
 
-    key, plasticity_coeffs, plasticity_func, expdata, activation_trajs = training_loop(
-        key, cfg, experiments,
+    key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs = training_loop(
+        key, cfg,
+        experiments, test_experiments,
         loss_value_and_grad, optimizer, opt_state,
         plasticity_coeffs, plasticity_func,
         expdata)
 
-    return key, plasticity_coeffs, plasticity_func, expdata, activation_trajs
+    return key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs
+
+def evaluate_loss(key, cfg,
+                  plasticity_coeffs, plasticity_func,
+                  experiments):
+    eval_losses = []
+    for exp in experiments:
+        key, subkey = jax.random.split(key)
+        loss, _activations = losses.loss(
+            subkey,  # Pass subkey this time, because loss will not return key
+            exp.input_params,
+            exp.new_init_params,
+            # Current plasticity coeffs, updated on each iteration:
+            plasticity_coeffs,
+            plasticity_func,  # Static within losses
+            exp.data,
+            exp.mask,
+            cfg,  # Static within losses
+        )
+
+        eval_losses.append(loss)
+
+    return key, jnp.array(eval_losses)
 
 def evaluate_model(
     key,
     cfg,
+    test_experiments,
     plasticity_coeffs,
     plasticity_func,
     expdata

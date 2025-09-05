@@ -60,7 +60,7 @@ def loss(
     init_params,  # TODO update for each epoch/experiment
     plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
-    data,
+    experimental_data,
     mask,
     cfg,  # Static within losses
 ):
