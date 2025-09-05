@@ -260,7 +260,7 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs,
         logging.info(f"Loss: {train_loss_mean} ± {train_loss_std}")
         logging.info(f"Test Loss: {test_loss_mean} ± {test_loss_std}")
         print(f"Epoch: {epoch}")
-        print(f"Loss: {train_loss_mean:.5f} ± {train_loss_std:.5f}")
+        print(f"Train Loss: {train_loss_mean:.5f} ± {train_loss_std:.5f}")
         print(f"Test Loss: {test_loss_mean:.5f} ± {test_loss_std:.5f}")
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))

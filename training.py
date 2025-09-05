@@ -119,10 +119,12 @@ def training_loop(key, cfg,
 
         if epoch % cfg.log_interval == 0:
             key, train_losses = evaluate_loss(
-                key, cfg, plasticity_coeffs, plasticity_func, train_experiments
+                key, cfg, plasticity_coeffs, plasticity_func,
+                train_experiments[:len(test_experiments)]
             )
             key, test_losses = evaluate_loss(
-                key, cfg, plasticity_coeffs, plasticity_func, test_experiments
+                key, cfg, plasticity_coeffs, plasticity_func,
+                test_experiments
             )
             expdata = utils.print_and_log_training_info(
                 cfg, expdata, plasticity_coeffs, epoch, train_losses, test_losses
