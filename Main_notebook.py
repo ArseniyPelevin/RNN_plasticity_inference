@@ -15,17 +15,14 @@
 # %load_ext autoreload
 # %autoreload 2
 
-import importlib
 import os
 import time
 
 import jax
 import jax.numpy as jnp
-import losses
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import synapse
 import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -41,20 +38,20 @@ config = {
     "use_experimental_data": False,
 
     "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 100, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 1000,  # y, postsynaptic neurons for plasticity layer
+    "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 10,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp_train": 50,  # Number of experiments/trajectories/animals
-    "num_exp_eval": 5,
+    "num_exp_train": 25,  # Number of experiments/trajectories/animals
+    "num_exp_test": 5,
 
     "input_firing_mean": 0,
     "input_firing_std": 1,  # Standard deviation of input firing rates
     "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
-    "synapse_learning_rate": 0.1,
+    "synapse_learning_rate": 1,
     "learning_rate": 3e-3,
 
     "input_params_scale": 1,
-    "init_params_scale": 0.1,  # float or 'Xavier'
+    "init_params_scale": 0.01,  # float or 'Xavier'
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
@@ -66,10 +63,10 @@ config = {
     # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
     "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
     "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
-    "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
-    "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
+    "mean_trials_per_session": 5,  # Number of trials/runs in each session/day
+    "sd_trials_per_session": 2,  # Standard deviation of trials in each session/day
     #TODO steps are seconds for now
-    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
+    "mean_steps_per_trial": 25,  # Number of sequential time steps in one trial/run
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     "num_epochs": 250,
@@ -117,8 +114,9 @@ def run_experiment():
     train_time = time.time() - time_start
 
     key, expdata = training.evaluate_model(key, cfg,
-                                      plasticity_coeffs, plasticity_func,
-                                      expdata)
+                                           test_experiments,
+                                           plasticity_coeffs, plasticity_func,
+                                           expdata)
 
     training.save_results(cfg, expdata, train_time)
 
@@ -335,21 +333,30 @@ def plot_coeff_trajectories(exp_id, params_table):
 
     return fig
 
+# +
+# Explore space of input-output layer sizes
 
-# Set parameters and run experiment
-# # Reload synapse module:
-importlib.reload(synapse)
-importlib.reload(training)
-importlib.reload(losses)
-# reload synapse
-cfg.expid = 34
 cfg.num_exp_train = 25
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
 cfg.input_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 0.1
-activation_trajs = run_experiment()
+cfg.init_params_scale = 0.01
+
+for i, (N_in, N_out) in enumerate(zip([10, 50, 100, 500, 1000],
+                                      [10, 50, 100, 500, 1000], strict=False)):
+    if ((N_in == 10 and N_out == 10) or (N_in == 100 and N_out == 100)
+        or (N_in == 10 and N_out == 100) or (N_in == 100 and N_out == 10)
+        or (N_in == 100 and N_out == 1000)):
+        continue
+    cfg.num_hidden_pre = N_in
+    cfg.num_hidden_post = N_out
+    cfg.expid = 39 + i
+    run_experiment()
+    params_dict = {cfg.expid: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
+          "N_in": N_in, "N_out": N_out, "N_exp": 25}}
+    fig = plot_coeff_trajectories(cfg.expid, params_dict)
+    fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
+            dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 # +
 # Diagnose trajectories for NaN
@@ -387,6 +394,8 @@ print(epoch_i, exp_i, step_i)
 # w = _activation_trajs[57][20][0][0][0]
 
 # +
+# Set parameters and run experiment
+
 # parameters table to include in subplot titles
 params_table = {
      10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
@@ -421,6 +430,7 @@ params_table = {
          "N_in": 100, "N_out": 100, "N_exp": 25},
      25: {'input_std': 1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
          "N_in": 10, "N_out": 10, "N_exp": 25},
+     # teacher/student init params
      26: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
          "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
      27: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
