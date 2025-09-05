@@ -108,7 +108,8 @@ def loss(
         plasticity_func,
         experimental_data,
         mask,
-        cfg
+        cfg,
+        mode='simulation'  # Change to 'generation_test' to return params_trajectory
     )
 
     # Allow python 'if' in jitted function because cfg is static

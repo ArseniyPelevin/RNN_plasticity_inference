@@ -100,6 +100,13 @@ def compute_reward(decision):
     # TODO: Implement reward function
     return 0
 
+def compute_expected_reward(reward, old_expected_reward):
+    """ Compute expected reward based current reward and old expected reward.
+
+    # TODO: Implement expected reward function - Exponential Moving Average?
+    """
+    return reward
+
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_params(
     x, y, params, reward, expected_reward, plasticity_coeffs, plasticity_func, cfg
@@ -248,7 +255,23 @@ def simulate_trajectory(
             output_data = {}
             x, y, output = network_forward(step_key,
                                            input_params, params,
-                                           step_input, cfg)
+                                           input_data['inputs'], cfg)
+            output_data['xs'] = x
+            output_data['ys'] = y
+            output_data['outputs'] = output
+
+            # Allow python 'if' in jitted function because mode is static
+            if 'generation' in mode:
+                decision = compute_decision(step_key, output)
+                reward = compute_reward(decision)
+                expected_reward = compute_expected_reward(reward, None)
+
+                output_data['decisions'] = decision
+                output_data['rewards'] = reward
+                output_data['expected_rewards'] = expected_reward
+            else:
+                reward = input_data['rewards']
+                expected_reward = input_data['expected_rewards']
 
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
@@ -256,9 +279,11 @@ def simulate_trajectory(
                                       plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
-            if cfg.return_params_trajectory:
-                return params, (params, x, y, output)
-            return params, (x, y, output)
+
+            if 'test' in mode:
+                output_data['params'] = params
+
+            return params, output_data
 
         # Run inner scan over steps within one session
         params_session, activity_trajec_session = jax.lax.scan(

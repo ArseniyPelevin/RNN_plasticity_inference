@@ -2,7 +2,7 @@
 import jax
 import jax.numpy as jnp
 import model
-from utils import experiment_lists_to_tensors, sample_truncated_normal
+from utils import sample_truncated_normal
 
 
 class Experiment:
@@ -29,155 +29,85 @@ class Experiment:
         self.data = {}
 
         # Generate random keys for different parts of the model
-        seed = (cfg["expid"] + 1) * (exp_i + 1)
-        key = jax.random.PRNGKey(seed)
-        key, input_params_key, params_key = jax.random.split(key, 3)
+        (key,
+         sessions_key,
+         inputs_key,
+         input_params_key,
+         params_key,
+         simulation_key) = jax.random.split(key, 6)
 
-        # num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
+        # Pick random number of sessions in this experiment given mean and std
+        num_sessions = sample_truncated_normal(
+            sessions_key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
+        )
+
+        self.data['inputs'] = self.generate_inputs(inputs_key, num_sessions)
+        self.mask = jnp.any(self.data['inputs'], axis=-1)  # (N_sessions, N_steps)
+
+        # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
         self.input_params = model.initialize_input_parameters(
             input_params_key,
             cfg["num_inputs"], cfg["num_hidden_pre"],
-            input_params_scale=cfg["input_params_scale"]  # N(0, 1)
+            input_params_scale=cfg["input_params_scale"]
         )
 
-        # num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
-        # Prepare for different initial synaptic weights for each experiment,
+        # num_hidden_pre -> num_hidden_post plasticity layer
+        # TODO Prepare for different initial synaptic weights for each experiment,
         # but for now use the same initialization for all teachers
         self.init_params = global_teacher_init_params
         # self.init_params = model.initialize_parameters(
         #     params_key,
         #     cfg["num_hidden_pre"], cfg["num_hidden_post"]
         # )
-        self.params = self.init_params  # Save to test model
 
-        key, data = self.generate_experiment(key, num_sessions)
-        data, self.mask, self.steps_per_session = experiment_lists_to_tensors(data)
-        self.data = {
-            "inputs": data[0],
-            "xs": data[1],
-            "ys": data[2],
-            "decisions": data[3],
-            "rewards": data[4],
-            "expected_rewards": data[5],
-        }
+        trajectories = model.simulate_trajectory(simulation_key,
+            self.input_params, self.init_params,
+            plasticity_coeffs,
+            plasticity_func,
+            self.data,
+            self.mask,
+            cfg,
+            mode=f'generation_{mode}'
+        )
+        self.data.update(trajectories)
 
-    def generate_experiment(self, key, num_sessions):
-        """Generate a synthetic experiment for a single animal/trajectory.
-        Returns lists of trials for each variable.
+        if mode == 'test':
+            self.params_trajec = self.data.pop('params')
 
-        Args:
-            key: JAX random key.
-
-        Returns:
-            (inputs,
-            xs,
-            ys,
-            decisions,
-            rewards,
-            expected_rewards): Nested lists
-                for each session
-                for each trial within session
-                of timeseries
-        """
-        inputs, xs, ys, decisions, rewards, expected_rewards = (
-            [[] for _ in range(num_sessions)]
-            for _ in range(6)
-        )  # Nested lists for each of the 6 variables
-
-        for session in range(num_sessions):
-            key, num_trials = sample_truncated_normal(
-                key,
-                self.cfg["mean_trials_per_session"],
-                self.cfg["sd_trials_per_session"])
-            for _trial in range(num_trials):
-                key, num_steps = sample_truncated_normal(
-                    key,
-                    self.cfg["mean_steps_per_trial"],
-                    self.cfg["sd_steps_per_trial"])
-                key, trial_data = self.generate_trial(key, num_steps)
-
-                # trial_data should be a tuple/list of 6 items:
-                (
-                    trial_inputs,
-                    trial_xs,
-                    trial_ys,
-                    trial_decisions,
-                    trial_rewards,
-                    trial_expected_rewards,
-                ) = trial_data
-
-                # append trial-level entries to this session's lists
-                inputs[session].append(trial_inputs)
-                xs[session].append(trial_xs)
-                ys[session].append(trial_ys)
-                decisions[session].append(trial_decisions)
-                rewards[session].append(trial_rewards)
-                expected_rewards[session].append(trial_expected_rewards)
-
-        return key, (inputs, xs, ys, decisions, rewards, expected_rewards)
-
-    def generate_trial(self, key, num_steps):
-        """Generate a timecourse of all variables for a single trial.
-
-        Args:
-            key: JAX random key.
-            num_steps: Length of the trial.
-
-        Returns:
-            (inputs,
-            xs,
-            ys,
-            decisions,
-            rewards,
-            expected_rewards): Arrays of the same length containing the timecourses
-                for each variable. If the trial is shorter than the maximum length,
-                it will be padded with zeros.
-
-        """
-
-        inputs, xs, ys, decisions, rewards, expected_rewards = ([] for _ in range(6))
-
-        for _step in range(num_steps):
-            key, input_key, input_noise_key, decision_key = jax.random.split(key, 4)
-
+    def generate_inputs(self, key, num_sessions):
+        def generate_input(key):
             # # Generate input - one integer out of number of classes num_inputs
-            # step_input = jax.random.randint(input_key, shape=(1),
+            # step_input = jax.random.randint(key, shape=(1),
             #                                 minval=0, maxval=self.cfg.num_inputs)
 
             # Generate makeshift presynaptic input (TODO)
-            step_input = jax.random.normal(input_key, shape=(self.cfg.num_hidden_pre,))
-            inputs.append(step_input)
+            return jax.random.normal(key, shape=(self.cfg.num_hidden_pre,))
 
-            x, y, output = model.network_forward(input_noise_key,
-                                                 self.input_params, self.params,
-                                                 step_input,
-                                                 self.cfg)
-            xs.append(x)  # presynaptic activity
-            ys.append(y)  # postsynaptic activity
+        inputs = [[] for _ in range(num_sessions)]
 
-            # Compute decision based on output (probability of decision)
-            decision = model.compute_decision(decision_key, output)
-            decisions.append(decision)
+        max_steps_per_session = 0
+        for session in range(num_sessions):
+            key, subkey = jax.random.split(key)
+            num_trials = sample_truncated_normal(
+                subkey,
+                self.cfg["mean_trials_per_session"],
+                self.cfg["sd_trials_per_session"])
+            for _trial in range(num_trials):
+                key, subkey = jax.random.split(subkey)
+                num_steps = sample_truncated_normal(
+                    subkey,
+                    self.cfg["mean_steps_per_trial"],
+                    self.cfg["sd_steps_per_trial"])
+                for _step in range(num_steps):
+                    key, subkey = jax.random.split(subkey)
+                    step_input = generate_input(subkey)
+                    inputs[session].append(step_input)
+            max_steps_per_session = max(max_steps_per_session, len(inputs[session]))
 
-            # TODO Compute reward
-            reward = model.compute_reward(decision)
-            rewards.append(reward)
-            expected_reward = reward
-            expected_rewards.append(expected_reward)
+        # Pad and convert to tensor
+        inputs_tensor = jnp.zeros((num_sessions, max_steps_per_session,
+                                   *inputs[0][0].shape))
+        for s, session in enumerate(inputs):
+            inputs_tensor = inputs_tensor.at[s, :len(session)].set(jnp.array(session))
 
-            # Update parameters
-            self.params = model.update_params(
-                x,
-                y,
-                self.params,
-                reward,
-                expected_reward,
-                self.plasticity_coeffs,
-                self.plasticity_func,
-                self.cfg
-            )
-
-        data = [jnp.array(var) for var in
-                [inputs, xs, ys, decisions, rewards, expected_rewards]]
-
-        return key, data
+        return inputs_tensor
