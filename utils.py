@@ -113,6 +113,18 @@ def kl_divergence(logits1, logits2):
     kl_matrix = kl_div(p, q)
     return np.sum(kl_matrix)
 
+def binary_deviance(predicted_outputs, decisions):
+    """Return -2 * log-likelihood summed over all elements (scalar)."""
+    eps = 1e-12
+    p = jnp.clip(predicted_outputs, eps, 1.0 - eps)
+    d = decisions.astype(p.dtype)
+    nll = -2.0 * (d * jnp.log(p) + (1.0 - d) * jnp.log(1.0 - p))
+    return jnp.sum(nll)
+
+def sse_deviance(predicted_activations, observed_activations):
+    """Sum of squared errors (scalar)."""
+    return jnp.sum((observed_activations - predicted_activations) ** 2)
+
 
 def create_nested_list(num_outer, num_inner):
     """

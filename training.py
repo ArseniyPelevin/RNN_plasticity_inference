@@ -1,16 +1,14 @@
-
-from functools import partial
-from typing import Any  # TODO get rid of
-
 import experiment
 import jax
+import jax.numpy as jnp
 import losses
 import model
+import numpy as np
 import optax
 import pandas as pd
+import sklearn
 import synapse
 import utils
-from utils import sample_truncated_normal
 
 
 def generate_experiments(key, cfg,
@@ -21,12 +19,11 @@ def generate_experiments(key, cfg,
 
     if mode == "train":
         num_experiments = cfg.num_exp_train
-        print(f"\nGenerating {num_experiments} trajectories")
     elif mode == "test":
         num_experiments = cfg.num_exp_test
-        print(f"\nGenerating {num_experiments} trajectories")
     else:
         raise ValueError(f"Unknown mode: {mode}")
+    print(f"\nGenerating {num_experiments} {mode} trajectories")
 
     # Presplit keys for each experiment
     key, *experiment_keys = jax.random.split(key, num_experiments + 1)
@@ -39,7 +36,7 @@ def generate_experiments(key, cfg,
                                     global_teacher_init_params,
                                     mode)
         experiments.append(exp)
-        print(f"Generated experiment {exp_i} with {exp.mask.shape[0]} sessions")
+        print(f"Generated {mode} experiment {exp_i} with {exp.mask.shape[0]} sessions")
 
     return key, experiments
 
@@ -204,25 +201,199 @@ def evaluate_model(
     expdata
 ):
     """Evaluate the trained model."""
-    if cfg["num_exp_eval"] > 0:
-        pass
+    if cfg["num_exp_test"] == 0:
+        return key, expdata
 
-        # r2_score, percent_deviance = model.evaluate(
-        #     key,
-        #     cfg,
-        #     plasticity_coeff,
-        #     plasticity_func,
-        #     activations?
-        # )
-        # expdata["percent_deviance"] = percent_deviance
-        # if not cfg["use_experimental_data"]:
-        #     expdata["r2_weights"] = r2_score["weights"]
-        #     expdata["r2_activity"] = r2_score["activity"]
+    r2_score = {"weights": [], "activity": []}
+    percent_deviance = []
+
+    for exp in test_experiments:
+        key, param_key, model_key, null_key = jax.random.split(key, 4)
+        params = model.initialize_parameters(
+            param_key,
+            cfg["num_hidden_pre"], cfg["num_hidden_post"],
+            cfg["init_params_scale"]
+        )
+
+        # simulate model with learned plasticity coefficients (plasticity_coeff)
+        simulated_model_data = model.simulate_trajectory(
+            model_key,
+            exp.input_params,
+            params,
+            plasticity_coeffs,  # Our current plasticity coefficients estimate
+            plasticity_func,
+            exp.data,
+            exp.mask,
+            cfg,
+            mode='generation_test'
+        )
+
+        # simulate model with zeros plasticity coefficients for null model
+        plasticity_coeff_zeros, zero_plasticity_func = synapse.init_plasticity_volterra(
+            key=None, init="zeros", scale=None
+        )
+        simulated_null_data = model.simulate_trajectory(
+            null_key,
+            exp.input_params,
+            params,
+            plasticity_coeff_zeros,
+            zero_plasticity_func,
+            exp.data,
+            exp.mask,
+            cfg,
+            mode='generation_test'
+        )
+
+        percent_deviance.append(
+            evaluate_percent_deviance(
+                exp.data, simulated_model_data, simulated_null_data,
+                exp.mask, mode=cfg.fit_data
+            )
+        )
+
+        r2_score_exp = evaluate_r2_score(
+                exp.mask,
+                exp.data,
+                exp.params_trajec,
+                simulated_model_data,
+                cfg
+                )
+        r2_score["activity"].append(r2_score_exp["activity"])
+        if 'weights' in r2_score_exp:  # if not cfg.use_experimental_data
+            r2_score["weights"].append(r2_score_exp["weights"])
+
+    expdata["percent_deviance"] = np.median(percent_deviance)
+    expdata["r2_activity"] = np.median(r2_score["activity"])
+    print('Percent deviance explained:', expdata["percent_deviance"])
+    print('R2 score (activity):', expdata["r2_activity"])
+    if 'weights' in r2_score:
+        expdata["r2_weights"] = np.median(r2_score["weights"])
+        print('R2 score (weights):', expdata["r2_weights"])
+
     return key, expdata
 
-def save_results(
-    cfg: dict[str, Any], expdata: dict[str, Any], train_time: float
-) -> str:
+def evaluate_percent_deviance(experimental_data,
+                              simulated_model_data,
+                              simulated_null_data,
+                              mask,
+                              mode='neural'):
+    """ Percent deviance explained by model.
+    Calculate neg log likelihoods between model and data.
+    Calculate neg log likelihoods between zero model and data.
+    Percent deviance explained: (D_null - D_model) / D_null
+
+    Args:
+        data (dict): Dictionary of experimental data.
+        simulated_model_data: Simulated activations with learned coefficients.
+        simulated_null_data: Simulated activations with zero coefficients.
+        mask: Mask of valid steps.
+        mode: ['neural', 'behavioral'].
+
+    Returns:
+        Percent deviance explained scalar
+    """
+    if mode == 'neural':
+        exp_activations = experimental_data['ys']
+        model_activations = simulated_model_data['ys']
+        null_activations = simulated_null_data['ys']
+    elif mode == 'behavioral':
+        exp_activations = experimental_data['decisions']
+        model_activations = simulated_model_data['outputs']
+        null_activations = simulated_null_data['outputs']
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    # Flatten sessions and steps
+    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
+    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
+    null_activations = null_activations.reshape(-1, *null_activations.shape[2:])
+    mask = mask.flatten()
+
+    # Choose only valid steps
+    exp_activations = exp_activations[mask]
+    model_activations = model_activations[mask]
+    null_activations = null_activations[mask]
+
+    if mode == 'behavioral':
+        model_deviance = utils.binary_deviance(model_activations, exp_activations)
+        null_deviance = utils.binary_deviance(null_activations, exp_activations)
+    elif mode == 'neural':
+        model_deviance = utils.sse_deviance(model_activations, exp_activations)
+        null_deviance = utils.sse_deviance(null_activations, exp_activations)
+
+    percent_deviance = 100 * (null_deviance - model_deviance) / null_deviance
+    return percent_deviance
+
+def evaluate_r2_score(mask,
+                      exp_data,
+                      exp_param_traj,
+                      model_data,
+                      cfg
+):
+    """
+    Functionality: Evaluates the R2 score for weights and activity.
+    Args:
+        mask (N_sessions, N_steps_per_session_max),
+        exp_data: Dict of (N_sessions, N_steps_per_session_max, ...) tensors,
+        exp_param_traj (
+            (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),  # w
+            (N_sessions, N_steps_per_session_max, N_hidden_post)  # b
+            ),
+        model_data: Tuple of (x, y, output, params) from model.simulate_trajectory,
+        cfg
+
+    Returns:
+        Dict of R2 scores for activity (and weights).
+    """
+    r2_score = {}
+    mask = mask.flatten()
+
+    if cfg.fit_data == 'neural':
+        exp_activations = exp_data['ys']
+        model_activations = model_data['ys']
+    elif cfg.fit_data == 'behavioral':
+        exp_activations = exp_data['decisions']
+        model_activations = model_data['outputs']
+
+    # (N_sessions, N_steps_per_session_max, ...) -> (N_steps_per_experiment, ...)
+    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
+    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
+
+    # Choose valid steps
+    exp_activations = exp_activations[mask]
+    model_activations = model_activations[mask]
+
+    # Convert to numpy for sklearn
+    exp_activations = np.asarray(jax.device_get(exp_activations))
+    model_activations = np.asarray(jax.device_get(model_activations))
+
+    r2_score["activity"] = sklearn.metrics.r2_score(exp_activations,
+                                                    model_activations)
+
+    if not cfg.use_experimental_data:
+        exp_weight_trajec = exp_param_traj[0]  # w
+        model_weight_trajec = model_data['params'][0]  # w  # TODO? b?
+
+        # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
+        # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)
+        exp_weight_trajec = exp_weight_trajec.reshape(
+            -1, np.prod(exp_weight_trajec.shape[2:]))
+        model_weight_trajec = model_weight_trajec.reshape(
+            -1, np.prod(model_weight_trajec.shape[2:]))
+
+        # Choose valid steps
+        exp_weight_trajec = exp_weight_trajec[mask]
+        model_weight_trajec = model_weight_trajec[mask]
+
+        # Convert to numpy for sklearn
+        exp_weight_trajec = np.asarray(jax.device_get(exp_weight_trajec))
+        model_weight_trajec = np.asarray(jax.device_get(model_weight_trajec))
+
+        r2_score["weights"] = sklearn.metrics.r2_score(exp_weight_trajec,
+                                                       model_weight_trajec)
+    return r2_score
+
+def save_results(cfg, expdata, train_time):
     """Save training logs and parameters."""
     df = pd.DataFrame.from_dict(expdata)
     df["train_time"] = train_time

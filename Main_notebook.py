@@ -41,7 +41,7 @@ config = {
     "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 10,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "num_exp_train": 25,  # Number of experiments/trajectories/animals
+    "num_exp_train": 5,  # Number of experiments/trajectories/animals
     "num_exp_test": 5,
 
     "input_firing_mean": 0,
@@ -61,15 +61,15 @@ config = {
     # #TODO steps are seconds for now
     # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
     # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
-    "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
+    "mean_num_sessions": 3,  # Number of sessions/days per experiment/trajectory/animal
     "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
-    "mean_trials_per_session": 5,  # Number of trials/runs in each session/day
-    "sd_trials_per_session": 2,  # Standard deviation of trials in each session/day
+    "mean_trials_per_session": 3,  # Number of trials/runs in each session/day
+    "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
     #TODO steps are seconds for now
     "mean_steps_per_trial": 25,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
+    "sd_steps_per_trial": 5,  # Standard deviation of steps in each trial/run
 
-    "num_epochs": 250,
+    "num_epochs": 25,
     "expid": 17, # For saving results and seeding random
 
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
@@ -89,6 +89,7 @@ config = {
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
 
+    # "return_trajectories": False,
     "_return_params_trajec": False,  # For debugging
 
     "log_expdata": True,
@@ -217,6 +218,7 @@ def plot_coeff_trajectories(exp_id, params_table):
     elif 'loss' in df.columns:
         # older files had only 'loss' column — plot it as 'train_loss'
         top_ax.plot(epochs, df['loss'], color='blue', label='train_loss')
+
 
     top_ax.set_title("Loss")
     top_ax.legend(loc='upper right')
@@ -460,7 +462,7 @@ params_table = {
 }
 
 
-cfg.expid = -2
+cfg.expid = -3
 # cfg.num_exp_train = 25
 # cfg.num_hidden_pre = 100
 # cfg.num_hidden_post = 1000
