@@ -367,11 +367,11 @@ _activation_trajs = run_experiment()
 print(len(_activation_trajs)) # num epochs
 print(len(_activation_trajs[0])) # num experiments
 print(len(_activation_trajs[0][0])) # (x, y, output)
-print(_activation_trajs[0][0][0][0].shape)  # w.shape
-print(_activation_trajs[0][0][0][1].shape)  # b.shape
-print(_activation_trajs[0][0][1].shape)  # x.shape
-print(_activation_trajs[0][0][2].shape)  # y.shape
-print(_activation_trajs[0][0][3].shape)  # output.shape
+print(_activation_trajs[0][0]['params'][0].shape)  # w.shape
+print(_activation_trajs[0][0]['params'][1].shape)  # b.shape
+print(_activation_trajs[0][0]['xs'].shape)  # x.shape
+print(_activation_trajs[0][0]['ys'].shape)  # y.shape
+print(_activation_trajs[0][0]['outputs'].shape)  # output.shape
 
 def find_first_nan_y(_activation_trajs):
     """
@@ -380,23 +380,27 @@ def find_first_nan_y(_activation_trajs):
     """
     for e_idx, epoch in enumerate(_activation_trajs):
         for ex_idx, trajs in enumerate(epoch):
-            y = np.asarray(trajs[2]).squeeze()
-            x = np.asarray(trajs[1]).squeeze()
-            mask_rows = np.any(np.isnan(y), axis=1)
-            rows = np.where(mask_rows)[0]
-            if rows.size:
-                return e_idx, ex_idx, int(rows[0]), x, y
+            ys = np.asarray(trajs['ys'])
+            xs = np.asarray(trajs['xs'])
+            for sess_idx in range(ys.shape[0]):
+                x = xs[sess_idx]
+                y = ys[sess_idx]
+                mask_rows = np.any(np.isnan(y), axis=1)
+                rows = np.where(mask_rows)[0]
+                if rows.size:
+                    return e_idx, ex_idx, sess_idx, int(rows[0]), x, y
     return None, None, None
 
 # example usage:
-epoch_i, exp_i, step_i, x_bad, y_bad = find_first_nan_y(_activation_trajs)
-print(epoch_i, exp_i, step_i)
+epoch_i, exp_i, sess_i, step_i, x_bad, y_bad = find_first_nan_y(_activation_trajs)
+print(f'{epoch_i=}, {exp_i=}, {sess_i=}, {step_i=}')
 # x_bad = _activation_trajs[57][20][1][0]
 # y_bad = _activation_trajs[57][20][2][0]
 # w = _activation_trajs[57][20][0][0][0]
 
 # +
 # Set parameters and run experiment
+training = reload(training)
 
 # parameters table to include in subplot titles
 params_table = {
