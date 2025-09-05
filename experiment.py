@@ -8,21 +8,25 @@ from utils import experiment_lists_to_tensors, sample_truncated_normal
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, exp_i, cfg, plasticity_coeffs, plasticity_func, num_sessions,
-                 global_teacher_init_params):
+    def __init__(self, key, exp_i, cfg, plasticity_coeffs, plasticity_func,
+                 global_teacher_init_params, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
+            key: JAX random key.
             exp_i: Experiment index.
             cfg: Configuration dictionary.
             plasticity_coeffs: 4D tensor of plasticity coefficients.
             plasticity_func: Function to compute plasticity.
+            global_teacher_init_params: Initial parameters for the teacher model.
+            mode: "train" or "test".
         """
 
         self.exp_i = exp_i
         self.cfg = cfg
         self.plasticity_coeffs = plasticity_coeffs
         self.plasticity_func = plasticity_func
+        self.data = {}
 
         # Generate random keys for different parts of the model
         seed = (cfg["expid"] + 1) * (exp_i + 1)

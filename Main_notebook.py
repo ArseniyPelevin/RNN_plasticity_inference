@@ -92,8 +92,7 @@ config = {
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
 
-    "return_trajectories": False,
-    "return_params_trajectory": False,
+    "_return_params_trajec": False,  # For debugging
 
     "log_expdata": True,
     "log_interval": 10,

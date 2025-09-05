@@ -58,7 +58,7 @@ def network_forward(key, input_params, params, step_input, cfg):
 
     # Makeshift for input firing (TODO)
     x = step_input
-    x = x * cfg.input_firing_std + cfg.input_firing_mean  # N(0, 0.1)
+    x = x * cfg.input_firing_std + cfg.input_firing_mean  # N(0, 1)
 
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise_std
     x += input_noise
@@ -163,25 +163,54 @@ def update_params(
 
     return params
 
-@partial(jax.jit, static_argnames=("plasticity_func", "cfg"))
+@partial(jax.jit, static_argnames=("plasticity_func", "cfg", "mode"))
 def simulate_trajectory(
     key,
     input_params,
     init_params,
-    plasticity_coeffs,  # Our current plasticity coefficients estimate
+    plasticity_coeffs,
     plasticity_func,
-    exp_inputs,  # Data of one whole experiment, (N_sessions, N_steps_per_session_max)
-    exp_rewards,
-    exp_expected_rewards,
+    exp_data,  # Data of one whole experiment, {(N_sessions, N_steps_per_session_max)}
     exp_mask,
-    cfg
+    cfg,
+    mode
     ):
-    def simulate_session(params, session_data):
-        """ Simulate trajectory of parameters and activities within one session.
+    """ Simulate trajectory of activations (and parameters) of one experiment (animal).
+
+    Args:
+        key: Random key for PRNG.
+        input_params (N_inputs, N_hidden_pre): inputs --> presynaptic activations
+        init_params tuple((N_hidden_pre, N_hidden_post) - w
+                          (N_hidden_post) - b
+                         ): Initial synaptic weights and biases.
+        plasticity_coeffs: Plasticity coefficients for the model.
+        plasticity_func: Plasticity function to use.
+        exp_data (dict): Data in {(N_sessions, N_steps_per_session_max, dim_element)}
+        exp_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
+        cfg: Configuration dictionary.
+        mode:
+            - 'simulation': return trajectories of x, y, output
+            - 'generation_train': return x, y, output, decision, rewards
+            - 'generation_test': return x, y, output, decision, rewards, params
+
+    Returns:
+        activity_trajec_exp {
+            x_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_pre),
+            y_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_post),
+            output_trajec_exp (N_sessions, N_steps_per_session_max),
+            [params_trajec_exp (
+                (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post), # w
+                (N_sessions, N_steps_per_session_max, N_hidden_post)  # b
+                )]
+        }: Trajectories of activations over the course of the experiment.
+    """
+
+    def simulate_session(params, session_variables):
+        """ Simulate trajectory of parameters and activations within one session.
 
         Args:
             params: Initial parameters at the start of the session.
-            session_data: Tuple of (
+            session_variables: Tuple of (
                 session_inputs, (N_steps_per_session_max,)
                 session_rewards,
                 session_expected_rewards,
@@ -189,23 +218,41 @@ def simulate_trajectory(
 
         Returns:
             params_session: Parameters at the end of the session.
-            (params_trajec_session, - trajectory of parameters within session
-             (x_trajec_session, - trajectory of presynaptic activities within session
-              y_trajec_session, - trajectory of postsynaptic activities within session
-              output_trajec_session - trajectory of outputs within session
-             )
-            )
-        """
+            activity_trajec_session: {
+                x_trajec_session (N_steps_per_session_max, N_hidden_pre),
+                y_trajec_session (N_steps_per_session_max, N_hidden_post),
+                output_trajec_session (N_steps_per_session_max),
+                [params_trajec_session (
+                    (N_steps_per_session_max, N_hidden_pre, N_hidden_post),  # w
+                    (N_steps_per_session_max, N_hidden_post)  # b
+                    )
+                ]
+            }"""
 
-        def simulate_step(params, step_data):
-            step_input, step_reward, step_expected_reward, valid, step_key = step_data
+        def simulate_step(params, step_variables):
+            """ Simulate forward pass within one time step.
+
+            Args:
+                params (N_hidden_pre, N_hidden_post): carry for jax.lax.scan.
+                step_variables: (
+                    data: {inputs[, rewards, expected_rewards]}
+                    valid: mask for this step (0 or 1)
+                    step_key: Random key for PRNG.
+
+            Returns:
+                params: Updated parameters after the step.
+                output_data: {x, y, output[,
+                              decision, reward, expected_reward[, params]]}
+            """
+            input_data, valid, step_key = step_variables
+            output_data = {}
             x, y, output = network_forward(step_key,
                                            input_params, params,
                                            step_input, cfg)
 
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
-                                      x, y, params, step_reward, step_expected_reward,
+                                      x, y, params, reward, expected_reward,
                                       plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
@@ -215,7 +262,7 @@ def simulate_trajectory(
 
         # Run inner scan over steps within one session
         params_session, activity_trajec_session = jax.lax.scan(
-            simulate_step, params, session_data)
+            simulate_step, params, session_variables)
 
         return params_session, activity_trajec_session
 
@@ -227,14 +274,12 @@ def simulate_trajectory(
     session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
 
     # Run outer scan over sessions
-    params_exp, activity_trajec_exp = jax.lax.scan(
+    _params_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
         init_params,
-        (exp_inputs,
-         exp_rewards,
-         exp_expected_rewards,
+        (exp_data,
          exp_mask,
          session_step_keys)
     )
 
-    return params_exp, activity_trajec_exp
+    return activity_trajec_exp

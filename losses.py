@@ -83,17 +83,6 @@ def loss(
         float: Loss for the cross entropy model.
     """
 
-    (inputs,
-    exp_traj_ys,  # For computing the neural loss
-    exp_traj_decisions,  # For computing the behavior loss
-    rewards,
-    expected_rewards) = (data['inputs'],
-                         # data['xs'],  # Not needed, will recompute from inputs
-                         data['ys'],
-                         data['decisions'],
-                         data['rewards'],
-                         data['expected_rewards'])
-
     # Allow python 'if' in jitted function because cfg is static
     if cfg.plasticity_model == "volterra":
         # Apply mask to plasticity coefficients to enforce constraints
@@ -111,30 +100,23 @@ def loss(
             loss = 0.0
 
     # Return simulated trajectory of one experiment
-    _params_final, activations = model.simulate_trajectory(
+    simulated_data = model.simulate_trajectory(
         key,
         input_params,
         init_params,
         plasticity_coeffs,  # Our current plasticity coefficients estimate
         plasticity_func,
-        inputs,  # Data of one whole experiment
-        rewards,
-        expected_rewards,
+        experimental_data,
         mask,
         cfg
     )
-
-    if cfg.return_params_trajectory:
-        _sim_traj_params, _sim_traj_xs, sim_traj_ys, sim_traj_outputs = activations
-    else:
-        _sim_traj_xs, sim_traj_ys, sim_traj_outputs = activations
 
     # Allow python 'if' in jitted function because cfg is static
     if "neural" in cfg.fit_data:
         neural_loss = neural_mse_loss(
             # subkey,
-            exp_traj_ys,
-            sim_traj_ys,
+            experimental_data['ys'],
+            simulated_data['ys'],
             mask,
             # cfg.neural_recording_sparsity,
             # cfg.measurement_noise_scale,
@@ -142,10 +124,12 @@ def loss(
         loss += neural_loss
 
     if "behavior" in cfg.fit_data:
-        behavior_loss = behavior_ce_loss(exp_traj_decisions, sim_traj_outputs)
+        behavior_loss = behavior_ce_loss(experimental_data['decisions'],
+                                         simulated_data['outputs'])
         loss += behavior_loss
     # loss = regularization + neural_loss + behavior_loss
 
-    if cfg.return_trajectories:
-        return loss, activations
+    if cfg._return_params_trajec:
+        # Return simulation trajectory - for debugging purposes only
+        return loss, simulated_data
     return loss, None

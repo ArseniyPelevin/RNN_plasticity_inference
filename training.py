@@ -17,7 +17,8 @@ def generate_experiments(key, cfg,
                          generation_coeff, generation_func,
                          global_teacher_init_params,
                          mode="train"):
-    # Generate all experiments/trajectories
+    """ Generate all experiments/trajectories as instances of class Experiment. """
+
     if mode == "train":
         num_experiments = cfg.num_exp_train
         print(f"\nGenerating {num_experiments} trajectories")
@@ -27,20 +28,18 @@ def generate_experiments(key, cfg,
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
+    # Presplit keys for each experiment
+    key, *experiment_keys = jax.random.split(key, num_experiments + 1)
+
     experiments = []
-    # experiments_data = {}
     for exp_i in range(num_experiments):
-        # Pick random number of sessions in this experiment given mean and std
-        key, num_sessions = sample_truncated_normal(
-            key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
-        )
-        exp = experiment.Experiment(exp_i, cfg,
+        exp = experiment.Experiment(experiment_keys[exp_i],
+                                    exp_i, cfg,
                                     generation_coeff, generation_func,
-                                    num_sessions,
-                                    global_teacher_init_params)
+                                    global_teacher_init_params,
+                                    mode)
         experiments.append(exp)
-        # experiments_data[exp_i] = exp.data
-        print(f"Generated experiment {exp_i} with {num_sessions} sessions")
+        print(f"Generated experiment {exp_i} with {exp.mask.shape[0]} sessions")
 
     return key, experiments
 
