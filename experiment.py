@@ -81,7 +81,10 @@ class Experiment:
             #                                 minval=0, maxval=self.cfg.num_inputs)
 
             # Generate makeshift presynaptic input (TODO)
-            return jax.random.normal(key, shape=(self.cfg.num_hidden_pre,))
+            step_input = jax.random.normal(key, shape=(self.cfg.num_hidden_pre,))
+            step_input = (step_input * self.cfg.input_firing_std
+                          + self.cfg.input_firing_mean)
+            return step_input
 
         inputs = [[] for _ in range(num_sessions)]
 

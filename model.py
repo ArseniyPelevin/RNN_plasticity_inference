@@ -58,7 +58,6 @@ def network_forward(key, input_params, params, step_input, cfg):
 
     # Makeshift for input firing (TODO)
     x = step_input
-    x = x * cfg.input_firing_std + cfg.input_firing_mean  # N(0, 1)
 
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise_std
     x += input_noise
