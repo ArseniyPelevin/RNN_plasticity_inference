@@ -109,7 +109,7 @@ def loss(
         experimental_data,
         mask,
         cfg,
-        mode='simulation'  # Change to 'generation_test' to return params_trajectory
+        mode='simulation' if not cfg._return_params_trajec else 'generation_test'
     )
 
     # Allow python 'if' in jitted function because cfg is static
