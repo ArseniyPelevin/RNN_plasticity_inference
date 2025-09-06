@@ -107,19 +107,21 @@ cfg = OmegaConf.create(config)
 def run_experiment():
 
     key = jax.random.PRNGKey(cfg["expid"])
+    # Pass subkeys, so that adding more experiments doesn't affect earlier ones
+    train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
 
-    key, experiments = training.generate_data(key, cfg, mode='train')
-    key, test_experiments = training.generate_data(key, cfg, mode='test')
+    experiments = training.generate_data(train_exp_key, cfg, mode='train')
+    test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs = (
-        training.train(key, cfg, experiments, test_experiments))
+    plasticity_coeffs, plasticity_func, expdata, _activation_trajs = (
+        training.train(train_key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
-    key, expdata = training.evaluate_model(key, cfg,
-                                           test_experiments,
-                                           plasticity_coeffs, plasticity_func,
-                                           expdata)
+    expdata = training.evaluate_model(eval_key, cfg,
+                                      test_experiments,
+                                      plasticity_coeffs, plasticity_func,
+                                      expdata)
     training.save_results(cfg, expdata, train_time)
     return _activation_trajs
 

@@ -25,7 +25,7 @@ def generate_experiments(key, cfg,
     print(f"\nGenerating {num_experiments} {mode} trajectories")
 
     # Presplit keys for each experiment
-    key, *experiment_keys = jax.random.split(key, num_experiments + 1)
+    experiment_keys = jax.random.split(key, num_experiments)
 
     experiments = []
     for exp_i in range(num_experiments):
@@ -36,20 +36,20 @@ def generate_experiments(key, cfg,
         experiments.append(exp)
         print(f"Generated {mode} experiment {exp_i} with {exp.mask.shape[0]} sessions")
 
-    return key, experiments
+    return experiments
 
 def generate_data(key, cfg, mode="train"):
     # Generate model activity
-    key, plasticity_key, params_key = jax.random.split(key, 3)
+    plasticity_key, experiments_key = jax.random.split(key, 2)
     #TODO add branching for experimental data
     generation_coeff, generation_func = synapse.init_plasticity(
         plasticity_key, cfg, mode="generation_model"
     )
-    key, experiments = generate_experiments(
-        key, cfg, generation_coeff, generation_func, mode,
+    experiments = generate_experiments(
+        experiments_key, cfg, generation_coeff, generation_func, mode,
     )
 
-    return key, experiments
+    return experiments
 
 def initialize_training_params(key, cfg, experiments):
     init_params_keys = jax.random.split(key, len(experiments))
@@ -105,7 +105,7 @@ def training_loop(key, cfg,
             expdata = utils.print_and_log_training_info(
                 cfg, expdata, plasticity_coeffs, epoch, train_losses, test_losses
             )
-    return key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs
+    return plasticity_coeffs, plasticity_func, expdata, _activation_trajs
 
 def train(key, cfg, experiments, test_experiments):
     """Train the model with the given configuration and experiments.
@@ -139,14 +139,14 @@ def train(key, cfg, experiments, test_experiments):
     opt_state = optimizer.init(plasticity_coeffs)
     expdata = {}
 
-    key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs = training_loop(
+    plasticity_coeffs, plasticity_func, expdata, _activation_trajs = training_loop(
         key, cfg,
         experiments, test_experiments,
         loss_value_and_grad, optimizer, opt_state,
         plasticity_coeffs, plasticity_func,
         expdata)
 
-    return key, plasticity_coeffs, plasticity_func, expdata, _activation_trajs
+    return plasticity_coeffs, plasticity_func, expdata, _activation_trajs
 
 def evaluate_loss(key, cfg,
                   plasticity_coeffs, plasticity_func,
@@ -180,16 +180,15 @@ def evaluate_model(
 ):
     """Evaluate the trained model."""
     if cfg["num_exp_test"] == 0:
-        return key, expdata
+        return expdata
 
     r2_score = {"weights": [], "activity": []}
     percent_deviance = []
 
     for exp in test_experiments:
-        (key, 
-         model_params_key, null_params_key, 
-         model_key, null_key) = jax.random.split(key, 5)
-        
+        (model_params_key, null_params_key,
+         model_key, null_key) = jax.random.split(key, 4)
+
         # Simulate model with learned plasticity coefficients (plasticity_coeff)
         new_model_init_params = model.initialize_parameters(
                 model_params_key,
@@ -255,7 +254,7 @@ def evaluate_model(
         expdata["r2_weights"] = np.median(r2_score["weights"])
         print('R2 score (weights):', expdata["r2_weights"])
 
-    return key, expdata
+    return expdata
 
 def evaluate_percent_deviance(experimental_data,
                               simulated_model_data,
