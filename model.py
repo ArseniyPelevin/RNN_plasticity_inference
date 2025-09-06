@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import utils
 
 
-def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
+def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale):
     """Initialize input parameters for the embedding layer.
 
     num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
@@ -24,7 +24,7 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale=1):
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
     return input_params * input_params_scale
 
-def initialize_parameters(key, num_pre, num_post, init_params_scale=0.01):
+def initialize_parameters(key, num_pre, num_post, init_params_scale):
     """Initialize parameters for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer

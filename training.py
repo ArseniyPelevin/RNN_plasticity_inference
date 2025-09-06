@@ -13,7 +13,6 @@ import utils
 
 def generate_experiments(key, cfg,
                          generation_coeff, generation_func,
-                         global_teacher_init_params,
                          mode="train"):
     """ Generate all experiments/trajectories as instances of class Experiment. """
 
@@ -33,7 +32,6 @@ def generate_experiments(key, cfg,
         exp = experiment.Experiment(experiment_keys[exp_i],
                                     exp_i, cfg,
                                     generation_coeff, generation_func,
-                                    global_teacher_init_params,
                                     mode)
         experiments.append(exp)
         print(f"Generated {mode} experiment {exp_i} with {exp.mask.shape[0]} sessions")
@@ -47,46 +45,24 @@ def generate_data(key, cfg, mode="train"):
     generation_coeff, generation_func = synapse.init_plasticity(
         plasticity_key, cfg, mode="generation_model"
     )
-    global_teacher_init_params = model.initialize_parameters(
-        params_key,
-        cfg["num_hidden_pre"], cfg["num_hidden_post"],
-        cfg["init_params_scale"]
-    )
     key, experiments = generate_experiments(
-        key, cfg, generation_coeff, generation_func,
-        global_teacher_init_params, mode,
+        key, cfg, generation_coeff, generation_func, mode,
     )
 
     return key, experiments
 
-def initialize_training_params(key, cfg, experiments, new_params=None):
-    key, init_plasticity_key, *init_params_keys = jax.random.split(
-        key, len(experiments)+2)
-    # Initialize parameters for training
-    plasticity_coeffs, plasticity_func = synapse.init_plasticity(
-        init_plasticity_key, cfg, mode="plasticity_model"
-    )
+def initialize_training_params(key, cfg, experiments):
+    init_params_keys = jax.random.split(key, len(experiments))
 
-    if new_params is not None:
-        # TODO a temporary solution for same initial params
-        global_student_init_params = new_params
-    else:
-        global_student_init_params = model.initialize_parameters(
-            init_params_keys[0],
-            cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["init_params_scale"]
-        )
-    # TODO use this for real training
     for exp in experiments:
-        # Prepare different initial synaptic weights for each simulated experiment,
-        # but for now use the same initialization for all students
-        exp.new_init_params = global_student_init_params
-        # exp.new_init_params = model.initialize_parameters(
-        #         init_params_keys[exp.exp_i],
-        #         cfg["num_hidden_pre"], cfg["num_hidden_post"]
-        #         )
+        # Different initial synaptic weights for each simulated experiment
+        exp.new_init_params = model.initialize_parameters(
+                init_params_keys[exp.exp_i],
+                cfg["num_hidden_pre"], cfg["num_hidden_post"],
+                cfg["init_params_scale"]
+                )
 
-    return key, plasticity_coeffs, plasticity_func, experiments
+    return experiments
 
 def training_loop(key, cfg,
                   train_experiments, test_experiments,
@@ -139,16 +115,16 @@ def train(key, cfg, experiments, test_experiments):
         cfg (dict): Configuration dictionary containing training parameters.
         experiments (list): List of experiments from class Experiment.
     """
+    key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
 
-    key, plasticity_coeffs, plasticity_func, experiments = (
-        initialize_training_params(key, cfg, experiments)
+    # Initialize coefficients for training
+    plasticity_coeffs, plasticity_func = synapse.init_plasticity(
+        init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    key, _plasticity_coeffs, _plasticity_func, test_experiments = (
-        initialize_training_params(key, cfg, test_experiments,
-                                   #TODO a temporary solution for same init_params
-                                   new_params=experiments[0].new_init_params)
-    )
+    # Initialize new initial parameters for each train and test experiment
+    experiments = initialize_training_params(train_key, cfg, experiments)
+    test_experiments = initialize_training_params(test_key, cfg, test_experiments)
 
     # Return value (scalar) of the function (loss value)
     # and gradient wrt its parameter at argnum (plasticity_coeffs) - !Check argnums!
@@ -210,18 +186,20 @@ def evaluate_model(
     percent_deviance = []
 
     for exp in test_experiments:
-        key, param_key, model_key, null_key = jax.random.split(key, 4)
-        params = model.initialize_parameters(
-            param_key,
-            cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["init_params_scale"]
-        )
-
-        # simulate model with learned plasticity coefficients (plasticity_coeff)
+        (key, 
+         model_params_key, null_params_key, 
+         model_key, null_key) = jax.random.split(key, 5)
+        
+        # Simulate model with learned plasticity coefficients (plasticity_coeff)
+        new_model_init_params = model.initialize_parameters(
+                model_params_key,
+                cfg["num_hidden_pre"], cfg["num_hidden_post"],
+                cfg["init_params_scale"]
+                )
         simulated_model_data = model.simulate_trajectory(
             model_key,
             exp.input_params,
-            params,
+            new_model_init_params,
             plasticity_coeffs,  # Our current plasticity coefficients estimate
             plasticity_func,
             exp.data,
@@ -230,14 +208,19 @@ def evaluate_model(
             mode='generation_test'
         )
 
-        # simulate model with zeros plasticity coefficients for null model
+        # Simulate model with zeros plasticity coefficients for null model
         plasticity_coeff_zeros, zero_plasticity_func = synapse.init_plasticity_volterra(
             key=None, init="zeros", scale=None
-        )
+            )
+        new_null_init_params = model.initialize_parameters(
+                null_params_key,
+                cfg["num_hidden_pre"], cfg["num_hidden_post"],
+                cfg["init_params_scale"]
+                )
         simulated_null_data = model.simulate_trajectory(
             null_key,
             exp.input_params,
-            params,
+            new_null_init_params,
             plasticity_coeff_zeros,
             zero_plasticity_func,
             exp.data,
