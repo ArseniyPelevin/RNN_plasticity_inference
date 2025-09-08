@@ -15,6 +15,7 @@
 # %load_ext autoreload
 # %autoreload 2
 
+import itertools
 import os
 import time
 from importlib import reload
@@ -47,8 +48,8 @@ config = {
     "num_exp_test": 5,
 
     "input_firing_mean": 0,
-    "input_firing_std": 1,  # Standard deviation of input firing rates
-    "input_noise_std": 0,  # Standard deviation of noise added to presynaptic layer
+    "input_firing_std": 1,  # Input (before presynaptic) firing rates
+    "input_noise_std": 0,  #0.05 # Noise added to presynaptic layer
     "synapse_learning_rate": 1,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
     "learning_rate": 3e-3,
@@ -72,10 +73,10 @@ config = {
     "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
-    "num_epochs": 300,
+    "num_epochs": 250,
     "expid": 17, # For saving results and seeding random
 
-    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0-0.5X0Y0W1R0+0.3X1Y2W0R0", # Oja's rule
+    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
     "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
@@ -341,26 +342,23 @@ def plot_coeff_trajectories(exp_id, params_table):
 # Explore space of input-output layer sizes
 
 cfg.num_exp_train = 25
+cfg.input_noise_std = 0
 cfg.input_firing_std = 1
 cfg.synapse_learning_rate = 1
 cfg.init_params_scale = 0.01
 
-for i, (N_in, N_out) in enumerate(zip([10, 50, 100, 500, 1000],
-                                      [10, 50, 100, 500, 1000], strict=False)):
-    if ((N_in == 10 and N_out == 10) or (N_in == 100 and N_out == 100)
-        or (N_in == 10 and N_out == 100) or (N_in == 100 and N_out == 10)
-        or (N_in == 100 and N_out == 1000)):
-        continue
+for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
+                                      [10, 50, 100, 500, 1000]))):
     cfg.num_hidden_pre = N_in
     cfg.num_hidden_post = N_out
-    cfg.expid = 39 + i
+    cfg.expid = 50 + i
     run_experiment()
-    params_dict = {cfg.expid: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-          "N_in": N_in, "N_out": N_out, "N_exp": 25}}
+    params_dict = {cfg.expid: {"N_in": N_in, "N_out": N_out}}
     fig = plot_coeff_trajectories(cfg.expid, params_dict)
     fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
     plt.close(fig)
+    print(f"Plotted Exp{cfg.expid} with N_in={N_in}, N_out={N_out}")
 
 # +
 # Diagnose trajectories for NaN
@@ -481,17 +479,43 @@ params_table = {
          "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
      43: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 0.0001,
          "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"}
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     # Individual initial parameters for each experiment
+     44: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "N_in": 10, "N_out": 10, "N_exp": 25,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     45: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "plasticity_coeffs_init_scale": 0,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     46: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "input_noise_std": 0.1,
+         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
+     47: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "input_noise_std": 0.1,
+         "\nPlasticity_rule": "$xy-y^{2}w$"},
+     48: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "input_noise_std": 1,
+         "\nPlasticity_rule": "$xy-y^{2}w$"},
+     49: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "input_noise_std": 0.01,
+         "\nPlasticity_rule": "$xy-y^{2}w$"},
+     # 50-74 - explore input/output layer sizes
+     75: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
+         "input_noise_std": 0,
+         "\nPlasticity_rule": "$x-0.05xyw$"},
 }
 
-cfg.expid = 43
+cfg.expid = 76
 # cfg.num_exp_train = 25
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
-cfg.input_firing_std = 0.1
-# cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 0.0001
-_activation_trajs = run_experiment()
+cfg.input_firing_std = 1
+cfg.init_params_scale = 0.001
+cfg.input_noise_std = 0
+cfg.generation_plasticity = "1X0Y0W0R0"
+
+# _activation_trajs = run_experiment()
+
 
 fig = plot_coeff_trajectories(cfg.expid, params_table)
 fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
