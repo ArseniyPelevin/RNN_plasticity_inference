@@ -105,7 +105,7 @@ def compute_expected_reward(reward, old_expected_reward):
 
     # TODO: Implement expected reward function - Exponential Moving Average?
     """
-    return reward
+    return 0
 
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_params(
@@ -268,11 +268,11 @@ def simulate_trajectory(
                 expected_reward = compute_expected_reward(reward, None)
 
                 output_data['decisions'] = decision
-                output_data['rewards'] = reward
-                output_data['expected_rewards'] = expected_reward
+                output_data['rewards'] = reward * cfg.reward_scale
+                output_data['expected_rewards'] = expected_reward * cfg.reward_scale
             else:
-                reward = input_data['rewards']
-                expected_reward = input_data['expected_rewards']
+                reward = input_data['rewards'] * cfg.reward_scale
+                expected_reward = input_data['expected_rewards'] * cfg.reward_scale
 
             params = jax.lax.cond(valid,
                                   lambda p: update_params(

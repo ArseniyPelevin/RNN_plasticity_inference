@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import losses
 import model
 import numpy as np
+import omegaconf
 import optax
 import pandas as pd
 import sklearn
@@ -386,5 +387,7 @@ def save_results(cfg, expdata, train_time):
     for cfg_key, cfg_value in cfg.items():
         if isinstance(cfg_value, (float | int | str)):
             df[cfg_key] = cfg_value
+        elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
+            df[cfg_key] = ', '.join(str(v) for v in cfg_value)
 
     _logdata_path = utils.save_logs(cfg, df)

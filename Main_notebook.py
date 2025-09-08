@@ -24,6 +24,7 @@ import experiment
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+import model
 import numpy as np
 import pandas as pd
 import training
@@ -35,7 +36,7 @@ from omegaconf import OmegaConf
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
-coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
+# coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
     "use_experimental_data": False,
@@ -84,6 +85,8 @@ config = {
 
     "regularization_type": "none",  # "l1", "l2", "none"
     "regularization_scale": 0,
+
+    "reward_scale": 0.5,
 
     "fit_data": "neural",
     "neural_recording_sparsity": 1,
