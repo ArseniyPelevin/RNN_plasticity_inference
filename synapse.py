@@ -17,6 +17,7 @@ def volterra_plasticity_function(x, y, w, r, coeff):
       x: (N_pre,), y: (N_post,), w: (N_pre, N_post), r: scalar, coeff: (3,3,3,3)
       returns dw: (N_pre, N_post)
     """
+
     # basis powers
     X = jnp.stack([jnp.ones_like(x), x, x * x], axis=0)  # (3, N_pre)
     Y = jnp.stack([jnp.ones_like(y), y, y * y], axis=0)  # (3, N_post)
@@ -30,6 +31,13 @@ def volterra_plasticity_function(x, y, w, r, coeff):
     theta_WR = jnp.einsum('abc,cji->abji', theta_R, W)  # (a,b,j,i)
     # 3) combine with x- and y-powers -> (N_pre, N_post)
     dw = jnp.einsum('aj,bi,abji->ji', X, Y, theta_WR)  # (j,i)
+
+    # Use if NaN needs to be inspected
+    # _ = jax.lax.cond(jnp.any(jnp.isnan(dw)),
+    #                  lambda: (jax.debug.print('In plasticity_function dw is NaN:\n',
+    #     'X:\n{}\nY:\n{}\nW:\n{}\nR:\n{}\ncoeff:\n{}\ntheta_R:\n{}\ntheta_WR:\n{}\n\n',
+    #     X, Y, W, R, coeff, theta_R, theta_WR), 0)[1],
+    #                  lambda: 0)
     return dw
 
 def volterra_synapse_tensor(x, y, w, r):
@@ -94,7 +102,6 @@ def init_zeros():
 
 
 def init_random(key, scale):
-    assert key is not None, "For random initialization, a random key has to be given"
     return generate_gaussian(key, (3, 3, 3, 3), scale=scale)
 
 

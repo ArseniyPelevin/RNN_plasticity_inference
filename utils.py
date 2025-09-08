@@ -113,6 +113,20 @@ def kl_divergence(logits1, logits2):
     kl_matrix = kl_div(p, q)
     return np.sum(kl_matrix)
 
+def binary_deviance(predicted_outputs, decisions):
+    """Return -2 * log-likelihood summed over all elements (scalar)."""
+    eps = 1e-12
+    p = jnp.clip(predicted_outputs, eps, 1.0 - eps)
+    d = decisions.astype(p.dtype)
+    nll = -2.0 * (d * jnp.log(p) + (1.0 - d) * jnp.log(1.0 - p))
+    return jnp.sum(nll)
+
+def sse_deviance(predicted_activations, observed_activations):
+    """Sum of squared errors (scalar)."""
+    return jnp.sum((observed_activations - predicted_activations) ** 2)
+    
+def softclip(x, cap, p=10):
+    return x / ((1.0 + jnp.abs(x / cap) ** p) ** (1.0 / p))
 
 def create_nested_list(num_outer, num_inner):
     """
@@ -151,7 +165,7 @@ def sample_truncated_normal(key, mean, std):
             key, subkey = jax.random.split(key)
             value = std * jax.random.normal(subkey, ()) + mean
             if value >= (mean - std):
-                return key, int(value)
+                return int(value)
 
 
 def experiment_lists_to_tensors(nested_lists):
@@ -208,7 +222,8 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
+def print_and_log_training_info(cfg, expdata, plasticity_coeffs, 
+                                epoch, train_losses, test_losses):
     """
     Logs and prints training information including epoch, loss, and plasticity coefficients.
 
@@ -222,9 +237,6 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
     Returns:
         dict: Updated experimental data dictionary.
     """
-    
-    logging.info(f"Epoch: {epoch}")
-    logging.info(f"Loss: {loss}")
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)
@@ -242,9 +254,19 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
         top_indices = np.argsort(
             np.abs(plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten())
         )[-5:]
-        print(f'{epoch=}, loss={loss}')
+
+        train_loss_mean, train_loss_std = np.mean(train_losses), np.std(train_losses)
+        test_loss_mean, test_loss_std = np.mean(test_losses), np.std(test_losses)
+
+        logging.info(f"Epoch: {epoch}")
+        logging.info(f"Loss: {train_loss_mean} ± {train_loss_std}")
+        logging.info(f"Test Loss: {test_loss_mean} ± {test_loss_std}")
+        print(f"Epoch: {epoch}")
+        print(f"Train Loss: {train_loss_mean:.5f} ± {train_loss_std:.5f}")
+        print(f"Test Loss: {test_loss_mean:.5f} ± {test_loss_std:.5f}")
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
+
         for idx in reversed(top_indices):
             term_str = ""
             if ind_i[idx] == 1:
@@ -271,7 +293,10 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs, epoch, loss):
         expdata.setdefault("mlp_params", []).append(plasticity_coeffs)
 
     expdata.setdefault("epoch", []).append(epoch)
-    expdata.setdefault("loss", []).append(loss)
+    expdata.setdefault("train_loss_mean", []).append(train_loss_mean)
+    expdata.setdefault("train_loss_std", []).append(train_loss_std)
+    expdata.setdefault("test_loss_mean", []).append(test_loss_mean)
+    expdata.setdefault("test_loss_std", []).append(test_loss_std)
 
     return expdata
 
@@ -296,14 +321,6 @@ def save_logs(cfg, df):
 
     logdata_path = Path(cfg.log_dir)
     if cfg.log_expdata:
-        if cfg.use_experimental_data:
-            logdata_path = (
-                logdata_path / "expdata" / cfg.exp_name / cfg.plasticity_model
-            )
-        else:
-            logdata_path = (
-                logdata_path / "simdata" / cfg.exp_name / cfg.plasticity_model
-            )
 
         logdata_path.mkdir(parents=True, exist_ok=True)
         csv_file = logdata_path / f"exp_{cfg.expid}.csv"
