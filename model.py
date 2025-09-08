@@ -88,7 +88,7 @@ def compute_decision(key, output):
 
     return jax.random.bernoulli(key, output).astype(float)
 
-def compute_reward(decision):
+def compute_reward(key, decision):
     """ Compute reward based on binary decision.
 
     Args:
@@ -98,7 +98,7 @@ def compute_reward(decision):
         reward (float): Reward (1 for correct decision, 0 for incorrect).
     """
     # TODO: Implement reward function
-    return 0
+    return jax.random.bernoulli(key).astype(float)
 
 def compute_expected_reward(reward, old_expected_reward):
     """ Compute expected reward based current reward and old expected reward.
@@ -262,7 +262,9 @@ def simulate_trajectory(
             # Allow python 'if' in jitted function because mode is static
             if 'generation' in mode:
                 decision = compute_decision(step_key, output)
-                reward = compute_reward(decision)
+                # TODO reward is only temporarily probabilistic
+                reward_key, _ = jax.random.split(step_key)
+                reward = compute_reward(reward_key, decision)
                 expected_reward = compute_expected_reward(reward, None)
 
                 output_data['decisions'] = decision
