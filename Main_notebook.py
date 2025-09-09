@@ -68,29 +68,35 @@ config = {
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "recurrent": True,  # Whether to include recurrent connections
-    "plasticity_layers": ["recurrent"],  # ["feedforward", "recurrent"]
+    "plasticity_layers": ["feedforward", "recurrent"],  # ["feedforward", "recurrent"]
     "postsynaptic_input_sparsity": 1,  # Fraction of posts. neurons receiving FF input,
         # only effective if recurrent connections are present, otherwise 1
-    "feedforward_sparsity": 0.2,  # Fraction of nonzero weights in feedforward layer,
+    "feedforward_sparsity": 1,  # Fraction of nonzero weights in feedforward layer,
         # of all postsynaptic neurons receiving FF input (postsynaptic_input_sparsity),
         # all presynaptic neurons are guaranteed to have some output
     "recurrent_sparsity": 1,  # Fraction of nonzero weights in recurrent layer,
         # all neurons receive some input (FF or rec, not counting self-connections)
     "neural_recording_sparsity": 1,
+    # TODO? output_sparsity?  # Fraction of postsynaptic neurons contributing to output
 
 # Network dynamics
     "input_params_scale": 1,
-    "presynaptic_firing_mean": 0,
+    "presynaptic_firing_mean": 0,  # TODO rename into x
     "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
     "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
+
     "feedforward_input_scale": 1,  # Scale of feedforward weights,
         # only if no feedforward plasticity
     "recurrent_input_scale": 1,  # Scale of recurrent weights,
         # only if no recurrent plasticity
-    "init_params_scale": 0.01,  # float or 'Xavier'
+
+    "init_params_scale": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},  # float or 'Xavier'
+
     "reward_scale": 0,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
-    "synapse_learning_rate": 1,
+
+    "synapse_learning_rate": {'ff': 1, 'rec': 1},
+
     "measurement_noise_scale": 0,
 
 # Plasticity

@@ -88,8 +88,8 @@ def loss(
     # Allow python 'if' in jitted function because cfg is static
     if cfg.plasticity_model == "volterra":
         # Apply mask to plasticity coefficients to enforce constraints
-        plasticity_coeffs = jnp.multiply(plasticity_coeffs,
-                                         jnp.array(cfg.coeff_mask))
+        plasticity_coeffs = jnp.multiply(plasticity_coeffs, # ['ff'/'rec'] TODO
+                                         jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
         # Compute regularization and add it to total loss
         if cfg.regularization_type.lower() != "none":
             reg_func = (

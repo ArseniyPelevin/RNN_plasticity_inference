@@ -52,18 +52,21 @@ def initialize_parameters(key, cfg):
     params['w_ff'] = initialize_layer_params(ff_key,
                                              cfg['num_hidden_pre'],
                                              cfg['num_hidden_post'],
-                                             cfg['init_ff_params_scale'])
+                                             cfg['init_params_scale']['ff'])
     # params['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
-    if cfg['recurrent']:
+    if cfg['recurrent']:  # Whether there is recurrent connectivity at all
         params['w_rec'] = initialize_layer_params(rec_key,
                                                   cfg['num_hidden_post'],
                                                   cfg['num_hidden_post'],
-                                                  cfg['init_rec_params_scale'])
+                                                  cfg['init_params_scale']['rec'])
         # params['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
+    else:
+        params['w_rec'] = None
+        # params['b_rec'] = None
     params['w_out'] = initialize_layer_params(out_key,
                                               cfg['num_hidden_post'],
                                               1,
-                                              cfg['init_out_params_scale'])
+                                              cfg['init_params_scale']['out'])
     # params['b_out'] = jnp.zeros((1,))
 
     return params
@@ -76,53 +79,39 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
     # input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
     # x = jnp.dot(input_onehot, input_params)
 
-    # Makeshift for input firing (TODO)
+    # Makeshift for input firing (TODO)  # x IS input firing
     x = step_input
 
+    # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
     x += input_noise * cfg.presynaptic_noise_std
 
-    # Forward pass through plastic layer. x -- params --> y
-    w, b = params
+    # Feedforward layer: x -- w_ff --> y
 
-    pre = None
-    # Plastic feedforward layer
-    if "feedforward" in cfg.plasticity_layers:
-        pre = x
-        ff_w = w[:cfg.num_hidden_pre]
-    # Non-plastic feedforward layer
-    else:
-        ff_w = jnp.ones((cfg.num_hidden_pre, cfg.num_hidden_post))
-        # Scale ff weights if no plasticity: by constant scale and by number of inputs
-        n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-        n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
-        ff_w = ff_w * cfg.feedforward_input_scale / n_ff_inputs
-    ff_w *= ff_mask  # Apply feedforward sparsity mask
-    y = x @ ff_w  # + b
+    # Scale ff weights: by constant scale (and by number of inputs?)
+    # n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+    # n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
+    w_ff = params['w_ff'] * cfg.feedforward_input_scale  # / n_ff_inputs
+    w_ff *= ff_mask  # Apply feedforward sparsity mask
+    y = x @ w_ff  # + b
+
+    # Recurrent layer (if present): y -- w_rec --> y
 
     if cfg.recurrent:
-        # Plastic recurrent layer
-        if "recurrent" in cfg.plasticity_layers:
-            pre = jnp.concatenate([pre, y]) if pre is not None else y
-            rec_w = w[-cfg.num_hidden_post:]
-        # Non-plastic recurrent layer
-        else:
-            rec_w = jnp.ones((cfg.num_hidden_post, cfg.num_hidden_post))
-            # Scale rec weights if no plasticity: by const scale and by num of inputs
-            n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-            n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
-            rec_w = rec_w * cfg.recurrent_input_scale / n_rec_inputs
-        rec_w *= rec_mask
-        y += y @ rec_w  # + b
+        # Scale rec weights: by const scale (and by num of inputs?)
+        # n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+        # n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
+        w_rec = params['w_rec'] * cfg.recurrent_input_scale  # / n_rec_inputs
+        w_rec *= rec_mask
+        y += y @ w_rec  # + b
 
-    # Add nonlinearity
+    # Apply nonlinearity
     y = jax.nn.sigmoid(y)
 
     # Compute output probability ((1,) logit) based on postsynaptic layer activity
-    output = jnp.mean(y)
-    output = jax.nn.sigmoid(output)
+    output = jax.nn.sigmoid(y @ params['w_out']).squeeze()  # + b_out
 
-    return x, y, output, pre
+    return x, y, output
 
 def compute_decision(key, output):
     """ Make binary decision based on output (probability of decision).
@@ -159,69 +148,86 @@ def compute_expected_reward(reward, old_expected_reward):
 
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_params(
-    pre, post, params,
+    x, y, params,
     reward, expected_reward,
     plasticity_coeffs, plasticity_func,
     cfg
 ):
     """
-    Update parameters in one layer.
+    Update parameters in all layers.
 
     Calculates full weight matrix regardless of sparsity mask(s).
     Args:
         #!!! Function redefined from initial to update only one layer!
-        pre (array): Either x for feedforward, or y for recurrent, or both stacked
-        post (array): y (postsynaptic activations)
-        params (list): Tuple (weights, biases) for one layer.
+        x (array): x (presynaptic activations)  # TODO rename into x
+        y (array): y (postsynaptic activations)
+        params (dict): {w_ff, w_rec, w_out}
         reward (float): Reward at this timestep. TODO Not implemented
         expected_reward (float): Expected reward at this timestep.
         plasticity_coeffs (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         cfg (dict): Configuration dictionary.
 
-    Returns: Updated parameters.
+    Returns: Dictionary of updated parameters.
     """
+    def update_layer_params(pre, post, w, r, theta, lr):
+            # Allow python 'if' in jitted function because cfg is static
+        # Use vectorized volterra_plasticity_function
+        if cfg.plasticity_model == "volterra":
+            dw = plasticity_func(pre, post, w, reward_term, plasticity_coeffs)
+        # Use per-synapse mlp_plasticity_function
+        elif cfg.plasticity_model == "mlp":
+            # vmap over postsynaptic neurons
+            vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
+            # vmap over presynaptic neurons now, i.e. together vmap over synapses
+            vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
+            dw = vmap_synapses(pre, post, w, r, theta)
+
+        # TODO decide whether to update bias or not
+        # db = jnp.zeros_like(b)
+        # db = vmap_post(1.0, reward_term, b, plasticity_coeffs)
+
+        assert (
+            dw.shape == w.shape  # and db.shape == b.shape
+        ), "dw and w should be of the same shape to prevent broadcasting while adding"
+
+        w = utils.softclip(w + lr * dw, cap=cfg.synaptic_weight_threshold)
+
+        return w
 
     # Will only be checked at compile time
-    assert pre.ndim == 1, "Input must be a vector"
-    assert post.ndim == 1, "Output must be a vector"
-    assert len(params) == 2, "Params must be a tuple (weights, biases)"
-    assert params[0].shape[0] == pre.shape[0], "Input size must match weight shape"
-    assert params[0].shape[1] == post.shape[0], "Output size must match weight shape"
-    assert params[1].shape[0] == post.shape[0], "Output size must match bias shape"
+    assert x.ndim == 1, "Input must be a vector"
+    assert y.ndim == 1, "Output must be a vector"
+    assert params['w_ff'].shape[0] == x.shape[0], "x size must match w_ff shape"
+    assert params['w_ff'].shape[1] == y.shape[0], "y size must match w_ff shape"
+    if cfg.recurrent:
+        assert params['w_rec'].shape[0] == y.shape[0], "y size must match w_rec shape"
+        assert params['w_rec'].shape[1] == y.shape[0], "y size must match w_rec shape"
 
     # using expected reward or just the reward:
     # 0 if expected_reward == reward
     reward_term = reward - expected_reward
     # reward_term = reward
 
-    w, b = params
+    w_ff = update_layer_params(
+        x, y, params['w_ff'], reward_term,  # plasticity_coeffs['ff'] TODO
+        plasticity_coeffs, cfg.synapse_learning_rate['ff']
+    )
+    if "recurrent" in cfg.plasticity_layers:
+        w_rec = update_layer_params(
+            y, y, params['w_rec'], reward_term,  # plasticity_coeffs['rec'] TODO
+            plasticity_coeffs, cfg.synapse_learning_rate['rec']
+        )
+    elif cfg.recurrent:
+        w_rec = params['w_rec']
+    else:
+        w_rec = None
 
-    # Allow python 'if' in jitted function because cfg is static
-    # Use vectorized volterra_plasticity_function
-    if cfg.plasticity_model == "volterra":
-        dw = plasticity_func(pre, post, w, reward_term, plasticity_coeffs)
-    # Use per-synapse mlp_plasticity_function
-    elif cfg.plasticity_model == "mlp":
-        # vmap over postsynaptic neurons
-        vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
-        # vmap over presynaptic neurons now, i.e. together vmap over synapses
-        vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
-        dw = vmap_synapses(pre, post, w, reward_term, plasticity_coeffs)
-
-    # TODO decide whether to update bias or not
-    db = jnp.zeros_like(b)
-    # db = vmap_post(1.0, reward_term, b, plasticity_coeffs)
-
-    assert (
-        dw.shape == w.shape and db.shape == b.shape
-    ), "dw and w should be of the same shape to prevent broadcasting \
-        while adding"
-
-    lr = cfg.synapse_learning_rate # / x.shape[0]
-    params = (utils.softclip(w + lr * dw, cap=cfg.synaptic_weight_threshold),
-              b + lr * db
-              )
+    params = {  # Always reassemble dict in jitted function to avoid in-place updates
+        'w_ff': w_ff,
+        'w_rec': w_rec,
+        'w_out': params['w_out']  # No plasticity in output layer
+    }
 
     return params
 
@@ -244,9 +250,10 @@ def simulate_trajectory(
     Args:
         key: Random key for PRNG.
         input_params (N_inputs, N_hidden_pre): inputs --> presynaptic activations
-        init_params tuple((N_hidden_pre, N_hidden_post) - w
-                          (N_hidden_post) - b
-                         ): Initial synaptic weights and biases.
+        init_params (dict): w_ff: (num_hidden_pre, num_hidden_post),
+                w_rec: (num_hidden_post, num_hidden_post) if recurrent,
+                w_out: (num_hidden_post, 1)
+                (b_ff, b_rec, b_out are not used for now)
         plasticity_coeffs: Plasticity coefficients for the model.
         plasticity_func: Plasticity function to use.
         exp_data (dict): Data in {(N_sessions, N_steps_per_session_max, dim_element)}
@@ -262,10 +269,18 @@ def simulate_trajectory(
             x_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_pre),
             y_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_post),
             output_trajec_exp (N_sessions, N_steps_per_session_max),
-            [params_trajec_exp (
-                (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post), # w
-                (N_sessions, N_steps_per_session_max, N_hidden_post)  # b
-                )]
+                # If 'generation' in mode:
+            decision_trajec_exp (N_sessions, N_steps_per_session_max),
+            reward_trajec_exp (N_sessions, N_steps_per_session_max),
+            expected_reward_trajec_exp (N_sessions, N_steps_per_session_max),
+                # If 'test' in mode:
+            [params_trajec_exp {  # Only the plastic layers
+                w_ff: (N_sessions, N_steps_per_session_max,
+                       N_hidden_pre, N_hidden_post),
+                w_rec: (N_sessions, N_steps_per_session_max,
+                        N_hidden_post, N_hidden_post)
+                }
+            ]
         }: Trajectories of activations over the course of the experiment.
     """
 
@@ -286,11 +301,15 @@ def simulate_trajectory(
                 x_trajec_session (N_steps_per_session_max, N_hidden_pre),
                 y_trajec_session (N_steps_per_session_max, N_hidden_post),
                 output_trajec_session (N_steps_per_session_max),
-                [params_trajec_session (
-                    (N_steps_per_session_max, N_hidden_pre, N_hidden_post),  # w
-                    (N_steps_per_session_max, N_hidden_post)  # b
-                    )
-                ]
+                    # If 'generation' in mode:
+                decision_trajec_session (N_steps_per_session_max),
+                reward_trajec_session (N_steps_per_session_max),
+                expected_reward_trajec_session (N_steps_per_session_max),
+                    # If 'test' in mode:
+                params_trajec_session: {  # Only the plastic layers
+                    w_ff: (N_steps_per_session_max, N_hidden_pre, N_hidden_post),
+                    w_rec: (N_steps_per_session_max, N_hidden_post, N_hidden_post),
+                }
             }"""
 
         def simulate_step(params, step_variables):
@@ -310,7 +329,7 @@ def simulate_trajectory(
             """
             input_data, valid, step_key = step_variables
             output_data = {}
-            x, y, output, _pre = network_forward(step_key,
+            x, y, output = network_forward(step_key,
                                            input_params, params,
                                            ff_mask, rec_mask,
                                            input_data['inputs'], cfg)
@@ -335,14 +354,18 @@ def simulate_trajectory(
 
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
-                                      _pre, y, params, reward, expected_reward,
+                                      x, y, params, reward, expected_reward,
                                       plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
 
             if 'test' in mode:
-                output_data['params'] = params
-
+                output_data['params'] = {}
+                # Only return trajectories of plastic params
+                if "feedforward" in cfg.plasticity_layers:
+                    output_data['params']['w_ff'] = params['w_ff']
+                if "recurrent" in cfg.plasticity_layers:
+                    output_data['params']['w_rec'] = params['w_rec']
             return params, output_data
 
         # Run inner scan over steps within one session

@@ -215,7 +215,7 @@ def init_plasticity(key, cfg, mode):
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
         if cfg.plasticity_model == "volterra":
-            return init_plasticity_volterra(key, 
+            return init_plasticity_volterra(key,  # ['ff'/'rec'] TODO
                                             init=cfg.plasticity_coeffs_init,
                                             scale=cfg.plasticity_coeffs_init_scale)
         elif cfg.plasticity_model == "mlp":

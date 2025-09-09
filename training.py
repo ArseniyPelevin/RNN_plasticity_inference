@@ -200,7 +200,7 @@ def evaluate_model(
         simulated_model_data = model.simulate_trajectory(
             model_key,
             exp.input_params,
-            new_model_init_params,  # ?
+            new_model_init_params,  # Which parameters to use here?
             exp.feedforward_mask,
             exp.recurrent_mask,
             plasticity_coeffs,  # Our current plasticity coefficients estimate
@@ -323,9 +323,9 @@ def evaluate_r2_score(step_mask,
     Args:
         step_mask (N_sessions, N_steps_per_session_max),
         exp_data: Dict of (N_sessions, N_steps_per_session_max, ...) tensors,
-        exp_param_traj (
-            (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),  # w
-            (N_sessions, N_steps_per_session_max, N_hidden_post)  # b
+        exp_param_traj {  # Only if not cfg.use_experimental_data and only plastic
+            'w_ff': (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),
+            'w_rec': (N_sessions, N_steps_per_session_max, N_hidden_post, N_hidden_post
             ),
         model_data: Tuple of (x, y, output, params) from model.simulate_trajectory,
         cfg
@@ -359,8 +359,10 @@ def evaluate_r2_score(step_mask,
                                                     model_activations)
 
     if not cfg.use_experimental_data:
-        exp_weight_trajec = exp_param_traj[0]  # w
-        model_weight_trajec = model_data['params'][0]  # w  # TODO? b?
+        exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
+            list(exp_param_traj.values()))
+        model_weight_trajec = jnp.vstack(
+            list(model_data['params'].values()))  # TODO b?
 
         # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
         # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)
@@ -370,6 +372,7 @@ def evaluate_r2_score(step_mask,
             -1, np.prod(model_weight_trajec.shape[2:]))
 
         # Choose valid steps
+        step_mask = jnp.repeat(step_mask, len(cfg.plasticity_layers))
         exp_weight_trajec = exp_weight_trajec[step_mask]
         model_weight_trajec = model_weight_trajec[step_mask]
 
@@ -390,6 +393,8 @@ def save_results(cfg, expdata, train_time):
     for cfg_key, cfg_value in cfg.items():
         if isinstance(cfg_value, (float | int | str)):
             df[cfg_key] = cfg_value
+        elif isinstance(cfg_value, dict):
+            df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
         elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
             df[cfg_key] = ', '.join(str(v) for v in cfg_value)
 
