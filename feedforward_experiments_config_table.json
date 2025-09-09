@@ -1,0 +1,335 @@
+{
+    "10": {
+        "input_std": 0.5,
+        "synapse_lr": 0.1,
+        "init_w_std": 0.1,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "11": {
+        "input_std": 0.1,
+        "synapse_lr": 0.1,
+        "init_w_std": 0.1,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "12": {
+        "input_std": 1.0,
+        "synapse_lr": 0.5,
+        "init_w_std": 0.1,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "13": {
+        "input_std": 1.0,
+        "synapse_lr": 1.0,
+        "init_w_std": 0.1,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "14": {
+        "input_std": 1.0,
+        "synapse_lr": 0.1,
+        "init_w_std": 0.05,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "15": {
+        "input_std": 1.0,
+        "synapse_lr": 0.1,
+        "init_w_std": 0.01,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "16": {
+        "input_std": 1.0,
+        "synapse_lr": 0.1,
+        "init_w_std": 0.1,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 50
+    },
+    "17": {
+        "input_std": 1.0,
+        "synapse_lr": 0.5,
+        "init_w_std": 0.1,
+        "N_in": 50,
+        "N_out": 500,
+        "N_exp": 25
+    },
+    "18": {
+        "input_std": 1.0,
+        "synapse_lr": 0.5,
+        "init_w_std": 0.1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 50
+    },
+    "19": {
+        "input_std": 1.0,
+        "synapse_lr": 0.5,
+        "init_w_std": 0.1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "20": {
+        "input_std": 0.1,
+        "synapse_lr": 1.0,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "21": {
+        "input_std": 0.1,
+        "synapse_lr": 0.1,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "22": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "23": {
+        "input_std": 1,
+        "synapse_lr": 0.5,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "24": {
+        "input_std": 1,
+        "synapse_lr": 0.5,
+        "init_w_std": "Xavier (1/100+100)",
+        "N_in": 100,
+        "N_out": 100,
+        "N_exp": 25
+    },
+    "25": {
+        "input_std": 1,
+        "synapse_lr": 0.1,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "26": {
+        "input_std": 1,
+        "synapse_lr": 0.5,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "teacher/student init params": ""
+    },
+    "27": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "teacher/student init params": ""
+    },
+    "28": {
+        "input_std": 0.1,
+        "synapse_lr": 1,
+        "init_w_std": "Xavier (1/10+10)",
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "teacher/student init params": ""
+    },
+    "29": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": "Xavier (1/100+100)",
+        "N_in": 100,
+        "N_out": 100,
+        "N_exp": 25,
+        "teacher/student init params": ""
+    },
+    "30": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 100,
+        "N_out": 100,
+        "N_exp": 25,
+        "teacher/student init params": ""
+    },
+    "31": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "32": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "33": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.0001,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "34": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "35": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "36": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 10,
+        "N_out": 100,
+        "N_exp": 25
+    },
+    "37": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 100,
+        "N_out": 10,
+        "N_exp": 25
+    },
+    "38": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 100,
+        "N_out": 1000,
+        "N_exp": 25
+    },
+    "39": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.01,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "40": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "41": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 1,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "42": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.0001,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "43": {
+        "input_std": 0.1,
+        "synapse_lr": 1,
+        "init_w_std": 0.0001,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "44": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "N_in": 10,
+        "N_out": 10,
+        "N_exp": 25,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "45": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "plasticity_coeffs_init_scale": 0,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "46": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "presynaptic_noise_std": 0.1,
+        "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
+    },
+    "47": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "presynaptic_noise_std": 0.1,
+        "\nPlasticity_rule": "$xy-y^{2}w$"
+    },
+    "48": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "presynaptic_noise_std": 1,
+        "\nPlasticity_rule": "$xy-y^{2}w$"
+    },
+    "49": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "presynaptic_noise_std": 0.01,
+        "\nPlasticity_rule": "$xy-y^{2}w$"
+    },
+    "75": {
+        "input_std": 1,
+        "synapse_lr": 1,
+        "init_w_std": 0.001,
+        "presynaptic_noise_std": 0,
+        "\nPlasticity_rule": "$x-0.05xyw$"
+    }
+}
