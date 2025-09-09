@@ -36,29 +36,17 @@ from omegaconf import OmegaConf
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
-# coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
+coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
+    "expid": 17, # For saving results and seeding random
     "use_experimental_data": False,
+    "fit_data": "neural",  # ["behavioral", "neural"]
 
-    "num_inputs": 1000,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 10, # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 10,  # y, postsynaptic neurons for plasticity layer
-    "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
+# Experiment design
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_test": 5,
-
-    "input_firing_mean": 0,
-    "input_firing_std": 1,  # Input (before presynaptic) firing rates
-    "input_noise_std": 0,  #0.05 # Noise added to presynaptic layer
-    "synapse_learning_rate": 1,
-    "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
-    "learning_rate": 3e-3,
-
-    "input_params_scale": 1,
-    "init_params_scale": 0.01,  # float or 'Xavier'
-
-    # Below commented are real values as per CA1 recording article. Be modest for now
+     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
     # "sd_num_sessions": 3,  # Standard deviation of sessions/days per experiment
     # "mean_trials_per_session": 124,  # Number of trials/runs in each session/day
@@ -74,35 +62,61 @@ config = {
     "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
-    "num_epochs": 250,
-    "expid": 17, # For saving results and seeding random
+# Network architecture
+    "num_inputs": 6,  # Number of input classes (num_epochs * 4 for random normal)
+    "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
+    "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
+    "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
+    "recurrent": True,  # Whether to include recurrent connections
+    "plasticity_layers": ["recurrent"],  # ["feedforward", "recurrent"]
+    "postsynaptic_input_sparsity": 1,  # Fraction of posts. neurons receiving FF input,
+        # only effective if recurrent connections are present, otherwise 1
+    "feedforward_sparsity": 0.2,  # Fraction of nonzero weights in feedforward layer,
+        # of all postsynaptic neurons receiving FF input (postsynaptic_input_sparsity),
+        # all presynaptic neurons are guaranteed to have some output
+    "recurrent_sparsity": 1,  # Fraction of nonzero weights in recurrent layer,
+        # all neurons receive some input (FF or rec, not counting self-connections)
+    "neural_recording_sparsity": 1,
 
+# Network dynamics
+    "input_params_scale": 1,
+    "presynaptic_firing_mean": 0,
+    "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
+    "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
+    "feedforward_input_scale": 1,  # Scale of feedforward weights,
+        # only if no feedforward plasticity
+    "recurrent_input_scale": 1,  # Scale of recurrent weights,
+        # only if no recurrent plasticity
+    "init_params_scale": 0.01,  # float or 'Xavier'
+    "reward_scale": 0,
+    "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
+    "synapse_learning_rate": 1,
+    "measurement_noise_scale": 0,
+
+# Plasticity
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
     "generation_model": "volterra",
     "plasticity_coeffs_init": "random",
     "plasticity_model": "volterra",
     "plasticity_coeffs_init_scale": 1e-4,
-
-    "regularization_type": "none",  # "l1", "l2", "none"
-    "regularization_scale": 0,
-
-    "reward_scale": 0.5,
-
-    "fit_data": "neural",
-    "neural_recording_sparsity": 1,
-    "measurement_noise_scale": 0,
-
     # Restrictions on trainable plasticity parameters
     "trainable_coeffs": int(np.sum(coeff_mask)),
     "coeff_mask": coeff_mask.tolist(),
 
-    "_return_params_trajec": False,  # For debugging
+# Training
+    "num_epochs": 250,
+    "learning_rate": 3e-3,
+    "regularization_type": "none",  # "l1", "l2", "none"
+    "regularization_scale": 0,
 
+# Logging
     "log_expdata": True,
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
-    "fig_dir": "../../../../05_figures/"
+    "fig_dir": "../../../../05_figures/",
+
+    "_return_params_trajec": False,  # For debugging
 }
 cfg = OmegaConf.create(config)
 #TODO cfg = validate_config(cfg)
