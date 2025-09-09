@@ -99,7 +99,6 @@ class Experiment:
             return step_input
 
         inputs = [[] for _ in range(num_sessions)]
-        step_mask = [[] for _ in range(num_sessions)]
 
         max_steps_per_session = 0
         for session in range(num_sessions):
@@ -114,7 +113,6 @@ class Experiment:
                     subkey,
                     self.cfg["mean_steps_per_trial"],
                     self.cfg["sd_steps_per_trial"])
-                step_mask[session] += [1] * num_steps
                 for _step in range(num_steps):
                     key, subkey = jax.random.split(subkey)
                     step_input = generate_input(subkey)
@@ -124,10 +122,13 @@ class Experiment:
         # Pad and convert to tensor
         inputs_tensor = jnp.zeros((num_sessions, max_steps_per_session,
                                    *inputs[0][0].shape))
+        # Create mask of valid steps
+        step_mask = jnp.zeros_like(inputs_tensor[..., 0])
         for s, session in enumerate(inputs):
             inputs_tensor = inputs_tensor.at[s, :len(session)].set(jnp.array(session))
+            step_mask = step_mask.at[s, :len(session)].set(1)
 
-        return inputs_tensor, jnp.array(step_mask)
+        return inputs_tensor, step_mask
 
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):

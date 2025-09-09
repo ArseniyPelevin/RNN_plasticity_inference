@@ -301,7 +301,7 @@ def evaluate_percent_deviance(experimental_data,
     exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
     model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
     null_activations = null_activations.reshape(-1, *null_activations.shape[2:])
-    step_mask = step_mask.flatten()
+    step_mask = step_mask.flatten().astype(bool)
 
     # Choose only valid steps
     exp_activations = exp_activations[step_mask]
@@ -340,7 +340,7 @@ def evaluate_r2_score(step_mask,
         Dict of R2 scores for activity (and weights).
     """
     r2_score = {}
-    step_mask = step_mask.flatten()
+    step_mask = step_mask.flatten().astype(bool)
 
     if cfg.fit_data == 'neural':
         exp_activations = exp_data['ys']
