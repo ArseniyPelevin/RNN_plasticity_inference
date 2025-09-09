@@ -24,43 +24,49 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale):
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
     return input_params * input_params_scale
 
-def initialize_parameters(key,
-                          num_pre, num_post,
-                          init_params_scale, plasticity_layers):
+def initialize_parameters(key, cfg):
     """Initialize parameters for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
 
     Args:
         key: JAX random key.
-        num_pre: Number of presynaptic neurons.
-        num_post: Number of postsynaptic neurons.
-        init_params_scale: Scale for initializing parameters.
-        plasticity_layers: List of strings, "feedforward" and/or "recurrent".
+        cfg: Configuration dictionary.
 
     Returns:
-        params: Tuple of (weights, biases) for the layer.
+        params (dict): w_ff: (num_hidden_pre, num_hidden_post),
+                       w_rec: (num_hidden_post, num_hidden_post) if recurrent,
+                       w_out: (num_hidden_post, 1)
+                       (b_ff, b_rec, b_out are not used for now)
     """
+    def initialize_layer_params(key, num_pre, num_post, scale):
+        if scale == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
+            scale = 1 / jnp.sqrt(num_pre + num_post)
 
-    if "feedforward" in plasticity_layers and "recurrent" in plasticity_layers:
-        num_pre = num_pre + num_post
-    elif "feedforward" in plasticity_layers:
-        num_pre = num_pre
-    elif "recurrent" in plasticity_layers:
-        num_pre = num_post
-    else:
-        raise ValueError("'feedforward' or 'recurrent' must be in plasticity_layers")
+        return jax.random.normal(key, shape=(num_pre, num_post)) * scale
 
-    # Use ""Xavier normal"" (paper's Kaiming)
-    if init_params_scale == 'Xavier':
-        init_params_scale = 1 / jnp.sqrt(num_pre + num_post)
-    # TODO loop inside a list for multilayer network
-    weights = (
-        jax.random.normal(key, shape=(num_pre, num_post))
-        * init_params_scale
-    )
-    biases = jnp.zeros((num_post,))
-    return weights, biases
+    ff_key, rec_key, out_key = jax.random.split(key, 3)
+    params = {}
+
+    # Initialize feedforward weights
+    params['w_ff'] = initialize_layer_params(ff_key,
+                                             cfg['num_hidden_pre'],
+                                             cfg['num_hidden_post'],
+                                             cfg['init_ff_params_scale'])
+    # params['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
+    if cfg['recurrent']:
+        params['w_rec'] = initialize_layer_params(rec_key,
+                                                  cfg['num_hidden_post'],
+                                                  cfg['num_hidden_post'],
+                                                  cfg['init_rec_params_scale'])
+        # params['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
+    params['w_out'] = initialize_layer_params(out_key,
+                                              cfg['num_hidden_post'],
+                                              1,
+                                              cfg['init_out_params_scale'])
+    # params['b_out'] = jnp.zeros((1,))
+
+    return params
 
 @partial(jax.jit, static_argnames=("cfg"))
 def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cfg):
@@ -215,7 +221,7 @@ def update_params(
     lr = cfg.synapse_learning_rate # / x.shape[0]
     params = (utils.softclip(w + lr * dw, cap=cfg.synaptic_weight_threshold),
               b + lr * db
-              )  # TODO rewrite as list comprehension for multilayer
+              )
 
     return params
 

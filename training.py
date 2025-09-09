@@ -59,9 +59,7 @@ def initialize_training_params(key, cfg, experiments):
     for exp in experiments:
         # Different initial synaptic weights for each simulated experiment
         exp.new_init_params = model.initialize_parameters(
-                init_params_keys[exp.exp_i],
-                cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"], cfg["plasticity_layers"]
+                init_params_keys[exp.exp_i], cfg
                 )
 
     return experiments
@@ -197,14 +195,12 @@ def evaluate_model(
 
         # Simulate model with learned plasticity coefficients (plasticity_coeff)
         new_model_init_params = model.initialize_parameters(
-                model_params_key,
-                cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"], cfg["plasticity_layers"]
+                model_params_key, cfg
                 )
         simulated_model_data = model.simulate_trajectory(
             model_key,
             exp.input_params,
-            new_model_init_params,
+            new_model_init_params,  # ?
             exp.feedforward_mask,
             exp.recurrent_mask,
             plasticity_coeffs,  # Our current plasticity coefficients estimate
@@ -220,9 +216,7 @@ def evaluate_model(
             key=None, init="zeros", scale=None
             )
         new_null_init_params = model.initialize_parameters(
-                null_params_key,
-                cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"], cfg["plasticity_layers"]
+                null_params_key, cfg
                 )
         simulated_null_data = model.simulate_trajectory(
             null_key,

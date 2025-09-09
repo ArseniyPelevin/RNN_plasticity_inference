@@ -46,7 +46,7 @@ class Experiment:
          ) = self.generate_inputs(inputs_key, num_sessions)
 
         # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
-        self.input_params = model.initialize_input_parameters(
+        self.input_params = model.initialize_input_parameters(  #TODO redefine?
             input_params_key,
             cfg["num_inputs"], cfg["num_hidden_pre"],
             input_params_scale=cfg["input_params_scale"]
@@ -63,15 +63,11 @@ class Experiment:
         )
 
         # num_hidden_pre -> num_hidden_post plasticity layer
-        init_params = model.initialize_parameters(
-            params_key,
-            cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["init_params_scale"], cfg["plasticity_layers"]
-        )
+        self.init_params = model.initialize_parameters(params_key, cfg)
 
         trajectories = model.simulate_trajectory(simulation_key,
             self.input_params,
-            init_params,
+            self.init_params,
             self.feedforward_mask,  # if cfg.feedforward_sparsity < 1.0 else None,
             self.recurrent_mask,  # if cfg.recurrent_sparsity < 1.0 else None,
             plasticity_coeffs,
