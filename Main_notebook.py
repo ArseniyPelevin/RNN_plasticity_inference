@@ -33,6 +33,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from omegaconf import OmegaConf
 
 # +
+# Configuration
+
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
@@ -614,22 +616,37 @@ recurrent_experiments_config_table = {
      1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
          "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
          },
+     11: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
+          "\ninp_spar": 0.2, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
+          },
+     16: {'recurrent': False, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     17: {'recurrent': True, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     18: {'recurrent': True, 'plasticity': "feedforward+recurrent",
+          "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     19: {'recurrent': True, 'plasticity': "recurrent", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
 }
 
-cfg.expid = 1
-cfg.num_hidden_pre = 50
-cfg.num_hidden_post = 50
+cfg.expid = 19
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
 cfg.recurrent = True
 cfg.plasticity_layers = ["recurrent"]
 cfg.postsynaptic_input_sparsity = 1
-cfg.feedforward_sparsity = 0.2
+cfg.feedforward_sparsity = 1
 cfg.recurrent_sparsity = 1
-cfg.feedforward_input_scale = 1
-cfg.recurrent_input_scale = 1
+cfg.num_epochs = 250
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
-# _activation_trajs = run_experiment()
+_activation_trajs = run_experiment()
 
 fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
                               use_all_81=False)
@@ -637,41 +654,103 @@ fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
-# Explore recurrent parameters
+# Plot experimental vs modelled neural activity
+_activation_trajs, return_exp_activations, return_model_activations = run_experiment()
+# exp = _experiments[0]
+print(return_exp_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
+print(return_model_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
+sess=3
+vmin = jnp.min(return_exp_activations - return_model_activations)
+vmax = jnp.max(return_exp_activations - return_model_activations)
+fig, ax = plt.subplots(5, 3, figsize=(8, 8), layout='tight')
+im1 = ax[0, 0].imshow(return_exp_activations.mean(2), aspect='auto',
+                      cmap='viridis', interpolation='none')
+im2 = ax[0, 1].imshow(return_model_activations.mean(2), aspect='auto',
+                      cmap='viridis', interpolation='none')
+im3 = ax[0, 2].imshow(return_exp_activations.mean(2)
+                      - return_model_activations.mean(2),
+                      aspect='auto', cmap='bwr', interpolation='none',
+                      vmin=vmin,
+                      vmax=vmax)
+fig.colorbar(im1, ax=ax[0, 0], fraction=0.046, pad=0.04)
+fig.colorbar(im2, ax=ax[0, 1], fraction=0.046, pad=0.04)
+fig.colorbar(im3, ax=ax[0, 2], fraction=0.046, pad=0.04)
+ax[0, 0].set_title("Experimental data")
+ax[0, 1].set_title("Modelled data")
+ax[0, 0].set_ylabel("Sessions")
+ax[0, 0].set_xlabel("Steps")
+ax[0, 1].set_xlabel("Steps")
+ax[0, 2].set_title("Exp - Model")
+ax[0, 2].set_xlabel("Steps")
+
+for sess in range(return_exp_activations.shape[0]):
+    ax[1+sess, 0].set_title(f"Exp{sess} data")
+    ax[1+sess, 1].set_title(f"Model of Exp{sess} data")
+    ax[1+sess, 0].set_ylabel("Steps")
+    ax[1+sess, 0].set_xlabel("Neurons")
+    ax[1+sess, 1].set_xlabel("Neurons")
+    im3 = ax[1+sess, 0].imshow(return_exp_activations[sess], aspect='auto',
+                               cmap='viridis', interpolation='none')
+    im4 = ax[1+sess, 1].imshow(return_model_activations[sess], aspect='auto',
+                               cmap='viridis', interpolation='none')
+    fig.colorbar(im3, ax=ax[1+sess, 0], fraction=0.046, pad=0.04)
+    fig.colorbar(im4, ax=ax[1+sess, 1], fraction=0.046, pad=0.04)
+    im5 = ax[1+sess, 2].imshow(return_exp_activations[sess]
+                               - return_model_activations[sess],
+                        aspect='auto', cmap='bwr', interpolation='none',
+                        vmin=vmin,
+                        vmax=vmax)
+    fig.colorbar(im5, ax=ax[1+sess, 2], fraction=0.046, pad=0.04)
+    ax[1+sess, 2].set_title(f"Exp{sess} - Model of Exp{sess}")
+    ax[1+sess, 0].set_ylabel("Steps")
+    ax[1+sess, 0].set_xlabel("Neurons")
+    ax[1+sess, 2].set_xlabel("Neurons")
+plt.show()
+
+# +
+# Explore recurrent sparsity parameters
 cfg.num_hidden_pre = 50
 cfg.num_hidden_post = 50
 cfg.recurrent = True
 cfg.plasticity_layers = ["recurrent"]
 cfg.feedforward_input_scale = 1
 cfg.recurrent_input_scale = 1
+last_exp_id = 19
+i = 1
 
-for input_sparsity in [1, 0.6, 0.3]:
-    for ff_sparsity in [1, 0.6, 0.3]:
-        for rec_sparsity in [1, 0.6, 0.3]:
-    # for ff_scale in [1, 0.5, 0.2]:
-    #     for rec_scale in [1, 0.5, 0.2]:
-            cfg.postsynaptic_input_sparsity = input_sparsity
-            cfg.feedforward_sparsity = ff_sparsity
-            cfg.recurrent_sparsity = rec_sparsity
-            # cfg.feedforward_input_scale = ff_scale
-            # cfg.recurrent_input_scale = rec_scale
-            exp_id = (1 + len(recurrent_experiments_config_table))
-            cfg.expid = exp_id
-            print(f"\nEXPERIMENT {cfg.expid}:")
-            _activation_trajs = run_experiment()
-            params_dict = {cfg.expid: {"inp_spar": input_sparsity,
-                                        "FF_spar": ff_sparsity,
-                                        "rec_spar": rec_sparsity,
-                                    #    "FF_scale": ff_scale,
-                                    #    "rec_scale": rec_scale}}
-                                            }}
-            recurrent_experiments_config_table.update(params_dict)
-            fig = plot_coeff_trajectories(cfg.expid,
-                                            recurrent_experiments_config_table,
-                                            use_all_81=False)
-            fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
-                        dpi=300, bbox_inches="tight")
-            plt.close(fig)
+for plasticity in [["recurrent"], ["feedforward", "recurrent"]]:
+    for input_sparsity in [1, 0.6, 0.3]:
+        for ff_sparsity in [1, 0.6, 0.3]:
+            for rec_sparsity in [1, 0.6, 0.3]:
+        # for ff_scale in [1, 0.5, 0.2]:
+        #     for rec_scale in [1, 0.5, 0.2]:
+                cfg.plasticity_layers = plasticity
+                cfg.postsynaptic_input_sparsity = input_sparsity
+                cfg.feedforward_sparsity = ff_sparsity
+                cfg.recurrent_sparsity = rec_sparsity
+                # cfg.feedforward_input_scale = ff_scale
+                # cfg.recurrent_input_scale = rec_scale
+                exp_id = last_exp_id + i
+                cfg.expid = exp_id
+                print(f"\nEXPERIMENT {cfg.expid}:")
+                _activation_trajs = run_experiment()
+                params_dict = {cfg.expid: {"N_in": 50, "N_out": 50,
+                                        "plasticity": "+".join(plasticity),
+                                           "\ninp_spar": input_sparsity,
+                                            "FF_spar": ff_sparsity,
+                                            "rec_spar": rec_sparsity,
+                                        #    "FF_scale": ff_scale,
+                                        #    "rec_scale": rec_scale}}
+                                                }}
+                recurrent_experiments_config_table.update(params_dict)
+                fig = plot_coeff_trajectories(cfg.expid,
+                                                recurrent_experiments_config_table,
+                                                use_all_81=False)
+                fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                            dpi=300, bbox_inches="tight")
+                plt.close(fig)
+                i += 1
+print(recurrent_experiments_config_table)
 
 
 # +
