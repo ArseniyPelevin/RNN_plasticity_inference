@@ -631,6 +631,44 @@ fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
+# Explore recurrent parameters
+cfg.num_hidden_pre = 50
+cfg.num_hidden_post = 50
+cfg.recurrent = True
+cfg.plasticity_layers = ["recurrent"]
+cfg.feedforward_input_scale = 1
+cfg.recurrent_input_scale = 1
+
+for input_sparsity in [1, 0.6, 0.3]:
+    for ff_sparsity in [1, 0.6, 0.3]:
+        for rec_sparsity in [1, 0.6, 0.3]:
+    # for ff_scale in [1, 0.5, 0.2]:
+    #     for rec_scale in [1, 0.5, 0.2]:
+            cfg.postsynaptic_input_sparsity = input_sparsity
+            cfg.feedforward_sparsity = ff_sparsity
+            cfg.recurrent_sparsity = rec_sparsity
+            # cfg.feedforward_input_scale = ff_scale
+            # cfg.recurrent_input_scale = rec_scale
+            exp_id = (1 + len(recurrent_experiments_config_table))
+            cfg.expid = exp_id
+            print(f"\nEXPERIMENT {cfg.expid}:")
+            _activation_trajs = run_experiment()
+            params_dict = {cfg.expid: {"inp_spar": input_sparsity,
+                                        "FF_spar": ff_sparsity,
+                                        "rec_spar": rec_sparsity,
+                                    #    "FF_scale": ff_scale,
+                                    #    "rec_scale": rec_scale}}
+                                            }}
+            recurrent_experiments_config_table.update(params_dict)
+            fig = plot_coeff_trajectories(cfg.expid,
+                                            recurrent_experiments_config_table,
+                                            use_all_81=False)
+            fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                        dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+
+# +
 # Plot xs and ys, optionally evolution of weights
 
 # _activation_trajs, _model_activations, _null_activations = run_experiment()
