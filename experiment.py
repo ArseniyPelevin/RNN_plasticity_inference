@@ -39,8 +39,9 @@ class Experiment:
             sessions_key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
         )
 
-        self.data['inputs'] = self.generate_inputs(inputs_key, num_sessions)
-        self.mask = jnp.any(self.data['inputs'], axis=-1)  # (N_sessions, N_steps)
+        (self.data['inputs'],
+         self.step_mask  # (N_sessions, N_steps_per_session_max)
+         ) = self.generate_inputs(inputs_key, num_sessions)
 
         # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
         self.input_params = model.initialize_input_parameters(
@@ -61,7 +62,7 @@ class Experiment:
             plasticity_coeffs,
             plasticity_func,
             self.data,
-            self.mask,
+            self.step_mask,
             cfg,
             mode=f'generation_{mode}'
         )
@@ -83,6 +84,7 @@ class Experiment:
             return step_input
 
         inputs = [[] for _ in range(num_sessions)]
+        step_mask = [[] for _ in range(num_sessions)]
 
         max_steps_per_session = 0
         for session in range(num_sessions):
@@ -97,6 +99,7 @@ class Experiment:
                     subkey,
                     self.cfg["mean_steps_per_trial"],
                     self.cfg["sd_steps_per_trial"])
+                step_mask[session] += [1] * num_steps
                 for _step in range(num_steps):
                     key, subkey = jax.random.split(subkey)
                     step_input = generate_input(subkey)
@@ -109,4 +112,5 @@ class Experiment:
         for s, session in enumerate(inputs):
             inputs_tensor = inputs_tensor.at[s, :len(session)].set(jnp.array(session))
 
-        return inputs_tensor
+        return inputs_tensor, jnp.array(step_mask)
+
