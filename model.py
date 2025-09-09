@@ -88,7 +88,9 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
     else:
         ff_w = jnp.ones((cfg.num_hidden_pre, cfg.num_hidden_post))
         # Scale ff weights if no plasticity: by constant scale and by number of inputs
-        ff_w = ff_w * cfg.feedforward_input_scale / ff_mask.sum(axis=0)
+        n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+        n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
+        ff_w = ff_w * cfg.feedforward_input_scale / n_ff_inputs
     ff_w *= ff_mask  # Apply feedforward sparsity mask
     y = x @ ff_w  # + b
 
@@ -101,7 +103,9 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
         else:
             rec_w = jnp.ones((cfg.num_hidden_post, cfg.num_hidden_post))
             # Scale rec weights if no plasticity: by const scale and by num of inputs
-            rec_w = rec_w * cfg.recurrent_input_scale / rec_mask.sum(axis=0)
+            n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+            n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
+            rec_w = rec_w * cfg.recurrent_input_scale / n_rec_inputs
         rec_w *= rec_mask
         y += y @ rec_w  # + b
 
