@@ -97,7 +97,7 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
     if cfg.recurrent:
         # Plastic recurrent layer
         if "recurrent" in cfg.plasticity_layers:
-            pre = jnp.vstack([pre, y]) if pre else y
+            pre = jnp.concatenate([pre, y]) if pre is not None else y
             rec_w = w[-cfg.num_hidden_post:]
         # Non-plastic recurrent layer
         else:
