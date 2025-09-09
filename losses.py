@@ -58,6 +58,8 @@ def loss(
     key,
     input_params,
     init_params,
+    ff_mask,
+    rec_mask,
     plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
@@ -104,6 +106,8 @@ def loss(
         key,
         input_params,
         init_params,
+        ff_mask,
+        rec_mask,
         plasticity_coeffs,  # Our current plasticity coefficients estimate
         plasticity_func,
         experimental_data,

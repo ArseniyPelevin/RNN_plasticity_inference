@@ -24,7 +24,9 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale):
     input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
     return input_params * input_params_scale
 
-def initialize_parameters(key, num_pre, num_post, init_params_scale):
+def initialize_parameters(key,
+                          num_pre, num_post,
+                          init_params_scale, plasticity_layers):
     """Initialize parameters for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
@@ -34,10 +36,21 @@ def initialize_parameters(key, num_pre, num_post, init_params_scale):
         num_pre: Number of presynaptic neurons.
         num_post: Number of postsynaptic neurons.
         init_params_scale: Scale for initializing parameters.
+        plasticity_layers: List of strings, "feedforward" and/or "recurrent".
 
     Returns:
         params: Tuple of (weights, biases) for the layer.
     """
+
+    if "feedforward" in plasticity_layers and "recurrent" in plasticity_layers:
+        num_pre = num_pre + num_post
+    elif "feedforward" in plasticity_layers:
+        num_pre = num_pre
+    elif "recurrent" in plasticity_layers:
+        num_pre = num_post
+    else:
+        raise ValueError("'feedforward' or 'recurrent' must be in plasticity_layers")
+
     # Use ""Xavier normal"" (paper's Kaiming)
     if init_params_scale == 'Xavier':
         init_params_scale = 1 / jnp.sqrt(num_pre + num_post)
@@ -50,7 +63,7 @@ def initialize_parameters(key, num_pre, num_post, init_params_scale):
     return weights, biases
 
 @partial(jax.jit, static_argnames=("cfg"))
-def network_forward(key, input_params, params, step_input, cfg):
+def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cfg):
     """ Propagate through all layers from input to output. """
 
     # # Embed input integer into presynaptic layer activity
@@ -60,19 +73,46 @@ def network_forward(key, input_params, params, step_input, cfg):
     # Makeshift for input firing (TODO)
     x = step_input
 
-    input_noise = jax.random.normal(key, (cfg.num_hidden_pre,)) * cfg.input_noise_std
-    x += input_noise
+    input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
+    x += input_noise * cfg.presynaptic_noise_std
 
     # Forward pass through plastic layer. x -- params --> y
     w, b = params
-    y = jax.nn.sigmoid(x @ w + b)
-    # y = jnp.tanh(x @ w + b)
+
+    pre = None
+    # Plastic feedforward layer
+    if "feedforward" in cfg.plasticity_layers:
+        pre = x
+        ff_w = w[:cfg.num_hidden_pre]
+    # Non-plastic feedforward layer
+    else:
+        ff_w = jnp.ones((cfg.num_hidden_pre, cfg.num_hidden_post))
+        # Scale ff weights if no plasticity: by constant scale and by number of inputs
+        ff_w = ff_w * cfg.feedforward_input_scale / ff_mask.sum(axis=0)
+    ff_w *= ff_mask  # Apply feedforward sparsity mask
+    y = x @ ff_w  # + b
+
+    if cfg.recurrent:
+        # Plastic recurrent layer
+        if "recurrent" in cfg.plasticity_layers:
+            pre = jnp.vstack([pre, y]) if pre else y
+            rec_w = w[-cfg.num_hidden_post:]
+        # Non-plastic recurrent layer
+        else:
+            rec_w = jnp.ones((cfg.num_hidden_post, cfg.num_hidden_post))
+            # Scale rec weights if no plasticity: by const scale and by num of inputs
+            rec_w = rec_w * cfg.recurrent_input_scale / rec_mask.sum(axis=0)
+        rec_w *= rec_mask
+        y += y @ rec_w  # + b
+
+    # Add nonlinearity
+    y = jax.nn.sigmoid(y)
 
     # Compute output probability ((1,) logit) based on postsynaptic layer activity
     output = jnp.mean(y)
     output = jax.nn.sigmoid(output)
 
-    return x, y, output
+    return x, y, output, pre
 
 def compute_decision(key, output):
     """ Make binary decision based on output (probability of decision).
@@ -180,6 +220,8 @@ def simulate_trajectory(
     key,
     input_params,
     init_params,
+    ff_mask,
+    rec_mask,
     plasticity_coeffs,
     plasticity_func,
     exp_data,  # Data of one whole experiment, {(N_sessions, N_steps_per_session_max)}
@@ -258,8 +300,9 @@ def simulate_trajectory(
             """
             input_data, valid, step_key = step_variables
             output_data = {}
-            x, y, output = network_forward(step_key,
+            x, y, output, _pre = network_forward(step_key,
                                            input_params, params,
+                                           ff_mask, rec_mask,
                                            input_data['inputs'], cfg)
             output_data['xs'] = x
             output_data['ys'] = y
@@ -282,7 +325,7 @@ def simulate_trajectory(
 
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
-                                      x, y, params, reward, expected_reward,
+                                      _pre, y, params, reward, expected_reward,
                                       plasticity_coeffs, plasticity_func, cfg),
                                   lambda p: p,
                                   params)

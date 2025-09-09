@@ -66,11 +66,14 @@ class Experiment:
         init_params = model.initialize_parameters(
             params_key,
             cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["init_params_scale"]
+            cfg["init_params_scale"], cfg["plasticity_layers"]
         )
 
         trajectories = model.simulate_trajectory(simulation_key,
-            self.input_params, init_params,
+            self.input_params,
+            init_params,
+            self.feedforward_mask,  # if cfg.feedforward_sparsity < 1.0 else None,
+            self.recurrent_mask,  # if cfg.recurrent_sparsity < 1.0 else None,
             plasticity_coeffs,
             plasticity_func,
             self.data,
@@ -91,8 +94,8 @@ class Experiment:
 
             # Generate makeshift presynaptic input (TODO)
             step_input = jax.random.normal(key, shape=(self.cfg.num_hidden_pre,))
-            step_input = (step_input * self.cfg.input_firing_std
-                          + self.cfg.input_firing_mean)
+            step_input = (step_input * self.cfg.presynaptic_firing_std
+                          + self.cfg.presynaptic_firing_mean)
             return step_input
 
         inputs = [[] for _ in range(num_sessions)]

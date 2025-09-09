@@ -61,7 +61,7 @@ def initialize_training_params(key, cfg, experiments):
         exp.new_init_params = model.initialize_parameters(
                 init_params_keys[exp.exp_i],
                 cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"]
+                cfg["init_params_scale"], cfg["plasticity_layers"]
                 )
 
     return experiments
@@ -82,6 +82,8 @@ def training_loop(key, cfg,
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_params,
                 exp.new_init_params,
+                exp.feedforward_mask,
+                exp.recurrent_mask,
                 # Current plasticity coeffs, updated on each iteration:
                 plasticity_coeffs,
                 plasticity_func,  # Static within losses
@@ -130,7 +132,7 @@ def train(key, cfg, experiments, test_experiments):
 
     # Return value (scalar) of the function (loss value)
     # and gradient wrt its parameter at argnum (plasticity_coeffs) - !Check argnums!
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=3, has_aux=True)
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=5, has_aux=True)
 
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
     # Apply gradient clipping as in the article. Works on grad(coeffs), not weights!
@@ -160,6 +162,8 @@ def evaluate_loss(key, cfg,
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_params,
             exp.new_init_params,
+            exp.feedforward_mask,
+            exp.recurrent_mask,
             # Current plasticity coeffs, updated on each iteration:
             plasticity_coeffs,
             plasticity_func,  # Static within losses
@@ -195,12 +199,14 @@ def evaluate_model(
         new_model_init_params = model.initialize_parameters(
                 model_params_key,
                 cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"]
+                cfg["init_params_scale"], cfg["plasticity_layers"]
                 )
         simulated_model_data = model.simulate_trajectory(
             model_key,
             exp.input_params,
             new_model_init_params,
+            exp.feedforward_mask,
+            exp.recurrent_mask,
             plasticity_coeffs,  # Our current plasticity coefficients estimate
             plasticity_func,
             exp.data,
@@ -216,12 +222,14 @@ def evaluate_model(
         new_null_init_params = model.initialize_parameters(
                 null_params_key,
                 cfg["num_hidden_pre"], cfg["num_hidden_post"],
-                cfg["init_params_scale"]
+                cfg["init_params_scale"], cfg["plasticity_layers"]
                 )
         simulated_null_data = model.simulate_trajectory(
             null_key,
             exp.input_params,
             new_null_init_params,
+            exp.feedforward_mask,
+            exp.recurrent_mask,
             plasticity_coeff_zeros,
             zero_plasticity_func,
             exp.data,

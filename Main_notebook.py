@@ -148,15 +148,15 @@ def run_experiment():
 # Run Exp10-16
 print("\nEXPERIMENT 10")
 cfg.expid = 10
-cfg.input_firing_std = 0.5
+cfg.presynaptic_firing_std = 0.5
 run_experiment()
 
 print("\nEXPERIMENT 11")
 cfg.expid = 11
-cfg.input_firing_std = 0.1
+cfg.presynaptic_firing_std = 0.1
 run_experiment()
 
-cfg.input_firing_std = 1
+cfg.presynaptic_firing_std = 1
 
 print("\nEXPERIMENT 12")
 cfg.expid = 12
@@ -537,8 +537,8 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
 # Explore space of input-output layer sizes
 
 cfg.num_exp_train = 25
-cfg.input_noise_std = 0
-cfg.input_firing_std = 1
+cfg.presynaptic_noise_std = 0
+cfg.presynaptic_firing_std = 1
 cfg.synapse_learning_rate = 1
 cfg.init_params_scale = 0.01
 
@@ -600,123 +600,36 @@ experiment = reload(experiment)
 model = reload(model)
 
 # parameters table to include in subplot titles
-params_table = {
-     10: {'input_std': 0.5, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
-     11: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},  # nan
-     12: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
-     13: {'input_std': 1.0, 'synapse_lr': 1.0, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
-     14: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.05,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},  # nan
-     15: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.01,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
-     16: {'input_std': 1.0, 'synapse_lr': 0.1, 'init_w_std': 0.1,
-          "N_in": 100, "N_out": 1000, "N_exp": 50},
-     17: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
-         "N_in": 50, "N_out": 500, "N_exp": 25},
-     18: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
-         "N_in": 10, "N_out": 10, "N_exp": 50},
-     19: {'input_std': 1.0, 'synapse_lr': 0.5, 'init_w_std': 0.1,
-          "N_in": 10, "N_out": 10, "N_exp": 25},
-     20: {'input_std': 0.1, 'synapse_lr': 1.0, 'init_w_std': 'Xavier (1/10+10)',
-          "N_in": 10, "N_out": 10, "N_exp": 25},
-     21: {'input_std': 0.1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
-          "N_in": 10, "N_out": 10, "N_exp": 25},
-     22: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
-          "N_in": 10, "N_out": 10, "N_exp": 25},
-     23: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     24: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/100+100)',
-         "N_in": 100, "N_out": 100, "N_exp": 25},
-     25: {'input_std': 1, 'synapse_lr': 0.1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     # teacher/student init params
-     26: {'input_std': 1, 'synapse_lr': 0.5, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
-     27: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
-     28: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/10+10)',
-         "N_in": 10, "N_out": 10, "N_exp": 25, "teacher/student init params": ""},
-     29: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 'Xavier (1/100+100)',
-         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""},
-     30: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 100, "N_out": 100, "N_exp": 25, "teacher/student init params": ""},
-     31: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     32: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     33: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.0001,
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     34: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
-         "N_in": 10, "N_out": 10, "N_exp": 25},
-     35: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
-         "N_in": 10, "N_out": 10, "N_exp": 25},  # Same as 34, but without NaN
-     36: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 10, "N_out": 100, "N_exp": 25},
-     37: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 100, "N_out": 10, "N_exp": 25},
-     38: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 100, "N_out": 1000, "N_exp": 25},
-     # Softclip synaptic weights
-     39: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.01,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     40: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.1,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     41: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 1,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     42: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.0001,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     43: {'input_std': 0.1, 'synapse_lr': 1, 'init_w_std': 0.0001,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     # Individual initial parameters for each experiment
-     44: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "N_in": 10, "N_out": 10, "N_exp": 25,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     45: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "plasticity_coeffs_init_scale": 0,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     46: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "input_noise_std": 0.1,
-         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"},
-     47: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "input_noise_std": 0.1,
-         "\nPlasticity_rule": "$xy-y^{2}w$"},
-     48: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "input_noise_std": 1,
-         "\nPlasticity_rule": "$xy-y^{2}w$"},
-     49: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "input_noise_std": 0.01,
-         "\nPlasticity_rule": "$xy-y^{2}w$"},
-     # 50-74 - explore input/output layer sizes
-     75: {'input_std': 1, 'synapse_lr': 1, 'init_w_std': 0.001,
-         "input_noise_std": 0,
-         "\nPlasticity_rule": "$x-0.05xyw$"},
+# import json
+# with open("feedforward_experiments_config_table.json", "r") as f:
+#     feedforward_experiments_config_table = json.load(f)
+
+recurrent_experiments_config_table = {
+     1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
+         "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
+         },
 }
 
-cfg.expid = 76
-# cfg.num_exp_train = 25
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
-cfg.input_firing_std = 1
-cfg.init_params_scale = 0.001
-cfg.input_noise_std = 0
-cfg.generation_plasticity = "1X0Y0W0R0"
+cfg.expid = 1
+cfg.num_hidden_pre = 50
+cfg.num_hidden_post = 50
+cfg.recurrent = True
+cfg.plasticity_layers = ["recurrent"]
+cfg.postsynaptic_input_sparsity = 1
+cfg.feedforward_sparsity = 0.2
+cfg.recurrent_sparsity = 1
+cfg.feedforward_input_scale = 1
+cfg.recurrent_input_scale = 1
+
+cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
 # _activation_trajs = run_experiment()
 
-fig = plot_coeff_trajectories(cfg.expid, params_table, use_all_81=False)
-fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
+fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
+                              use_all_81=False)
+fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
-
 # +
 # Plot xs and ys, optionally evolution of weights
 
