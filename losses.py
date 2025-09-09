@@ -25,7 +25,7 @@ def neural_mse_loss(
     # key,
     exp_traj_ys,
     sim_traj_ys,
-    mask,
+    step_mask,
     # recording_sparsity,
     # measurement_noise_scale,
 
@@ -38,17 +38,17 @@ def neural_mse_loss(
                 Experimental trajectory of postsynaptic neurons.
         sim_traj_ys (N_sessions, N_steps, N_neurons):
                 Simulated trajectory of postsynaptic neurons.
-        mask (N_sessions, N_steps):
+        step_mask (N_sessions, N_steps):
                 Mask to distinguish valid and padding values.
         # recording_sparsity (float): Sparsity of the neural recordings.
         # measurement_noise_scale (float): Scale of the measurement noise.
 
     Returns: Mean squared error loss for neural activity.
     """
-    exp_traj_ys_masked = exp_traj_ys * mask[..., None]
-    sim_traj_ys_masked = sim_traj_ys * mask[..., None]
+    exp_traj_ys_masked = exp_traj_ys * step_mask[..., None]
+    sim_traj_ys_masked = sim_traj_ys * step_mask[..., None]
     se = optax.squared_error(exp_traj_ys_masked, sim_traj_ys_masked)
-    norm = jnp.sum(mask) * exp_traj_ys.shape[-1]  # N_steps * N_neurons
+    norm = jnp.sum(step_mask) * exp_traj_ys.shape[-1]  # N_steps * N_neurons
     mse_loss = jnp.sum(se) / norm
     return mse_loss
 
@@ -61,7 +61,7 @@ def loss(
     plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
-    mask,
+    step_mask,
     cfg,  # Static within losses
 ):
     """
@@ -107,7 +107,7 @@ def loss(
         plasticity_coeffs,  # Our current plasticity coefficients estimate
         plasticity_func,
         experimental_data,
-        mask,
+        step_mask,
         cfg,
         mode='simulation' if not cfg._return_params_trajec else 'generation_test'
     )
@@ -118,7 +118,7 @@ def loss(
             # subkey,
             experimental_data['ys'],
             simulated_data['ys'],
-            mask,
+            step_mask,
             # cfg.neural_recording_sparsity,
             # cfg.measurement_noise_scale,
         )

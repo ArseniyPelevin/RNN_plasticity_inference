@@ -109,30 +109,36 @@ def compute_expected_reward(reward, old_expected_reward):
 
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_params(
-    x, y, params, reward, expected_reward, plasticity_coeffs, plasticity_func, cfg
+    pre, post, params,
+    reward, expected_reward,
+    plasticity_coeffs, plasticity_func,
+    cfg
 ):
     """
-    Updates parameters in one layer
-    Inputs:
+    Update parameters in one layer.
+
+    Calculates full weight matrix regardless of sparsity mask(s).
+    Args:
         #!!! Function redefined from initial to update only one layer!
-        x (array): Input for the layer.
-        y (array): Output for the layer.
+        pre (array): Either x for feedforward, or y for recurrent, or both stacked
+        post (array): y (postsynaptic activations)
         params (list): Tuple (weights, biases) for one layer.
         reward (float): Reward at this timestep. TODO Not implemented
         expected_reward (float): Expected reward at this timestep.
         plasticity_coeffs (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
-        lr (float): Learning rate (per input).
+        cfg (dict): Configuration dictionary.
+
     Returns: Updated parameters.
     """
 
     # Will only be checked at compile time
-    assert x.ndim == 1, "Input must be a vector"
-    assert y.ndim == 1, "Output must be a vector"
+    assert pre.ndim == 1, "Input must be a vector"
+    assert post.ndim == 1, "Output must be a vector"
     assert len(params) == 2, "Params must be a tuple (weights, biases)"
-    assert params[0].shape[0] == x.shape[0], "Input size must match weight shape"
-    assert params[0].shape[1] == y.shape[0], "Output size must match weight shape"
-    assert params[1].shape[0] == y.shape[0], "Output size must match bias shape"
+    assert params[0].shape[0] == pre.shape[0], "Input size must match weight shape"
+    assert params[0].shape[1] == post.shape[0], "Output size must match weight shape"
+    assert params[1].shape[0] == post.shape[0], "Output size must match bias shape"
 
     # using expected reward or just the reward:
     # 0 if expected_reward == reward
@@ -144,14 +150,14 @@ def update_params(
     # Allow python 'if' in jitted function because cfg is static
     # Use vectorized volterra_plasticity_function
     if cfg.plasticity_model == "volterra":
-        dw = plasticity_func(x, y, w, reward_term, plasticity_coeffs)
+        dw = plasticity_func(pre, post, w, reward_term, plasticity_coeffs)
     # Use per-synapse mlp_plasticity_function
     elif cfg.plasticity_model == "mlp":
         # vmap over postsynaptic neurons
         vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
         # vmap over presynaptic neurons now, i.e. together vmap over synapses
         vmap_synapses = jax.vmap(vmap_post, in_axes=(0, None, 0, None, None))
-        dw = vmap_synapses(x, y, w, reward_term, plasticity_coeffs)
+        dw = vmap_synapses(pre, post, w, reward_term, plasticity_coeffs)
 
     # TODO decide whether to update bias or not
     db = jnp.zeros_like(b)
@@ -177,7 +183,7 @@ def simulate_trajectory(
     plasticity_coeffs,
     plasticity_func,
     exp_data,  # Data of one whole experiment, {(N_sessions, N_steps_per_session_max)}
-    exp_mask,
+    step_mask,
     cfg,
     mode
     ):
@@ -192,7 +198,7 @@ def simulate_trajectory(
         plasticity_coeffs: Plasticity coefficients for the model.
         plasticity_func: Plasticity function to use.
         exp_data (dict): Data in {(N_sessions, N_steps_per_session_max, dim_element)}
-        exp_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
+        step_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
         cfg: Configuration dictionary.
         mode:
             - 'simulation': return trajectories of x, y, output
@@ -293,8 +299,8 @@ def simulate_trajectory(
         return params_session, activity_trajec_session
 
     # Pre-split keys for each session and step
-    n_sessions = exp_mask.shape[0]
-    n_steps = exp_mask.shape[1]
+    n_sessions = step_mask.shape[0]
+    n_steps = step_mask.shape[1]
     total_keys = int(n_sessions * n_steps)
     flat_keys = jax.random.split(key, total_keys + 1)[1:]
     session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
@@ -304,7 +310,7 @@ def simulate_trajectory(
         simulate_session,
         init_params,
         (exp_data,
-         exp_mask,
+         step_mask,
          session_step_keys)
     )
 

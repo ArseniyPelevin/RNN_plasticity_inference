@@ -35,7 +35,8 @@ def generate_experiments(key, cfg,
                                     generation_coeff, generation_func,
                                     mode)
         experiments.append(exp)
-        print(f"Generated {mode} experiment {exp_i} with {exp.mask.shape[0]} sessions")
+        print(f"Generated {mode} experiment {exp_i}",
+              f"with {exp.step_mask.shape[0]} sessions")
 
     return experiments
 
@@ -85,7 +86,7 @@ def training_loop(key, cfg,
                 plasticity_coeffs,
                 plasticity_func,  # Static within losses
                 exp.data,
-                exp.mask,
+                exp.step_mask,
                 cfg,  # Static within losses
             )
             _activation_trajs[epoch][exp.exp_i] = _activations
@@ -163,7 +164,7 @@ def evaluate_loss(key, cfg,
             plasticity_coeffs,
             plasticity_func,  # Static within losses
             exp.data,
-            exp.mask,
+            exp.step_mask,
             cfg,  # Static within losses
         )
 
@@ -203,7 +204,7 @@ def evaluate_model(
             plasticity_coeffs,  # Our current plasticity coefficients estimate
             plasticity_func,
             exp.data,
-            exp.mask,
+            exp.step_mask,
             cfg,
             mode='generation_test'
         )
@@ -224,7 +225,7 @@ def evaluate_model(
             plasticity_coeff_zeros,
             zero_plasticity_func,
             exp.data,
-            exp.mask,
+            exp.step_mask,
             cfg,
             mode='generation_test'
         )
@@ -232,12 +233,12 @@ def evaluate_model(
         percent_deviance.append(
             evaluate_percent_deviance(
                 exp.data, simulated_model_data, simulated_null_data,
-                exp.mask, mode=cfg.fit_data
+                exp.step_mask, mode=cfg.fit_data
             )
         )
 
         r2_score_exp = evaluate_r2_score(
-                exp.mask,
+                exp.step_mask,
                 exp.data,
                 exp.params_trajec,
                 simulated_model_data,
@@ -260,7 +261,7 @@ def evaluate_model(
 def evaluate_percent_deviance(experimental_data,
                               simulated_model_data,
                               simulated_null_data,
-                              mask,
+                              step_mask,
                               mode='neural'):
     """ Percent deviance explained by model.
     Calculate neg log likelihoods between model and data.
@@ -271,7 +272,7 @@ def evaluate_percent_deviance(experimental_data,
         data (dict): Dictionary of experimental data.
         simulated_model_data: Simulated activations with learned coefficients.
         simulated_null_data: Simulated activations with zero coefficients.
-        mask: Mask of valid steps.
+        step_mask: Mask of valid steps.
         mode: ['neural', 'behavioral'].
 
     Returns:
@@ -292,12 +293,12 @@ def evaluate_percent_deviance(experimental_data,
     exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
     model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
     null_activations = null_activations.reshape(-1, *null_activations.shape[2:])
-    mask = mask.flatten()
+    step_mask = step_mask.flatten()
 
     # Choose only valid steps
-    exp_activations = exp_activations[mask]
-    model_activations = model_activations[mask]
-    null_activations = null_activations[mask]
+    exp_activations = exp_activations[step_mask]
+    model_activations = model_activations[step_mask]
+    null_activations = null_activations[step_mask]
 
     if mode == 'behavioral':
         model_deviance = utils.binary_deviance(model_activations, exp_activations)
@@ -309,7 +310,7 @@ def evaluate_percent_deviance(experimental_data,
     percent_deviance = 100 * (null_deviance - model_deviance) / null_deviance
     return percent_deviance
 
-def evaluate_r2_score(mask,
+def evaluate_r2_score(step_mask,
                       exp_data,
                       exp_param_traj,
                       model_data,
@@ -318,7 +319,7 @@ def evaluate_r2_score(mask,
     """
     Functionality: Evaluates the R2 score for weights and activity.
     Args:
-        mask (N_sessions, N_steps_per_session_max),
+        step_mask (N_sessions, N_steps_per_session_max),
         exp_data: Dict of (N_sessions, N_steps_per_session_max, ...) tensors,
         exp_param_traj (
             (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),  # w
@@ -331,7 +332,7 @@ def evaluate_r2_score(mask,
         Dict of R2 scores for activity (and weights).
     """
     r2_score = {}
-    mask = mask.flatten()
+    step_mask = step_mask.flatten()
 
     if cfg.fit_data == 'neural':
         exp_activations = exp_data['ys']
@@ -345,8 +346,8 @@ def evaluate_r2_score(mask,
     model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
 
     # Choose valid steps
-    exp_activations = exp_activations[mask]
-    model_activations = model_activations[mask]
+    exp_activations = exp_activations[step_mask]
+    model_activations = model_activations[step_mask]
 
     # Convert to numpy for sklearn
     exp_activations = np.asarray(jax.device_get(exp_activations))
@@ -367,8 +368,8 @@ def evaluate_r2_score(mask,
             -1, np.prod(model_weight_trajec.shape[2:]))
 
         # Choose valid steps
-        exp_weight_trajec = exp_weight_trajec[mask]
-        model_weight_trajec = model_weight_trajec[mask]
+        exp_weight_trajec = exp_weight_trajec[step_mask]
+        model_weight_trajec = model_weight_trajec[step_mask]
 
         # Convert to numpy for sklearn
         exp_weight_trajec = np.asarray(jax.device_get(exp_weight_trajec))
