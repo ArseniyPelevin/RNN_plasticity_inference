@@ -13,7 +13,7 @@ import utils
 
 
 def generate_experiments(key, cfg,
-                         generation_coeff, generation_func,
+                         generation_theta, generation_func,
                          mode="train"):
     """ Generate all experiments/trajectories as instances of class Experiment. """
 
@@ -32,7 +32,7 @@ def generate_experiments(key, cfg,
     for exp_i in range(num_experiments):
         exp = experiment.Experiment(experiment_keys[exp_i],
                                     exp_i, cfg,
-                                    generation_coeff, generation_func,
+                                    generation_theta, generation_func,
                                     mode)
         experiments.append(exp)
         print(f"Generated {mode} experiment {exp_i}",
@@ -44,11 +44,11 @@ def generate_data(key, cfg, mode="train"):
     # Generate model activity
     plasticity_key, experiments_key = jax.random.split(key, 2)
     #TODO add branching for experimental data
-    generation_coeff, generation_func = synapse.init_plasticity(
+    generation_theta, generation_func = synapse.init_plasticity(
         plasticity_key, cfg, mode="generation_model"
     )
     experiments = generate_experiments(
-        experiments_key, cfg, generation_coeff, generation_func, mode,
+        experiments_key, cfg, generation_theta, generation_func, mode,
     )
 
     return experiments
@@ -67,8 +67,9 @@ def initialize_training_params(key, cfg, experiments):
 def training_loop(key, cfg,
                   train_experiments, test_experiments,
                   loss_value_and_grad, optimizer, opt_state,
-                  plasticity_coeffs, plasticity_func,
+                  theta, plasticity_func,
                   expdata):
+    """ Loop over epochs and train experiments. Compute loss and update parameters."""
     # Return simulation trajectory - for debugging purposes only,
     # set cfg._return_params_trajectory=True
     _activation_trajs = [[None for _ in range(len(train_experiments))]
@@ -82,8 +83,7 @@ def training_loop(key, cfg,
                 exp.new_init_params,
                 exp.feedforward_mask,
                 exp.recurrent_mask,
-                # Current plasticity coeffs, updated on each iteration:
-                plasticity_coeffs,
+                theta,  # Current plasticity coeffs, updated on each iteration
                 plasticity_func,  # Static within losses
                 exp.data,
                 exp.step_mask,
@@ -91,26 +91,26 @@ def training_loop(key, cfg,
             )
             _activation_trajs[epoch][exp.exp_i] = _activations
             updates, opt_state = optimizer.update(
-                meta_grads, opt_state, plasticity_coeffs
+                meta_grads, opt_state, theta
             )
-            plasticity_coeffs = optax.apply_updates(plasticity_coeffs, updates)
+            theta = optax.apply_updates(theta, updates)
 
         if epoch % cfg.log_interval == 0:
             key, train_losses = evaluate_loss(
-                key, cfg, plasticity_coeffs, plasticity_func,
+                key, cfg, theta, plasticity_func,
                 train_experiments[:len(test_experiments)]
             )
             key, test_losses = evaluate_loss(
-                key, cfg, plasticity_coeffs, plasticity_func,
+                key, cfg, theta, plasticity_func,
                 test_experiments
             )
             expdata = utils.print_and_log_training_info(
-                cfg, expdata, plasticity_coeffs, epoch, train_losses, test_losses
+                cfg, expdata, theta, epoch, train_losses, test_losses
             )
-    return plasticity_coeffs, plasticity_func, expdata, _activation_trajs
+    return theta, plasticity_func, expdata, _activation_trajs
 
 def train(key, cfg, experiments, test_experiments):
-    """Train the model with the given configuration and experiments.
+    """ Initialize values and functions, start training loop.
 
     Args:
         key (jax.random.PRNGKey): Random key for initialization.
@@ -120,7 +120,7 @@ def train(key, cfg, experiments, test_experiments):
     key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
 
     # Initialize coefficients for training
-    plasticity_coeffs, plasticity_func = synapse.init_plasticity(
+    init_theta, plasticity_func = synapse.init_plasticity(
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
@@ -129,7 +129,7 @@ def train(key, cfg, experiments, test_experiments):
     test_experiments = initialize_training_params(test_key, cfg, test_experiments)
 
     # Return value (scalar) of the function (loss value)
-    # and gradient wrt its parameter at argnum (plasticity_coeffs) - !Check argnums!
+    # and gradient wrt its parameter at argnum (init_theta) - !Check argnums!
     loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=5, has_aux=True)
 
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
@@ -138,20 +138,20 @@ def train(key, cfg, experiments, test_experiments):
         optax.clip_by_global_norm(0.2),
         optax.adam(learning_rate=cfg["learning_rate"]),
     )
-    opt_state = optimizer.init(plasticity_coeffs)
+    opt_state = optimizer.init(init_theta)
     expdata = {}
 
-    plasticity_coeffs, plasticity_func, expdata, _activation_trajs = training_loop(
+    learned_theta, plasticity_func, expdata, _activation_trajs = training_loop(
         key, cfg,
         experiments, test_experiments,
         loss_value_and_grad, optimizer, opt_state,
-        plasticity_coeffs, plasticity_func,
+        init_theta, plasticity_func,
         expdata)
 
-    return plasticity_coeffs, plasticity_func, expdata, _activation_trajs
+    return learned_theta, plasticity_func, expdata, _activation_trajs
 
 def evaluate_loss(key, cfg,
-                  plasticity_coeffs, plasticity_func,
+                  current_theta, plasticity_func,
                   experiments):
     eval_losses = []
     for exp in experiments:
@@ -163,7 +163,7 @@ def evaluate_loss(key, cfg,
             exp.feedforward_mask,
             exp.recurrent_mask,
             # Current plasticity coeffs, updated on each iteration:
-            plasticity_coeffs,
+            current_theta,
             plasticity_func,  # Static within losses
             exp.data,
             exp.step_mask,
@@ -178,7 +178,7 @@ def evaluate_model(
     key,
     cfg,
     test_experiments,
-    plasticity_coeffs,
+    learned_theta,
     plasticity_func,
     expdata
 ):
@@ -193,7 +193,7 @@ def evaluate_model(
         (model_params_key, null_params_key,
          model_key, null_key) = jax.random.split(key, 4)
 
-        # Simulate model with learned plasticity coefficients (plasticity_coeff)
+        # Simulate model with learned_theta (plasticity coefficients)
         new_model_init_params = model.initialize_parameters(
                 model_params_key, cfg
                 )
@@ -203,7 +203,7 @@ def evaluate_model(
             new_model_init_params,  # Which parameters to use here?
             exp.feedforward_mask,
             exp.recurrent_mask,
-            plasticity_coeffs,  # Our current plasticity coefficients estimate
+            learned_theta,  # Learned plasticity coefficients estimate
             plasticity_func,
             exp.data,
             exp.step_mask,
@@ -212,7 +212,7 @@ def evaluate_model(
         )
 
         # Simulate model with zeros plasticity coefficients for null model
-        plasticity_coeff_zeros, zero_plasticity_func = synapse.init_plasticity_volterra(
+        zero_theta, zero_plasticity_func = synapse.init_plasticity_volterra(
             key=None, init="zeros", scale=None
             )
         new_null_init_params = model.initialize_parameters(
@@ -224,7 +224,7 @@ def evaluate_model(
             new_null_init_params,
             exp.feedforward_mask,
             exp.recurrent_mask,
-            plasticity_coeff_zeros,
+            zero_theta,  # Zero plasticity coefficients
             zero_plasticity_func,
             exp.data,
             exp.step_mask,

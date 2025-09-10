@@ -150,7 +150,7 @@ def compute_expected_reward(reward, old_expected_reward):
 def update_params(
     x, y, params,
     reward, expected_reward,
-    plasticity_coeffs, plasticity_func,
+    theta, plasticity_func,
     cfg
 ):
     """
@@ -164,7 +164,7 @@ def update_params(
         params (dict): {w_ff, w_rec, w_out}
         reward (float): Reward at this timestep. TODO Not implemented
         expected_reward (float): Expected reward at this timestep.
-        plasticity_coeffs (array): Array of plasticity coefficients.
+        theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         cfg (dict): Configuration dictionary.
 
@@ -174,7 +174,7 @@ def update_params(
             # Allow python 'if' in jitted function because cfg is static
         # Use vectorized volterra_plasticity_function
         if cfg.plasticity_model == "volterra":
-            dw = plasticity_func(pre, post, w, reward_term, plasticity_coeffs)
+            dw = plasticity_func(pre, post, w, reward_term, theta)
         # Use per-synapse mlp_plasticity_function
         elif cfg.plasticity_model == "mlp":
             # vmap over postsynaptic neurons
@@ -185,7 +185,7 @@ def update_params(
 
         # TODO decide whether to update bias or not
         # db = jnp.zeros_like(b)
-        # db = vmap_post(1.0, reward_term, b, plasticity_coeffs)
+        # db = vmap_post(1.0, reward_term, b, theta)
 
         assert (
             dw.shape == w.shape  # and db.shape == b.shape
@@ -210,13 +210,13 @@ def update_params(
     # reward_term = reward
 
     w_ff = update_layer_params(
-        x, y, params['w_ff'], reward_term,  # plasticity_coeffs['ff'] TODO
-        plasticity_coeffs, cfg.synapse_learning_rate['ff']
+        x, y, params['w_ff'], reward_term,  # theta['ff'] TODO
+        theta, cfg.synapse_learning_rate['ff']
     )
     if "recurrent" in cfg.plasticity_layers:
         w_rec = update_layer_params(
-            y, y, params['w_rec'], reward_term,  # plasticity_coeffs['rec'] TODO
-            plasticity_coeffs, cfg.synapse_learning_rate['rec']
+            y, y, params['w_rec'], reward_term,  # theta['rec'] TODO
+            theta, cfg.synapse_learning_rate['rec']
         )
     elif cfg.recurrent:
         w_rec = params['w_rec']
@@ -238,7 +238,7 @@ def simulate_trajectory(
     init_params,
     ff_mask,
     rec_mask,
-    plasticity_coeffs,
+    theta,
     plasticity_func,
     exp_data,  # Data of one whole experiment, {(N_sessions, N_steps_per_session_max)}
     step_mask,
@@ -254,7 +254,7 @@ def simulate_trajectory(
                 w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                 w_out: (num_hidden_post, 1)
                 (b_ff, b_rec, b_out are not used for now)
-        plasticity_coeffs: Plasticity coefficients for the model.
+        theta: Plasticity coefficients for the model.
         plasticity_func: Plasticity function to use.
         exp_data (dict): Data in {(N_sessions, N_steps_per_session_max, dim_element)}
         step_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
@@ -355,7 +355,7 @@ def simulate_trajectory(
             params = jax.lax.cond(valid,
                                   lambda p: update_params(
                                       x, y, params, reward, expected_reward,
-                                      plasticity_coeffs, plasticity_func, cfg),
+                                      theta, plasticity_func, cfg),
                                   lambda p: p,
                                   params)
 

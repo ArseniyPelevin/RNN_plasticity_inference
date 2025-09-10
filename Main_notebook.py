@@ -140,13 +140,13 @@ def run_experiment():
     test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    plasticity_coeffs, plasticity_func, expdata, _activation_trajs = (
+    learned_theta, plasticity_func, expdata, _activation_trajs = (
         training.train(train_key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
     expdata = training.evaluate_model(eval_key, cfg,
                                       test_experiments,
-                                      plasticity_coeffs, plasticity_func,
+                                      learned_theta, plasticity_func,
                                       expdata)
     training.save_results(cfg, expdata, train_time)
     return _activation_trajs
@@ -634,7 +634,7 @@ recurrent_experiments_config_table = {
           },
 }
 
-cfg.expid = 19
+cfg.expid = 55
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
 cfg.recurrent = True

@@ -60,7 +60,7 @@ def loss(
     init_params,
     ff_mask,
     rec_mask,
-    plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
+    theta,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
     step_mask,
@@ -72,7 +72,7 @@ def loss(
     Args:
         key (int): Seed for the random number generator.
         params (array): Array of parameters.
-        plasticity_coeffs (array): Array of plasticity coefficients.
+        theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         xs (array): Array of inputs.
         rewards (array): Array of rewards.
@@ -88,7 +88,7 @@ def loss(
     # Allow python 'if' in jitted function because cfg is static
     if cfg.plasticity_model == "volterra":
         # Apply mask to plasticity coefficients to enforce constraints
-        plasticity_coeffs = jnp.multiply(plasticity_coeffs, # ['ff'/'rec'] TODO
+        theta = jnp.multiply(theta, # ['ff'/'rec'] TODO
                                          jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
         # Compute regularization and add it to total loss
         if cfg.regularization_type.lower() != "none":
@@ -97,7 +97,7 @@ def loss(
                 else jnp.square
             )
             loss = cfg.regularization_scale * \
-                jnp.sum(reg_func(plasticity_coeffs))
+                jnp.sum(reg_func(theta))
         else:
             loss = 0.0
 
@@ -108,7 +108,7 @@ def loss(
         init_params,
         ff_mask,
         rec_mask,
-        plasticity_coeffs,  # Our current plasticity coefficients estimate
+        theta,  # Our current plasticity coefficients estimate
         plasticity_func,
         experimental_data,
         step_mask,
