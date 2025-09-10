@@ -56,8 +56,8 @@ def neural_mse_loss(
 @partial(jax.jit, static_argnames=["plasticity_func", "cfg"])
 def loss(
     key,
-    input_params,
-    init_params,
+    input_weights,
+    init_weights,
     ff_mask,
     rec_mask,
     theta,  # Current plasticity coeffs, updated on each iteration
@@ -71,7 +71,7 @@ def loss(
 
     Args:
         key (int): Seed for the random number generator.
-        params (array): Array of parameters.
+        weights (array): Array of synaptic weights.
         theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         xs (array): Array of inputs.
@@ -104,8 +104,8 @@ def loss(
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(
         key,
-        input_params,
-        init_params,
+        input_weights,
+        init_weights,
         ff_mask,
         rec_mask,
         theta,  # Our current plasticity coefficients estimate
@@ -113,7 +113,7 @@ def loss(
         experimental_data,
         step_mask,
         cfg,
-        mode='simulation' if not cfg._return_params_trajec else 'generation_test'
+        mode='simulation' if not cfg._return_weights_trajec else 'generation_test'
     )
 
     # Allow python 'if' in jitted function because cfg is static
@@ -134,7 +134,7 @@ def loss(
         loss += behavior_loss
     # loss = regularization + neural_loss + behavior_loss
 
-    if cfg._return_params_trajec:
+    if cfg._return_weights_trajec:
         # Return simulation trajectory - for debugging purposes only
         return loss, simulated_data
     return loss, None

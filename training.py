@@ -53,13 +53,13 @@ def generate_data(key, cfg, mode="train"):
 
     return experiments
 
-def initialize_training_params(key, cfg, experiments):
-    init_params_keys = jax.random.split(key, len(experiments))
+def initialize_simulation_weights(key, cfg, experiments):
+    init_weights_keys = jax.random.split(key, len(experiments))
 
     for exp in experiments:
         # Different initial synaptic weights for each simulated experiment
-        exp.new_init_params = model.initialize_parameters(
-                init_params_keys[exp.exp_i], cfg
+        exp.new_init_weights = model.initialize_weights(
+                init_weights_keys[exp.exp_i], cfg
                 )
 
     return experiments
@@ -71,7 +71,7 @@ def training_loop(key, cfg,
                   expdata):
     """ Loop over epochs and train experiments. Compute loss and update parameters."""
     # Return simulation trajectory - for debugging purposes only,
-    # set cfg._return_params_trajectory=True
+    # set cfg._return_weights_trajectory=True
     _activation_trajs = [[None for _ in range(len(train_experiments))]
                         for _ in range(cfg["num_epochs"] + 1)]
     for epoch in range(cfg["num_epochs"] + 1):  # +1 so that we have 250th epoch
@@ -79,8 +79,8 @@ def training_loop(key, cfg,
             key, subkey = jax.random.split(key)
             (_loss, _activations), meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
-                exp.input_params,
-                exp.new_init_params,
+                exp.input_weights,
+                exp.new_init_weights,
                 exp.feedforward_mask,
                 exp.recurrent_mask,
                 theta,  # Current plasticity coeffs, updated on each iteration
@@ -114,7 +114,7 @@ def train(key, cfg, experiments, test_experiments):
 
     Args:
         key (jax.random.PRNGKey): Random key for initialization.
-        cfg (dict): Configuration dictionary containing training parameters.
+        cfg (dict): Configuration dictionary.
         experiments (list): List of experiments from class Experiment.
     """
     key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
@@ -124,9 +124,9 @@ def train(key, cfg, experiments, test_experiments):
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    # Initialize new initial parameters for each train and test experiment
-    experiments = initialize_training_params(train_key, cfg, experiments)
-    test_experiments = initialize_training_params(test_key, cfg, test_experiments)
+    # Initialize new initial weights for each train and test experiment
+    experiments = initialize_simulation_weights(train_key, cfg, experiments)
+    test_experiments = initialize_simulation_weights(test_key, cfg, test_experiments)
 
     # Return value (scalar) of the function (loss value)
     # and gradient wrt its parameter at argnum (init_theta) - !Check argnums!
@@ -158,8 +158,8 @@ def evaluate_loss(key, cfg,
         key, subkey = jax.random.split(key)
         loss, _activations = losses.loss(
             subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_params,
-            exp.new_init_params,
+            exp.input_weights,
+            exp.new_init_weights,
             exp.feedforward_mask,
             exp.recurrent_mask,
             # Current plasticity coeffs, updated on each iteration:
@@ -190,17 +190,17 @@ def evaluate_model(
     percent_deviance = []
 
     for exp in test_experiments:
-        (model_params_key, null_params_key,
+        (model_weights_key, null_weights_key,
          model_key, null_key) = jax.random.split(key, 4)
 
         # Simulate model with learned_theta (plasticity coefficients)
-        new_model_init_params = model.initialize_parameters(
-                model_params_key, cfg
+        new_model_init_weights = model.initialize_weights(
+                model_weights_key, cfg
                 )
         simulated_model_data = model.simulate_trajectory(
             model_key,
-            exp.input_params,
-            new_model_init_params,  # Which parameters to use here?
+            exp.input_weights,
+            new_model_init_weights,  # Which weights to use here?
             exp.feedforward_mask,
             exp.recurrent_mask,
             learned_theta,  # Learned plasticity coefficients estimate
@@ -215,13 +215,13 @@ def evaluate_model(
         zero_theta, zero_plasticity_func = synapse.init_plasticity_volterra(
             key=None, init="zeros", scale=None
             )
-        new_null_init_params = model.initialize_parameters(
-                null_params_key, cfg
+        new_null_init_weights = model.initialize_weights(
+                null_weights_key, cfg
                 )
         simulated_null_data = model.simulate_trajectory(
             null_key,
-            exp.input_params,
-            new_null_init_params,
+            exp.input_weights,
+            new_null_init_weights,
             exp.feedforward_mask,
             exp.recurrent_mask,
             zero_theta,  # Zero plasticity coefficients
@@ -242,7 +242,7 @@ def evaluate_model(
         r2_score_exp = evaluate_r2_score(
                 exp.step_mask,
                 exp.data,
-                exp.params_trajec,
+                exp.weights_trajec,
                 simulated_model_data,
                 cfg
                 )
@@ -314,7 +314,7 @@ def evaluate_percent_deviance(experimental_data,
 
 def evaluate_r2_score(step_mask,
                       exp_data,
-                      exp_param_traj,
+                      exp_weight_traj,
                       model_data,
                       cfg
 ):
@@ -323,11 +323,11 @@ def evaluate_r2_score(step_mask,
     Args:
         step_mask (N_sessions, N_steps_per_session_max),
         exp_data: Dict of (N_sessions, N_steps_per_session_max, ...) tensors,
-        exp_param_traj {  # Only if not cfg.use_experimental_data and only plastic
+        exp_weight_traj {  # Only if not cfg.use_experimental_data and only plastic
             'w_ff': (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),
             'w_rec': (N_sessions, N_steps_per_session_max, N_hidden_post, N_hidden_post
             ),
-        model_data: Tuple of (x, y, output, params) from model.simulate_trajectory,
+        model_data: Tuple of (x, y, output, weights) from model.simulate_trajectory,
         cfg
 
     Returns:
@@ -360,9 +360,9 @@ def evaluate_r2_score(step_mask,
 
     if not cfg.use_experimental_data:
         exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
-            list(exp_param_traj.values()))
+            list(exp_weight_traj.values()))
         model_weight_trajec = jnp.vstack(
-            list(model_data['params'].values()))  # TODO b?
+            list(model_data['weights'].values()))  # TODO b?
 
         # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
         # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)

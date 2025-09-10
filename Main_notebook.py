@@ -82,7 +82,7 @@ config = {
     # TODO? output_sparsity?  # Fraction of postsynaptic neurons contributing to output
 
 # Network dynamics
-    "input_params_scale": 1,
+    "input_weights_scale": 1,
     "presynaptic_firing_mean": 0,  # TODO rename into x
     "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
     "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
@@ -92,7 +92,7 @@ config = {
     "recurrent_input_scale": 1,  # Scale of recurrent weights,
         # only if no recurrent plasticity
 
-    "init_params_scale": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},  # float or 'Xavier'
+    "init_weights_scale": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},  # float or 'Xavier'
 
     "reward_scale": 0,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
@@ -124,7 +124,7 @@ config = {
     "log_dir": "../../../../03_data/02_training_data/",
     "fig_dir": "../../../../05_figures/",
 
-    "_return_params_trajec": False,  # For debugging
+    "_return_weights_trajec": False,  # For debugging
 }
 cfg = OmegaConf.create(config)
 #TODO cfg = validate_config(cfg)
@@ -180,15 +180,15 @@ cfg.synapse_learning_rate = 0.1
 
 print("\nEXPERIMENT 14")
 cfg.expid = 14
-cfg.init_params_scale = 0.05
+cfg.init_weights_scale = 0.05
 run_experiment()
 
 print("\nEXPERIMENT 15")
 cfg.expid = 15
-cfg.init_params_scale = 0.01
+cfg.init_weights_scale = 0.01
 run_experiment()
 
-cfg.init_params_scale = 0.1
+cfg.init_weights_scale = 0.1
 
 print("\nEXPERIMENT 16")
 cfg.expid = 16
@@ -339,7 +339,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
             ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
                     markerfacecolor='none', markeredgecolor=color)
 
-    # title with params if available
+    # title with parameters if available
     basename = os.path.basename(fpath)
     exp_num = exp_id
     if exp_num is not None and exp_num in params_table:
@@ -548,7 +548,7 @@ cfg.num_exp_train = 25
 cfg.presynaptic_noise_std = 0
 cfg.presynaptic_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 0.01
+cfg.init_weights_scale = 0.01
 
 for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
                                       [10, 50, 100, 500, 1000]))):
@@ -570,8 +570,8 @@ _activation_trajs = run_experiment()
 print(len(_activation_trajs)) # num epochs
 print(len(_activation_trajs[0])) # num experiments
 print(len(_activation_trajs[0][0])) # (x, y, output)
-print(_activation_trajs[0][0]['params'][0].shape)  # w.shape
-print(_activation_trajs[0][0]['params'][1].shape)  # b.shape
+print(_activation_trajs[0][0]['weights'][0].shape)  # w.shape
+print(_activation_trajs[0][0]['weights'][1].shape)  # b.shape
 print(_activation_trajs[0][0]['xs'].shape)  # x.shape
 print(_activation_trajs[0][0]['ys'].shape)  # y.shape
 print(_activation_trajs[0][0]['outputs'].shape)  # output.shape
@@ -768,7 +768,7 @@ session = 0
 # ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
 xs = _activation_trajs[epoch][exp]['xs'][session]
 ys = _activation_trajs[epoch][exp]['ys'][session]
-w = _activation_trajs[epoch][exp]['params'][0][session]
+w = _activation_trajs[epoch][exp]['weights'][0][session]
 # xs = x_bad
 # ys = y_bad
 
@@ -858,9 +858,9 @@ for exp in experiments:
     # print(f'{exp.data["inputs"].shape=}')
     # print(f'{exp.data["xs"].shape=}')
     # print(f'{exp.data["ys"].shape=}')
-    # print(f'{jnp.mean(exp.input_params)=}')
+    # print(f'{jnp.mean(exp.input_weights)=}')
     # print(f'{exp.steps_per_session=}')
-    # print(f'{exp.params[0].shape=}')
+    # print(f'{exp.weights[0].shape=}')
     yrange += jnp.max(exp.data["ys"][0, -1]) - jnp.min(exp.data["ys"][0, -1])
 print(f'{exp.data["ys"].shape=}')
 print(f'{jnp.min(exp.data["xs"])=}, {jnp.max(exp.data["xs"])=}')
@@ -871,7 +871,7 @@ print(f'Average yrange: {yrange / len(experiments)}')
 # -
 
 # Plot weights distribution
-flat = np.concatenate([exp['params'][0].ravel() for epoch in _activation_trajs
+flat = np.concatenate([exp['weights'][0].ravel() for epoch in _activation_trajs
                        for exp in epoch])
 print(flat.shape)
 flat = flat[flat < 50]

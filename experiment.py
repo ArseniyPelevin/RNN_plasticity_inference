@@ -30,10 +30,10 @@ class Experiment:
         (key,
          sessions_key,
          inputs_key,
-         input_params_key,
+         input_weights_key,
          ff_mask_key,
          rec_mask_key,
-         params_key,
+         weights_key,
          simulation_key) = jax.random.split(key, 8)
 
         # Pick random number of sessions in this experiment given mean and std
@@ -46,10 +46,10 @@ class Experiment:
          ) = self.generate_inputs(inputs_key, num_sessions)
 
         # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
-        self.input_params = model.initialize_input_parameters(  #TODO redefine?
-            input_params_key,
+        self.input_weights = model.initialize_input_weights(  #TODO redefine?
+            input_weights_key,
             cfg["num_inputs"], cfg["num_hidden_pre"],
-            input_params_scale=cfg["input_params_scale"]
+            input_weights_scale=cfg["input_weights_scale"]
         )
 
         self.feedforward_mask = self.generate_feedforward_mask(
@@ -63,11 +63,11 @@ class Experiment:
         )
 
         # num_hidden_pre -> num_hidden_post plasticity layer
-        self.init_params = model.initialize_parameters(params_key, cfg)
+        self.init_weights = model.initialize_weights(weights_key, cfg)
 
         trajectories = model.simulate_trajectory(simulation_key,
-            self.input_params,
-            self.init_params,
+            self.input_weights,
+            self.init_weights,
             self.feedforward_mask,  # if cfg.feedforward_sparsity < 1.0 else None,
             self.recurrent_mask,  # if cfg.recurrent_sparsity < 1.0 else None,
             generation_theta,
@@ -80,7 +80,7 @@ class Experiment:
         self.data.update(trajectories)
 
         if mode == 'test':
-            self.params_trajec = self.data.pop('params')
+            self.weights_trajec = self.data.pop('weights')
 
     def generate_inputs(self, key, num_sessions):
         def generate_input(key):

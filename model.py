@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import utils
 
 
-def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale):
-    """Initialize input parameters for the embedding layer.
+def initialize_input_weights(key, num_inputs, num_pre, input_weights_scale):
+    """Initialize input weights for the embedding layer.
 
     num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
 
@@ -16,16 +16,16 @@ def initialize_input_parameters(key, num_inputs, num_pre, input_params_scale):
         num_pre: Number of presynaptic neurons.
 
     Returns:
-        input_params: (num_inputs, num_pre) Array of input parameters.
+        input_weights: (num_inputs, num_pre) Array of input weights.
     """
-    input_params = jax.random.normal(key, (num_inputs, num_pre))
+    input_weights = jax.random.normal(key, (num_inputs, num_pre))
     # Standardize for each neuron across all classes
-    input_params -= jnp.mean(input_params, axis=0, keepdims=True)
-    input_params /= jnp.std(input_params, axis=0, keepdims=True) + 1e-8
-    return input_params * input_params_scale
+    input_weights -= jnp.mean(input_weights, axis=0, keepdims=True)
+    input_weights /= jnp.std(input_weights, axis=0, keepdims=True) + 1e-8
+    return input_weights * input_weights_scale
 
-def initialize_parameters(key, cfg):
-    """Initialize parameters for the network.
+def initialize_weights(key, cfg):
+    """Initialize weights for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
 
@@ -34,50 +34,50 @@ def initialize_parameters(key, cfg):
         cfg: Configuration dictionary.
 
     Returns:
-        params (dict): w_ff: (num_hidden_pre, num_hidden_post),
+        weights (dict): w_ff: (num_hidden_pre, num_hidden_post),
                        w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                        w_out: (num_hidden_post, 1)
                        (b_ff, b_rec, b_out are not used for now)
     """
-    def initialize_layer_params(key, num_pre, num_post, scale):
+    def initialize_layer_weights(key, num_pre, num_post, scale):
         if scale == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
             scale = 1 / jnp.sqrt(num_pre + num_post)
 
         return jax.random.normal(key, shape=(num_pre, num_post)) * scale
 
     ff_key, rec_key, out_key = jax.random.split(key, 3)
-    params = {}
+    weights = {}
 
     # Initialize feedforward weights
-    params['w_ff'] = initialize_layer_params(ff_key,
+    weights['w_ff'] = initialize_layer_weights(ff_key,
                                              cfg['num_hidden_pre'],
                                              cfg['num_hidden_post'],
-                                             cfg['init_params_scale']['ff'])
-    # params['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
+                                             cfg['init_weights_scale']['ff'])
+    # weights['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
     if cfg['recurrent']:  # Whether there is recurrent connectivity at all
-        params['w_rec'] = initialize_layer_params(rec_key,
+        weights['w_rec'] = initialize_layer_weights(rec_key,
                                                   cfg['num_hidden_post'],
                                                   cfg['num_hidden_post'],
-                                                  cfg['init_params_scale']['rec'])
-        # params['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
+                                                  cfg['init_weights_scale']['rec'])
+        # weights['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
     else:
-        params['w_rec'] = None
-        # params['b_rec'] = None
-    params['w_out'] = initialize_layer_params(out_key,
+        weights['w_rec'] = None
+        # weights['b_rec'] = None
+    weights['w_out'] = initialize_layer_weights(out_key,
                                               cfg['num_hidden_post'],
                                               1,
-                                              cfg['init_params_scale']['out'])
-    # params['b_out'] = jnp.zeros((1,))
+                                              cfg['init_weights_scale']['out'])
+    # weights['b_out'] = jnp.zeros((1,))
 
-    return params
+    return weights
 
 @partial(jax.jit, static_argnames=("cfg"))
-def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cfg):
+def network_forward(key, input_weights, weights, ff_mask, rec_mask, step_input, cfg):
     """ Propagate through all layers from input to output. """
 
     # # Embed input integer into presynaptic layer activity
     # input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
-    # x = jnp.dot(input_onehot, input_params)
+    # x = jnp.dot(input_onehot, input_weights)
 
     # Makeshift for input firing (TODO)  # x IS input firing
     x = step_input
@@ -91,7 +91,7 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
     # Scale ff weights: by constant scale (and by number of inputs?)
     # n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
     # n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
-    w_ff = params['w_ff'] * cfg.feedforward_input_scale  # / n_ff_inputs
+    w_ff = weights['w_ff'] * cfg.feedforward_input_scale  # / n_ff_inputs
     w_ff *= ff_mask  # Apply feedforward sparsity mask
     y = x @ w_ff  # + b
 
@@ -101,7 +101,7 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
         # Scale rec weights: by const scale (and by num of inputs?)
         # n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
         # n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
-        w_rec = params['w_rec'] * cfg.recurrent_input_scale  # / n_rec_inputs
+        w_rec = weights['w_rec'] * cfg.recurrent_input_scale  # / n_rec_inputs
         w_rec *= rec_mask
         y += y @ w_rec  # + b
 
@@ -109,7 +109,7 @@ def network_forward(key, input_params, params, ff_mask, rec_mask, step_input, cf
     y = jax.nn.sigmoid(y)
 
     # Compute output probability ((1,) logit) based on postsynaptic layer activity
-    output = jax.nn.sigmoid(y @ params['w_out']).squeeze()  # + b_out
+    output = jax.nn.sigmoid(y @ weights['w_out']).squeeze()  # + b_out
 
     return x, y, output
 
@@ -147,30 +147,30 @@ def compute_expected_reward(reward, old_expected_reward):
     return 0
 
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
-def update_params(
-    x, y, params,
+def update_weights(
+    x, y, weights,
     reward, expected_reward,
     theta, plasticity_func,
     cfg
 ):
     """
-    Update parameters in all layers.
+    Update weights in all layers.
 
     Calculates full weight matrix regardless of sparsity mask(s).
     Args:
         #!!! Function redefined from initial to update only one layer!
         x (array): x (presynaptic activations)  # TODO rename into x
         y (array): y (postsynaptic activations)
-        params (dict): {w_ff, w_rec, w_out}
+        weights (dict): {w_ff, w_rec, w_out}
         reward (float): Reward at this timestep. TODO Not implemented
         expected_reward (float): Expected reward at this timestep.
         theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         cfg (dict): Configuration dictionary.
 
-    Returns: Dictionary of updated parameters.
+    Returns: Dictionary of updated weights.
     """
-    def update_layer_params(pre, post, w, r, theta, lr):
+    def update_layer_weights(pre, post, w, r, theta, lr):
             # Allow python 'if' in jitted function because cfg is static
         # Use vectorized volterra_plasticity_function
         if cfg.plasticity_model == "volterra":
@@ -198,44 +198,44 @@ def update_params(
     # Will only be checked at compile time
     assert x.ndim == 1, "Input must be a vector"
     assert y.ndim == 1, "Output must be a vector"
-    assert params['w_ff'].shape[0] == x.shape[0], "x size must match w_ff shape"
-    assert params['w_ff'].shape[1] == y.shape[0], "y size must match w_ff shape"
+    assert weights['w_ff'].shape[0] == x.shape[0], "x size must match w_ff shape"
+    assert weights['w_ff'].shape[1] == y.shape[0], "y size must match w_ff shape"
     if cfg.recurrent:
-        assert params['w_rec'].shape[0] == y.shape[0], "y size must match w_rec shape"
-        assert params['w_rec'].shape[1] == y.shape[0], "y size must match w_rec shape"
+        assert weights['w_rec'].shape[0] == y.shape[0], "y size must match w_rec shape"
+        assert weights['w_rec'].shape[1] == y.shape[0], "y size must match w_rec shape"
 
     # using expected reward or just the reward:
     # 0 if expected_reward == reward
     reward_term = reward - expected_reward
     # reward_term = reward
 
-    w_ff = update_layer_params(
-        x, y, params['w_ff'], reward_term,  # theta['ff'] TODO
+    w_ff = update_layer_weights(
+        x, y, weights['w_ff'], reward_term,  # theta['ff'] TODO
         theta, cfg.synapse_learning_rate['ff']
     )
     if "recurrent" in cfg.plasticity_layers:
-        w_rec = update_layer_params(
-            y, y, params['w_rec'], reward_term,  # theta['rec'] TODO
+        w_rec = update_layer_weights(
+            y, y, weights['w_rec'], reward_term,  # theta['rec'] TODO
             theta, cfg.synapse_learning_rate['rec']
         )
     elif cfg.recurrent:
-        w_rec = params['w_rec']
+        w_rec = weights['w_rec']
     else:
         w_rec = None
 
-    params = {  # Always reassemble dict in jitted function to avoid in-place updates
+    weights = {  # Always reassemble dict in jitted function to avoid in-place updates
         'w_ff': w_ff,
         'w_rec': w_rec,
-        'w_out': params['w_out']  # No plasticity in output layer
+        'w_out': weights['w_out']  # No plasticity in output layer
     }
 
-    return params
+    return weights
 
 @partial(jax.jit, static_argnames=("plasticity_func", "cfg", "mode"))
 def simulate_trajectory(
     key,
-    input_params,
-    init_params,
+    input_weights,
+    init_weights,
     ff_mask,
     rec_mask,
     theta,
@@ -245,12 +245,12 @@ def simulate_trajectory(
     cfg,
     mode
     ):
-    """ Simulate trajectory of activations (and parameters) of one experiment (animal).
+    """ Simulate trajectory of activations (and weights) of one experiment (animal).
 
     Args:
         key: Random key for PRNG.
-        input_params (N_inputs, N_hidden_pre): inputs --> presynaptic activations
-        init_params (dict): w_ff: (num_hidden_pre, num_hidden_post),
+        input_weights (N_inputs, N_hidden_pre): inputs --> presynaptic activations
+        init_weights (dict): w_ff: (num_hidden_pre, num_hidden_post),
                 w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                 w_out: (num_hidden_post, 1)
                 (b_ff, b_rec, b_out are not used for now)
@@ -262,7 +262,7 @@ def simulate_trajectory(
         mode:
             - 'simulation': return trajectories of x, y, output
             - 'generation_train': return x, y, output, decision, rewards
-            - 'generation_test': return x, y, output, decision, rewards, params
+            - 'generation_test': return x, y, output, decision, rewards, weights
 
     Returns:
         activity_trajec_exp {
@@ -274,7 +274,7 @@ def simulate_trajectory(
             reward_trajec_exp (N_sessions, N_steps_per_session_max),
             expected_reward_trajec_exp (N_sessions, N_steps_per_session_max),
                 # If 'test' in mode:
-            [params_trajec_exp {  # Only the plastic layers
+            [weights_trajec_exp {  # Only the plastic layers
                 w_ff: (N_sessions, N_steps_per_session_max,
                        N_hidden_pre, N_hidden_post),
                 w_rec: (N_sessions, N_steps_per_session_max,
@@ -284,11 +284,11 @@ def simulate_trajectory(
         }: Trajectories of activations over the course of the experiment.
     """
 
-    def simulate_session(params, session_variables):
-        """ Simulate trajectory of parameters and activations within one session.
+    def simulate_session(weights, session_variables):
+        """ Simulate trajectory of weights and activations within one session.
 
         Args:
-            params: Initial parameters at the start of the session.
+            weights: Initial weights at the start of the session.
             session_variables: Tuple of (
                 session_inputs, (N_steps_per_session_max,)
                 session_rewards,
@@ -296,7 +296,7 @@ def simulate_trajectory(
                 session_mask) for the session.
 
         Returns:
-            params_session: Parameters at the end of the session.
+            weights_session: Parameters at the end of the session.
             activity_trajec_session: {
                 x_trajec_session (N_steps_per_session_max, N_hidden_pre),
                 y_trajec_session (N_steps_per_session_max, N_hidden_post),
@@ -306,31 +306,31 @@ def simulate_trajectory(
                 reward_trajec_session (N_steps_per_session_max),
                 expected_reward_trajec_session (N_steps_per_session_max),
                     # If 'test' in mode:
-                params_trajec_session: {  # Only the plastic layers
+                weights_trajec_session: {  # Only the plastic layers
                     w_ff: (N_steps_per_session_max, N_hidden_pre, N_hidden_post),
                     w_rec: (N_steps_per_session_max, N_hidden_post, N_hidden_post),
                 }
             }"""
 
-        def simulate_step(params, step_variables):
+        def simulate_step(weights, step_variables):
             """ Simulate forward pass within one time step.
 
             Args:
-                params (N_hidden_pre, N_hidden_post): carry for jax.lax.scan.
+                weights (N_hidden_pre, N_hidden_post): carry for jax.lax.scan.
                 step_variables: (
                     data: {inputs[, rewards, expected_rewards]}
                     valid: mask for this step (0 or 1)
                     step_key: Random key for PRNG.
 
             Returns:
-                params: Updated parameters after the step.
+                weights: Updated weighteters after the step.
                 output_data: {x, y, output[,
-                              decision, reward, expected_reward[, params]]}
+                              decision, reward, expected_reward[, weights]]}
             """
             input_data, valid, step_key = step_variables
             output_data = {}
             x, y, output = network_forward(step_key,
-                                           input_params, params,
+                                           input_weights, weights,
                                            ff_mask, rec_mask,
                                            input_data['inputs'], cfg)
             output_data['xs'] = x
@@ -352,27 +352,27 @@ def simulate_trajectory(
                 reward = input_data['rewards'] * cfg.reward_scale
                 expected_reward = input_data['expected_rewards'] * cfg.reward_scale
 
-            params = jax.lax.cond(valid,
-                                  lambda p: update_params(
-                                      x, y, params, reward, expected_reward,
+            weights = jax.lax.cond(valid,
+                                  lambda p: update_weights(
+                                      x, y, weights, reward, expected_reward,
                                       theta, plasticity_func, cfg),
                                   lambda p: p,
-                                  params)
+                                  weights)
 
             if 'test' in mode:
-                output_data['params'] = {}
-                # Only return trajectories of plastic params
+                output_data['weights'] = {}
+                # Only return trajectories of plastic weights
                 if "feedforward" in cfg.plasticity_layers:
-                    output_data['params']['w_ff'] = params['w_ff']
+                    output_data['weights']['w_ff'] = weights['w_ff']
                 if "recurrent" in cfg.plasticity_layers:
-                    output_data['params']['w_rec'] = params['w_rec']
-            return params, output_data
+                    output_data['weights']['w_rec'] = weights['w_rec']
+            return weights, output_data
 
         # Run inner scan over steps within one session
-        params_session, activity_trajec_session = jax.lax.scan(
-            simulate_step, params, session_variables)
+        weights_session, activity_trajec_session = jax.lax.scan(
+            simulate_step, weights, session_variables)
 
-        return params_session, activity_trajec_session
+        return weights_session, activity_trajec_session
 
     # Pre-split keys for each session and step
     n_sessions = step_mask.shape[0]
@@ -382,9 +382,9 @@ def simulate_trajectory(
     session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
 
     # Run outer scan over sessions
-    _params_exp, activity_trajec_exp = jax.lax.scan(
+    _weights_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
-        init_params,
+        init_weights,
         (exp_data,
          step_mask,
          session_step_keys)
