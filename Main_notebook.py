@@ -32,6 +32,43 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from omegaconf import OmegaConf
 
+
+def validate_config(cfg):
+    # If no recurrent connectivity, recurrent is not plastic and not trainable
+    if not cfg.recurrent and "recurrent" in cfg.plasticity_layers:
+        cfg.plasticity_layers.remove("recurrent")
+    if not cfg.recurrent and "w_rec" in cfg.trainable_init_weights:
+        cfg.trainable_init_weights.remove("w_rec")
+
+    if "recurrent" in cfg.trainable_init_weights:
+        cfg.trainable_init_weights.remove("recurrent")
+        cfg.trainable_init_weights.append("w_rec")
+    if "feedforward" in cfg.trainable_init_weights:
+        cfg.trainable_init_weights.remove("feedforward")
+        cfg.trainable_init_weights.append("w_ff")
+
+    # Validate plasticity_model
+    if cfg.plasticity_model not in ["volterra", "mlp"]:
+        raise ValueError("Only 'volterra' and 'mlp' plasticity models are supported!")
+
+    # Validate generation_model
+    if cfg.generation_model not in ["volterra", "mlp"]:
+        raise ValueError("Only 'volterra' and 'mlp' generation models are supported!")
+
+    # Validate regularization_type
+    if (cfg.regularization_type_theta.lower() not in ["l1", "l2", "none"] or
+        cfg.regularization_type_weights.lower() not in ["l1", "l2", "none"]):
+        raise ValueError(
+            "Only 'l1', 'l2', and 'none' regularization types are supported!"
+        )
+
+    # Validate fit_data contains 'behavior' or 'neural'
+    if not ("behavior" in cfg.fit_data or "neural" in cfg.fit_data):
+        raise ValueError("fit_data must contain 'behavior' or 'neural', or both!")
+
+    return cfg
+
+
 # +
 # Configuration
 
@@ -130,11 +167,13 @@ config = {
     "_return_weights_trajec": False,  # For debugging
 }
 cfg = OmegaConf.create(config)
-#TODO cfg = validate_config(cfg)
+cfg = validate_config(cfg)
+
+
 # -
 
-def run_experiment():
-
+def run_experiment(cfg):
+    cfg = validate_config(cfg)
     key = jax.random.PRNGKey(cfg["expid"])
     # Pass subkeys, so that adding more experiments doesn't affect earlier ones
     train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
@@ -651,7 +690,7 @@ cfg.num_epochs = 250
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
-_activation_trajs = run_experiment()
+_activation_trajs = run_experiment(cfg)
 
 fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
                               use_all_81=False)
