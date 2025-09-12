@@ -222,7 +222,7 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, theta, 
+def print_and_log_training_info(cfg, expdata, params, 
                                 epoch, train_losses, test_losses):
     """
     Logs and prints training information including epoch, loss, and plasticity coefficients.
@@ -230,13 +230,14 @@ def print_and_log_training_info(cfg, expdata, theta,
     Args:
         cfg (object): Configuration object containing model settings and hyperparameters.
         expdata (dict): Dictionary to store experimental data.
-        theta (array-like): Array of plasticity coefficients.
+        params (dict): Dictionary of model parameters including plasticity coefficients.
         epoch (int): Current epoch number.
         loss (float): Current loss value.
 
     Returns:
         dict: Updated experimental data dictionary.
     """
+    theta = params['theta']
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)

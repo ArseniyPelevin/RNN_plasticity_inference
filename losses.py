@@ -57,13 +57,14 @@ def neural_mse_loss(
 def loss(
     key,
     input_weights,
-    init_weights,
+    init_fixed_weights,
     ff_mask,
     rec_mask,
-    theta,  # Current plasticity coeffs, updated on each iteration
+    params,  # Current plasticity coeffs, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
     step_mask,
+    exp_i,  # Index of the current experiment to extract initial weights from params
     cfg,  # Static within losses
 ):
     """
@@ -71,35 +72,61 @@ def loss(
 
     Args:
         key (int): Seed for the random number generator.
-        weights (array): Array of synaptic weights.
-        theta (array): Array of plasticity coefficients.
+        input_weights (array): Embedding weights for the inputs.
+        init_fixed_weights (dict): Dictionary of initial weights for fixed layers.
+        ff_mask (array): Feedforward sparsity mask.
+        rec_mask (array): Recurrent sparsity mask.
+        params (dict): {"theta": array,
+                        "weights": dict{
+                            learned_layer: array of shape (N_experiments, ...)
+                            }
+                        }  # Current parameters being optimized.
         plasticity_func (function): Plasticity function.
-        xs (array): Array of inputs.
-        rewards (array): Array of rewards.
-        expected_rewards (array): Array of expected rewards.
-        neural_recordings (array): Array of neural recordings.
-        decisions (array): Array of decisions.
+        experimental_data (dict): {"inputs", "xs", "ys", "outputs", "decisions"}.
+        step_mask (N_sessions, N_steps): Mask to distinguish valid and padding steps.
+        exp_i (int): Index of current experiment to extract init_weights from params.
         cfg (object): Configuration object containing the model settings.
 
     Returns:
-        float: Loss for the cross entropy model.
+        loss (float): Total loss computed as the sum of theta regularization,
+            initial weights regularization, neural loss, and behavior loss.
+        simulated_data (dict or None): Simulated trajectory
+            if cfg._return_weights_trajec:
+                {"inputs", "xs", "ys", "outputs", "decisions",
+                 "rewards", "expected_rewards", "weights"}
+            else None.
     """
 
-    # Allow python 'if' in jitted function because cfg is static
-    if cfg.plasticity_model == "volterra":
+    theta = params['theta']
+    init_trainable_weights = {layer: weights[exp_i]
+                              for layer, weights in params['weights'].items()}
+    init_fixed_weights = {layer: weights[exp_i]
+                          for layer, weights in init_fixed_weights.items()}
+    init_weights = {**init_fixed_weights, **init_trainable_weights}
+
+    # Compute regularization for theta and add it to total loss
+    if cfg.plasticity_model == "volterra": # Allow 'if' in jitted func: cfg is static
         # Apply mask to plasticity coefficients to enforce constraints
         theta = jnp.multiply(theta, # ['ff'/'rec'] TODO
-                                         jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
-        # Compute regularization and add it to total loss
-        if cfg.regularization_type.lower() != "none":
+                             jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
+        if cfg.regularization_type_theta.lower() != "none":
             reg_func = (
-                jnp.abs if "l1" in cfg.regularization_type.lower()
+                jnp.abs if "l1" in cfg.regularization_type_theta.lower()
                 else jnp.square
             )
-            loss = cfg.regularization_scale * \
-                jnp.sum(reg_func(theta))
+            loss = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
         else:
             loss = 0.0
+
+    # Compute regularization for initial weights and add it to total loss
+    for init_trainable_weights_layer in init_trainable_weights.values():
+        if cfg.regularization_type_weights.lower() != "none":
+            reg_func = (
+                jnp.abs if "l1" in cfg.regularization_type_weights.lower()
+                else jnp.square
+            )
+            loss += (cfg.regularization_scale_weights
+                     * jnp.sum(reg_func(init_trainable_weights_layer)))
 
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(

@@ -60,9 +60,6 @@ def initialize_weights(key, cfg):
                                                   cfg['num_hidden_post'],
                                                   cfg['init_weights_scale']['rec'])
         # weights['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
-    else:
-        weights['w_rec'] = None
-        # weights['b_rec'] = None
     weights['w_out'] = initialize_layer_weights(out_key,
                                               cfg['num_hidden_post'],
                                               1,
@@ -148,7 +145,7 @@ def compute_expected_reward(reward, old_expected_reward):
 
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_weights(
-    x, y, weights,
+    x, y, old_weights,
     reward, expected_reward,
     theta, plasticity_func,
     cfg
@@ -175,11 +172,11 @@ def update_weights(
         # Use vectorized volterra_plasticity_function
         if cfg.plasticity_model == "volterra":
             # Precompute powers of pre, post, w, r
-            X = jnp.stack([jnp.ones_like(pre), pre, pre * pre], 
+            X = jnp.stack([jnp.ones_like(pre), pre, pre * pre],
                           axis=0)  # (3, N_pre)
-            Y = jnp.stack([jnp.ones_like(post), post, post * post], 
+            Y = jnp.stack([jnp.ones_like(post), post, post * post],
                           axis=0)  # (3, N_post)
-            W = jnp.stack([jnp.ones_like(w), w, w * w], 
+            W = jnp.stack([jnp.ones_like(w), w, w * w],
                           axis=0)  # (3, N_pre, N_post)
             R = jnp.array([1.0, r, r * r])  # (3,)
 
@@ -207,38 +204,37 @@ def update_weights(
     # Will only be checked at compile time
     assert x.ndim == 1, "Input must be a vector"
     assert y.ndim == 1, "Output must be a vector"
-    assert weights['w_ff'].shape[0] == x.shape[0], "x size must match w_ff shape"
-    assert weights['w_ff'].shape[1] == y.shape[0], "y size must match w_ff shape"
+    assert old_weights['w_ff'].shape[0] == x.shape[0], \
+        "x size must match w_ff shape"
+    assert old_weights['w_ff'].shape[1] == y.shape[0], \
+        "y size must match w_ff shape"
     if cfg.recurrent:
-        assert weights['w_rec'].shape[0] == y.shape[0], "y size must match w_rec shape"
-        assert weights['w_rec'].shape[1] == y.shape[0], "y size must match w_rec shape"
+        assert old_weights['w_rec'].shape[0] == y.shape[0], \
+            "y size must match w_rec shape"
+        assert old_weights['w_rec'].shape[1] == y.shape[0], \
+            "y size must match w_rec shape"
 
     # using expected reward or just the reward:
     # 0 if expected_reward == reward
     reward_term = reward - expected_reward
     # reward_term = reward
 
-    w_ff = update_layer_weights(
-        x, y, weights['w_ff'], reward_term,  # theta['ff'] TODO
+    new_weights = {}
+    new_weights['w_ff'] = update_layer_weights(
+        x, y, old_weights['w_ff'], reward_term,  # theta['ff'] TODO
         theta, cfg.synapse_learning_rate['ff']
     )
     if "recurrent" in cfg.plasticity_layers:
-        w_rec = update_layer_weights(
-            y, y, weights['w_rec'], reward_term,  # theta['rec'] TODO
+        new_weights['w_rec'] = update_layer_weights(
+            y, y, old_weights['w_rec'], reward_term,  # theta['rec'] TODO
             theta, cfg.synapse_learning_rate['rec']
         )
     elif cfg.recurrent:
-        w_rec = weights['w_rec']
-    else:
-        w_rec = None
+        new_weights['w_rec'] = old_weights['w_rec']
 
-    weights = {  # Always reassemble dict in jitted function to avoid in-place updates
-        'w_ff': w_ff,
-        'w_rec': w_rec,
-        'w_out': weights['w_out']  # No plasticity in output layer
-    }
+    new_weights['w_out'] = old_weights['w_out']
 
-    return weights
+    return new_weights
 
 @partial(jax.jit, static_argnames=("plasticity_func", "cfg", "mode"))
 def simulate_trajectory(

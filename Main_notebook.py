@@ -44,6 +44,7 @@ config = {
     "expid": 17, # For saving results and seeding random
     "use_experimental_data": False,
     "fit_data": "neural",  # ["behavioral", "neural"]
+    "trainable_init_weights": [],  # ['w_ff'], ['w_rec'], ['w_ff', 'w_rec'], []
 
 # Experiment design
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
@@ -114,8 +115,10 @@ config = {
 # Training
     "num_epochs": 250,
     "learning_rate": 3e-3,
-    "regularization_type": "none",  # "l1", "l2", "none"
-    "regularization_scale": 0,
+    "regularization_type_theta": "none",  # "l1", "l2", "none"
+    "regularization_scale_theta": 0,
+    "regularization_type_weights": "none",  # "l1", "l2", "none"
+    "regularization_scale_weights": 0,
 
 # Logging
     "log_expdata": True,
@@ -140,13 +143,13 @@ def run_experiment():
     test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    learned_theta, plasticity_func, expdata, _activation_trajs = (
+    learned_params, plasticity_func, expdata, _activation_trajs = (
         training.train(train_key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
     expdata = training.evaluate_model(eval_key, cfg,
                                       test_experiments,
-                                      learned_theta, plasticity_func,
+                                      learned_params, plasticity_func,
                                       expdata)
     training.save_results(cfg, expdata, train_time)
     return _activation_trajs
@@ -637,8 +640,10 @@ recurrent_experiments_config_table = {
 cfg.expid = 55
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
+cfg.mean_steps_per_trial = 50
 cfg.recurrent = True
-cfg.plasticity_layers = ["recurrent"]
+cfg.plasticity_layers = ["recurrent", "feedforward"]
+cfg.trainable_init_weights = ["w_rec", "w_ff"]
 cfg.postsynaptic_input_sparsity = 1
 cfg.feedforward_sparsity = 1
 cfg.recurrent_sparsity = 1
