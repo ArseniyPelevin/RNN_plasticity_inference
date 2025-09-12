@@ -476,7 +476,7 @@ def save_results(cfg, expdata, train_time):
     for cfg_key, cfg_value in cfg.items():
         if isinstance(cfg_value, (float | int | str)):
             df[cfg_key] = cfg_value
-        elif isinstance(cfg_value, dict):
+        elif isinstance(cfg_value, omegaconf.dictconfig.DictConfig):
             df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
         elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
             df[cfg_key] = ', '.join(str(v) for v in cfg_value)
