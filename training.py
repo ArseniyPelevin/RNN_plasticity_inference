@@ -190,8 +190,8 @@ def evaluate_model(
     percent_deviance = []
 
     for exp in test_experiments:
-        (model_weights_key, null_weights_key,
-         model_key, null_key) = jax.random.split(key, 4)
+        (key, model_weights_key, null_weights_key,
+         model_key, null_key) = jax.random.split(key, 5)
 
         # Simulate model with learned_theta (plasticity coefficients)
         new_model_init_weights = model.initialize_weights(
