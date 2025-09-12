@@ -174,7 +174,16 @@ def update_weights(
             # Allow python 'if' in jitted function because cfg is static
         # Use vectorized volterra_plasticity_function
         if cfg.plasticity_model == "volterra":
-            dw = plasticity_func(pre, post, w, reward_term, theta)
+            # Precompute powers of pre, post, w, r
+            X = jnp.stack([jnp.ones_like(pre), pre, pre * pre], 
+                          axis=0)  # (3, N_pre)
+            Y = jnp.stack([jnp.ones_like(post), post, post * post], 
+                          axis=0)  # (3, N_post)
+            W = jnp.stack([jnp.ones_like(w), w, w * w], 
+                          axis=0)  # (3, N_pre, N_post)
+            R = jnp.array([1.0, r, r * r])  # (3,)
+
+            dw = plasticity_func(X, Y, W, R, theta)
         # Use per-synapse mlp_plasticity_function
         elif cfg.plasticity_model == "mlp":
             # vmap over postsynaptic neurons
