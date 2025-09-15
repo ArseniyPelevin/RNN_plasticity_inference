@@ -28,7 +28,8 @@ import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-cfg = main.create_config()
+
+# +
 def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     """
     Plot a single experiment's loss (top) and coefficient trajectories (bottom).
@@ -373,6 +374,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
 
     return fig
 
+cfg = main.create_config()
 
 # +
 # Set parameters and run experiment
@@ -405,21 +407,54 @@ recurrent_experiments_config_table = {
      19: {'recurrent': True, 'plasticity': "recurrent", "N_in": 10, "N_out": 10,
           "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
           },
+     57: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": True
+          },
+     58: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": False
+          },
+     59: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by N_in_i": True
+          },
+     60: {'recurrent': True, 'plasticity': "ff", "N_in": 50, "N_out": 50},
+     61: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50},
+     62: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50,
+          "\ninp_spar_gen": 0.5, "FF_spar_gen": 0.5, "rec_spar_gen": 0.5,
+          "\ninp_spar_train": 1, "FF_spar_train": 1, "rec_spar_train": 1,
+          "init_spar_gen": "{'ff': 1, 'rec': 1}",
+          },
 }
 
 cfg = main.create_config()
 
-cfg.expid = 55
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
-cfg.mean_steps_per_trial = 50
 cfg.recurrent = True
-cfg.plasticity_layers = ["recurrent", "feedforward"]
-cfg.trainable_init_weights = ["w_rec", "w_ff"]
-cfg.postsynaptic_input_sparsity = 1
-cfg.feedforward_sparsity = 1
-cfg.recurrent_sparsity = 1
-cfg.num_epochs = 250
+cfg.trainable_init_weights = ["w_rec", "w_ff"] #["w_ff"] #["w_rec", "w_ff"]
+cfg.plasticity_layers = ["ff", "rec"]
+cfg.postsynaptic_input_sparsity_generation = 1
+cfg.postsynaptic_input_sparsity_training = 1
+cfg.feedforward_sparsity_generation = 1
+cfg.feedforward_sparsity_training = 1
+cfg.recurrent_sparsity_generation = 1
+cfg.recurrent_sparsity_training = 1
+
+cfg.presynaptic_firing_mean = 0
+
+# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
+cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 0.01, 'out': 0}
+cfg.init_weights_std_training = {'ff': 0.01, 'rec': 0.01, 'out': 0}
+
+# Exp57 = scaling by number of inputs, ff sparsity = 1
+cfg.expid = 171
+cfg.num_hidden_pre = 100
+cfg.num_hidden_post = 100
+cfg.mean_steps_per_trial = 50
+
+cfg.num_epochs = 300
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
@@ -535,7 +570,9 @@ print(f'{epoch_i=}, {exp_i=}, {sess_i=}, {step_i=}')
 
 # +
 # Plot experimental vs modelled neural activity
-_activation_trajs, return_exp_activations, return_model_activations = main.run_experiment()
+(_activation_trajs,
+ return_exp_activations,
+ return_model_activations) = main.run_experiment()
 # exp = _experiments[0]
 print(return_exp_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
 print(return_model_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
