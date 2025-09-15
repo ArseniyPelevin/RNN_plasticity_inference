@@ -100,21 +100,16 @@ def network_forward(key, input_weights, weights,
 
     # Feedforward layer: x -- w_ff --> y
 
-    # Scale ff weights: by constant scale (and by number of inputs?)
-    # n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-    # n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
-    w_ff = weights['w_ff'] * cfg.feedforward_input_scale  # / n_ff_inputs
-    w_ff *= ff_mask  # Apply feedforward sparsity mask
+    # Apply scale and sparsity mask to ff weights
+    w_ff = weights['w_ff'] * ff_scale * ff_mask
+
     y = x @ w_ff  # + b
 
     # Recurrent layer (if present): y -- w_rec --> y
 
     if cfg.recurrent:
-        # Scale rec weights: by const scale (and by num of inputs?)
-        # n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-        # n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
-        w_rec = weights['w_rec'] * cfg.recurrent_input_scale  # / n_rec_inputs
-        w_rec *= rec_mask
+        # Apply scale and sparsity mask to rec weights
+        w_rec = weights['w_rec'] * rec_scale * rec_mask
         y += y @ w_rec  # + b
 
     # Apply nonlinearity
@@ -401,6 +396,16 @@ def simulate_trajectory(
     total_keys = int(n_sessions * n_steps)
     flat_keys = jax.random.split(key, total_keys + 1)[1:]
     session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
+
+    # Scale ff weights: by constant scale and by number of inputs to each neuron
+    n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+    n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
+    ff_scale = cfg.feedforward_input_scale / jnp.sqrt(n_ff_inputs)[:, None]
+
+    # Scale rec weights: by constant scale and by number of inputs to each neuron
+    n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+    n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
+    rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[:, None]
 
     # Run outer scan over sessions
     _weights_exp, activity_trajec_exp = jax.lax.scan(
