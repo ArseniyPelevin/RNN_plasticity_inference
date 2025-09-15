@@ -221,13 +221,13 @@ def update_weights(
 
     new_weights = {}
     new_weights['w_ff'] = update_layer_weights(
-        x, y, old_weights['w_ff'], reward_term,  # theta['ff'] TODO
-        theta, cfg.synapse_learning_rate['ff']
+        x, y, old_weights['w_ff'], reward_term,
+        theta, cfg.synapse_learning_rate['ff']  # theta['ff'] TODO
     )
-    if "recurrent" in cfg.plasticity_layers:
+    if "rec" in cfg.plasticity_layers:
         new_weights['w_rec'] = update_layer_weights(
-            y, y, old_weights['w_rec'], reward_term,  # theta['rec'] TODO
-            theta, cfg.synapse_learning_rate['rec']
+            y, y, old_weights['w_rec'], reward_term,
+            theta, cfg.synapse_learning_rate['rec']  # theta['rec'] TODO
         )
     elif cfg.recurrent:
         new_weights['w_rec'] = old_weights['w_rec']

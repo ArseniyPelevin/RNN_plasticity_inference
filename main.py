@@ -109,17 +109,14 @@ def create_config():
 
 def validate_config(cfg):
     # If no recurrent connectivity, recurrent is not plastic and not trainable
-    if not cfg.recurrent and "recurrent" in cfg.plasticity_layers:
-        cfg.plasticity_layers.remove("recurrent")
+    if not cfg.recurrent and "rec" in cfg.plasticity_layers:
+        cfg.plasticity_layers.remove("rec")
     if not cfg.recurrent and "w_rec" in cfg.trainable_init_weights:
         cfg.trainable_init_weights.remove("w_rec")
 
-    if "recurrent" in cfg.trainable_init_weights:
-        cfg.trainable_init_weights.remove("recurrent")
-        cfg.trainable_init_weights.append("w_rec")
-    if "feedforward" in cfg.trainable_init_weights:
-        cfg.trainable_init_weights.remove("feedforward")
-        cfg.trainable_init_weights.append("w_ff")
+    cfg.init_weights_sparsity_generation = {
+        k: float(v) for k, v in cfg.init_weights_sparsity_generation.items()
+    }
 
     # Validate plasticity_model
     if cfg.plasticity_model not in ["volterra", "mlp"]:

@@ -592,13 +592,13 @@ plt.show()
 cfg.num_hidden_pre = 50
 cfg.num_hidden_post = 50
 cfg.recurrent = True
-cfg.plasticity_layers = ["recurrent"]
+cfg.plasticity_layers = ["rec"]
 cfg.feedforward_input_scale = 1
 cfg.recurrent_input_scale = 1
 last_exp_id = 19
 i = 1
 
-for plasticity in [["recurrent"], ["feedforward", "recurrent"]]:
+for plasticity in [["rec"], ["ff", "rec"]]:
     for input_sparsity in [1, 0.6, 0.3]:
         for ff_sparsity in [1, 0.6, 0.3]:
             for rec_sparsity in [1, 0.6, 0.3]:
