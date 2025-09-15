@@ -466,6 +466,75 @@ fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
+# Exp63-170
+def run(cfg):
+    _activation_trajs = main.run_experiment(cfg)
+
+    params_table = {cfg.expid: {
+        'trainable': str(cfg.trainable_init_weights),
+        'inp_spar': cfg.postsynaptic_input_sparsity_generation,
+        'ff_spar': cfg.feedforward_sparsity_generation,
+        'rec_spar': cfg.recurrent_sparsity_generation,
+        'init_spar_gen': cfg.init_weights_sparsity_generation,
+        }}
+
+    fig = plot_coeff_trajectories(cfg.expid, params_table,
+                                use_all_81=False)
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+cfg.recurrent = True
+cfg.plasticity_layers = ["ff", "rec"]
+cfg.init_weights_std_training = {'ff': 0.01, 'rec': 0.01, 'out': 0}
+last_expid = 62
+cfg.num_hidden_pre = 100
+cfg.num_hidden_post = 100
+cfg.mean_steps_per_trial = 50
+cfg.num_epochs = 300
+i = 1
+
+for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
+    cfg.trainable_init_weights = trainable
+    for input_spars in [0.3, 0.6, 1]:
+        for ff_spars in [0.3, 0.6, 1]:
+            for rec_spars in [0.3, 0.6, 1]:
+                cfg.postsynaptic_input_sparsity_generation = input_spars
+                cfg.postsynaptic_input_sparsity_training = input_spars
+                cfg.feedforward_sparsity_generation = ff_spars
+                cfg.feedforward_sparsity_training = ff_spars
+                cfg.recurrent_sparsity_generation = rec_spars
+                cfg.recurrent_sparsity_training = rec_spars
+
+                cfg.expid = last_expid + i
+
+                run(cfg)
+                i += 1
+
+    cfg.postsynaptic_input_sparsity_generation = 1
+    cfg.postsynaptic_input_sparsity_training = 1
+    cfg.feedforward_sparsity_generation = 1
+    cfg.feedforward_sparsity_training = 1
+    cfg.recurrent_sparsity_generation = 1
+    cfg.recurrent_sparsity_training = 1
+
+    for init_spar_ff in [0.3, 0.6, 1]:
+        for init_spar_rec in [0.3, 0.6, 1]:
+            cfg.init_weights_sparsity_generation = {'ff': init_spar_ff,
+                                                    'rec': init_spar_rec}
+            cfg.expid = last_expid + i
+            run(cfg)
+            i += 1
+
+# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+
+
+
+
+# +
 # Run Exp10-16
 print("\nEXPERIMENT 10")
 cfg.expid = 10
