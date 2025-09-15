@@ -87,7 +87,8 @@ def initialize_simulation_weights(key, cfg, experiments):
     # store them as 'new_init_weights' property of each experiment instance,
     # copy into init_trainable_weights and init_fixed_weights dicts of lists
     for exp, key in zip(experiments, init_weights_keys, strict=False):
-        exp.new_init_weights = model.initialize_weights(key, cfg)
+        exp.new_init_weights = model.initialize_weights(key, cfg,
+                                                        cfg.init_weights_std_training)
 
         for layer in trainable_layers:
             init_trainable_weights[layer].append(exp.new_init_weights[layer])
@@ -277,7 +278,8 @@ def evaluate_model(
 
         # Simulate model with learned_theta (plasticity coefficients)
         new_model_init_weights = model.initialize_weights(
-                model_weights_key, cfg
+                model_weights_key, cfg,
+                cfg.init_weights_std_training
                 )
         simulated_model_data = model.simulate_trajectory(
             model_key,
@@ -298,7 +300,8 @@ def evaluate_model(
             key=None, init="zeros", scale=None
             )
         new_null_init_weights = model.initialize_weights(
-                null_weights_key, cfg
+                null_weights_key, cfg,
+                cfg.init_weights_std_training
                 )  # TODO Should probably be the same as new_model_init_weights
         simulated_null_data = model.simulate_trajectory(
             null_key,

@@ -34,7 +34,8 @@ class Experiment:
          ff_mask_key,
          rec_mask_key,
          weights_key,
-         simulation_key) = jax.random.split(key, 8)
+         func_sparse_key,
+         simulation_key) = jax.random.split(key, 9)
 
         # Pick random number of sessions in this experiment given mean and std
         num_sessions = sample_truncated_normal(
@@ -63,7 +64,20 @@ class Experiment:
         )
 
         # num_hidden_pre -> num_hidden_post plasticity layer
-        self.init_weights = model.initialize_weights(weights_key, cfg)
+        self.init_weights = model.initialize_weights(
+            weights_key,
+            cfg,
+            cfg.init_weights_std_generation,
+            cfg.init_weights_mean_generation
+            )
+
+        # Apply functional sparsity to plastic weights initialization during generation
+        for layer in cfg.plasticity_layers:
+            func_sparse_key, _ = jax.random.split(func_sparse_key)
+            self.init_weights[f'w_{layer}'] *= jax.random.bernoulli(
+                func_sparse_key,
+                cfg.init_weights_sparsity_generation[layer],
+                shape=self.init_weights[f'w_{layer}'].shape)
 
         trajectories = model.simulate_trajectory(simulation_key,
             self.input_weights,

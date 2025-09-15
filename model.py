@@ -24,7 +24,8 @@ def initialize_input_weights(key, num_inputs, num_pre, input_weights_scale):
     input_weights /= jnp.std(input_weights, axis=0, keepdims=True) + 1e-8
     return input_weights * input_weights_scale
 
-def initialize_weights(key, cfg):
+def initialize_weights(key, cfg,
+                       weights_std, weights_mean=None):
     """Initialize weights for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
@@ -32,6 +33,10 @@ def initialize_weights(key, cfg):
     Args:
         key: JAX random key.
         cfg: Configuration dictionary.
+        weights_std: Dictionary with standard deviations for each layer.
+            Either for generation or training.
+        weights_mean: (Optional) Dictionary with means for each layer.
+            Provided for generation only, defaults to 0 for training.
 
     Returns:
         weights (dict): w_ff: (num_hidden_pre, num_hidden_post),
@@ -39,37 +44,47 @@ def initialize_weights(key, cfg):
                        w_out: (num_hidden_post, 1)
                        (b_ff, b_rec, b_out are not used for now)
     """
-    def initialize_layer_weights(key, num_pre, num_post, scale):
-        if scale == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
-            scale = 1 / jnp.sqrt(num_pre + num_post)
+    def initialize_layer_weights(key, num_pre, num_post, mean, std):
+        if std == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
+            std = 1 / jnp.sqrt(num_pre + num_post)
 
-        return jax.random.normal(key, shape=(num_pre, num_post)) * scale
+        return jax.random.normal(key, shape=(num_pre, num_post)) * std + mean
 
     ff_key, rec_key, out_key = jax.random.split(key, 3)
     weights = {}
+
+    # Default initial weights mean for training
+    if weights_mean is None:
+        weights_mean = {'ff': 0, 'rec': 0, 'out': 0}
 
     # Initialize feedforward weights
     weights['w_ff'] = initialize_layer_weights(ff_key,
                                              cfg['num_hidden_pre'],
                                              cfg['num_hidden_post'],
-                                             cfg['init_weights_scale']['ff'])
+                                             weights_mean['ff'],
+                                             weights_std['ff'])
     # weights['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
     if cfg['recurrent']:  # Whether there is recurrent connectivity at all
         weights['w_rec'] = initialize_layer_weights(rec_key,
                                                   cfg['num_hidden_post'],
                                                   cfg['num_hidden_post'],
-                                                  cfg['init_weights_scale']['rec'])
+                                                  weights_mean['rec'],
+                                                  weights_std['rec'])
         # weights['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
     weights['w_out'] = initialize_layer_weights(out_key,
                                               cfg['num_hidden_post'],
-                                              1,
-                                              cfg['init_weights_scale']['out'])
+                                              cfg['num_outputs'],  # 1
+                                              weights_mean['out'],
+                                              weights_std['out'])
     # weights['b_out'] = jnp.zeros((1,))
 
     return weights
 
 @partial(jax.jit, static_argnames=("cfg"))
-def network_forward(key, input_weights, weights, ff_mask, rec_mask, step_input, cfg):
+def network_forward(key, input_weights, weights,
+                    ff_mask, rec_mask,
+                    ff_scale, rec_scale,
+                    step_input, cfg):
     """ Propagate through all layers from input to output. """
 
     # # Embed input integer into presynaptic layer activity
@@ -337,6 +352,7 @@ def simulate_trajectory(
             x, y, output = network_forward(step_key,
                                            input_weights, weights,
                                            ff_mask, rec_mask,
+                                           ff_scale, rec_scale,
                                            input_data['inputs'], cfg)
             output_data['xs'] = x
             output_data['ys'] = y
@@ -367,9 +383,9 @@ def simulate_trajectory(
             if 'test' in mode:
                 output_data['weights'] = {}
                 # Only return trajectories of plastic weights
-                if "feedforward" in cfg.plasticity_layers:
+                if "ff" in cfg.plasticity_layers:
                     output_data['weights']['w_ff'] = weights['w_ff']
-                if "recurrent" in cfg.plasticity_layers:
+                if "rec" in cfg.plasticity_layers:
                     output_data['weights']['w_rec'] = weights['w_rec']
             return weights, output_data
 

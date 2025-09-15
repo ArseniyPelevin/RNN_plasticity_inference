@@ -60,12 +60,18 @@ def create_config():
         "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
         "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
 
-        "feedforward_input_scale": 1,  # Scale of feedforward weights,
-            # only if no feedforward plasticity
-        "recurrent_input_scale": 1,  # Scale of recurrent weights,
-            # only if no recurrent plasticity
+        "feedforward_input_scale": 1,  # Scale of feedforward weights
+        "recurrent_input_scale": 1,  # Scale of recurrent weights
+        # TODO? Also different for generation and training?
 
-        "init_weights_scale": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},  # float or 'Xavier'
+        # Functional sparsity of plastic weights at initialization for generation only
+        "init_weights_sparsity_generation": {'ff': 1, 'rec': 1},
+        # Weight initialization mean for generation only
+        "init_weights_mean_generation": {'ff': 0, 'rec': 0, 'out': 0},
+        # Weight initialization std for generation and training. float or 'Xavier'
+        "init_weights_std_generation": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},
+            # Could be used as prior?
+        "init_weights_std_training": {'ff': 1, 'rec': 1, 'out': 1},
 
         "reward_scale": 0,
         "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]

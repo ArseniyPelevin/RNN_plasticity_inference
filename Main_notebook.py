@@ -458,15 +458,15 @@ cfg.synapse_learning_rate = 0.1
 
 print("\nEXPERIMENT 14")
 cfg.expid = 14
-cfg.init_weights_scale = 0.05
+cfg.init_weights_std = 0.05
 main.run_experiment()
 
 print("\nEXPERIMENT 15")
 cfg.expid = 15
-cfg.init_weights_scale = 0.01
+cfg.init_weights_std = 0.01
 main.run_experiment()
 
-cfg.init_weights_scale = 0.1
+cfg.init_weights_std = 0.1
 
 print("\nEXPERIMENT 16")
 cfg.expid = 16
@@ -480,7 +480,7 @@ cfg.num_exp_train = 25
 cfg.presynaptic_noise_std = 0
 cfg.presynaptic_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_weights_scale = 0.01
+cfg.init_weights_std = 0.01
 
 for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
                                       [10, 50, 100, 500, 1000]))):
