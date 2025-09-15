@@ -142,9 +142,13 @@ def validate_config(cfg):
 
     return cfg
 
-def run_experiment(cfg):
+def run_experiment(cfg, seed=None):
     cfg = validate_config(cfg)
-    key = jax.random.PRNGKey(cfg["expid"])
+    if seed is None:
+        seed = cfg.expid
+    cfg.seed = seed  # Save seed in config for logging
+    key = jax.random.PRNGKey(seed)
+
     # Pass subkeys, so that adding more experiments doesn't affect earlier ones
     train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
 
