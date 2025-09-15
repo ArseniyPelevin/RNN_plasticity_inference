@@ -121,8 +121,8 @@ def training_loop(key, cfg,
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_weights,
                 init_fixed_weights_train, # per-experiment arrays of fixed layers
-                exp.feedforward_mask,
-                exp.recurrent_mask,
+                exp.feedforward_mask_training,
+                exp.recurrent_mask_training,
                 params,  # Current plasticity coeffs, updated on each iteration
                 plasticity_func,  # Static within losses
                 exp.data,
@@ -242,8 +242,8 @@ def evaluate_loss(key, cfg,
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_weights,
             init_fixed_weights, # per-experiment arrays of fixed layers
-            exp.feedforward_mask,
-            exp.recurrent_mask,
+            exp.feedforward_mask_training,
+            exp.recurrent_mask_training,
             # Current plasticity coeffs, updated on each iteration:
             params,
             plasticity_func,  # Static within losses
@@ -285,8 +285,8 @@ def evaluate_model(
             model_key,
             exp.input_weights,
             new_model_init_weights,  # Which weights to use here?
-            exp.feedforward_mask,
-            exp.recurrent_mask,
+            exp.feedforward_mask_training,
+            exp.recurrent_mask_training,
             learned_params['theta'],  # Learned plasticity coefficients estimate
             plasticity_func,
             exp.data,
@@ -307,8 +307,8 @@ def evaluate_model(
             null_key,
             exp.input_weights,
             new_null_init_weights,
-            exp.feedforward_mask,
-            exp.recurrent_mask,
+            exp.feedforward_mask_training,
+            exp.recurrent_mask_training,
             zero_theta,  # Zero plasticity coefficients
             zero_plasticity_func,
             exp.data,

@@ -43,14 +43,21 @@ def create_config():
         "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
         "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
         "recurrent": True,  # Whether to include recurrent connections
-        "plasticity_layers": ["feedforward", "recurrent"],  # ["feedforward", "recurrent"]
-        "postsynaptic_input_sparsity": 1,  # Fraction of posts. neurons receiving FF input,
-            # only effective if recurrent connections are present, otherwise 1
-        "feedforward_sparsity": 1,  # Fraction of nonzero weights in feedforward layer,
-            # of all postsynaptic neurons receiving FF input (postsynaptic_input_sparsity),
-            # all presynaptic neurons are guaranteed to have some output
-        "recurrent_sparsity": 1,  # Fraction of nonzero weights in recurrent layer,
-            # all neurons receive some input (FF or rec, not counting self-connections)
+        "plasticity_layers": ["ff"],  # ["ff", "rec"]
+        # Fraction of postsynaptic neurons receiving FF input, for generation and training,
+        # only effective if recurrent connections are present, otherwise 1
+        "postsynaptic_input_sparsity_generation": 1,
+        "postsynaptic_input_sparsity_training": 1,
+        # Fraction of nonzero weights in feedforward layer, for generation and training,
+        # of all postsynaptic neurons receiving FF input (postsynaptic_input_sparsity),
+        # all presynaptic neurons are guaranteed to have some output
+        "feedforward_sparsity_generation": 1,
+        "feedforward_sparsity_training": 1,
+        # Fraction of nonzero weights in recurrent layer, for generation and training,
+        # all neurons receive some input (FF or rec, not counting self-connections)
+        "recurrent_sparsity_generation": 1,
+        "recurrent_sparsity_training": 1,
+
         "neural_recording_sparsity": 1,
         # TODO? output_sparsity?  # Fraction of postsynaptic neurons contributing to output
 

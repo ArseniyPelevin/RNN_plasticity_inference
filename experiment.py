@@ -53,14 +53,24 @@ class Experiment:
             input_weights_scale=cfg["input_weights_scale"]
         )
 
-        self.feedforward_mask = self.generate_feedforward_mask(
+        self.feedforward_mask_generation = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["feedforward_sparsity"], cfg["postsynaptic_input_sparsity"]
+            cfg["feedforward_sparsity_generation"],
+            cfg["postsynaptic_input_sparsity_generation"]
+        )
+        self.feedforward_mask_training = self.generate_feedforward_mask(
+            ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
+            cfg["feedforward_sparsity_training"],
+            cfg["postsynaptic_input_sparsity_training"]
         )
 
-        self.recurrent_mask = self.generate_recurrent_mask(
-            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity"],
-            self.feedforward_mask
+        self.recurrent_mask_generation = self.generate_recurrent_mask(
+            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity_generation"],
+            self.feedforward_mask_generation
+        )
+        self.recurrent_mask_training = self.generate_recurrent_mask(
+            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity_training"],
+            self.feedforward_mask_training
         )
 
         # num_hidden_pre -> num_hidden_post plasticity layer
@@ -82,8 +92,8 @@ class Experiment:
         trajectories = model.simulate_trajectory(simulation_key,
             self.input_weights,
             self.init_weights,
-            self.feedforward_mask,  # if cfg.feedforward_sparsity < 1.0 else None,
-            self.recurrent_mask,  # if cfg.recurrent_sparsity < 1.0 else None,
+            self.feedforward_mask_generation,
+            self.recurrent_mask_generation,
             generation_theta,
             plasticity_func,
             self.data,
