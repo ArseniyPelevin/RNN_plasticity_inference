@@ -436,7 +436,8 @@ def evaluate_r2_score(step_mask,
     model_activations = np.asarray(jax.device_get(model_activations))
 
     r2_score["activity"] = sklearn.metrics.r2_score(exp_activations,
-                                                    model_activations)
+                                                    model_activations,
+                                                    multioutput='variance_weighted')
 
     if not cfg.use_experimental_data:
         exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
@@ -461,7 +462,8 @@ def evaluate_r2_score(step_mask,
         model_weight_trajec = np.asarray(jax.device_get(model_weight_trajec))
 
         r2_score["weights"] = sklearn.metrics.r2_score(exp_weight_trajec,
-                                                       model_weight_trajec)
+                                                       model_weight_trajec,
+                                                       multioutput='variance_weighted')
     return r2_score
 
 def save_results(cfg, expdata, train_time):
