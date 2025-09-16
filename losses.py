@@ -53,7 +53,7 @@ def neural_mse_loss(
     return mse_loss
 
 
-@partial(jax.jit, static_argnames=["plasticity_func", "cfg"])
+@partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
 def loss(
     key,
     input_weights,
@@ -66,6 +66,7 @@ def loss(
     step_mask,
     exp_i,  # Index of the current experiment to extract initial weights from params
     cfg,  # Static within losses
+    mode  # 'training' or 'evaluation'
 ):
     """
     Computes the total loss for the model.
@@ -86,18 +87,19 @@ def loss(
         step_mask (N_sessions, N_steps): Mask to distinguish valid and padding steps.
         exp_i (int): Index of current experiment to extract init_weights from params.
         cfg (object): Configuration object containing the model settings.
+        mode (str): "training" or "evaluation" - decides returning trajectories.
 
     Returns:
         loss (float): Total loss computed as the sum of theta regularization,
             initial weights regularization, neural loss, and behavior loss.
-        simulated_data (dict or None): Simulated trajectory
-            if cfg._return_weights_trajec:
-                {"inputs", "xs", "ys", "outputs", "decisions",
-                 "rewards", "expected_rewards", "weights"}
-            else None.
+        aux (dict): {'trajectories': simulated_data if mode=='evaluation' else None,
+                     'MSE': neural_loss if "neural" in cfg.fit_data else None,
+                     'BCE': behavior_loss if "behavior" in cfg.fit_data else None}
+              )
     """
 
     theta = params['theta']
+    # Combine fixed and trainable initial weights for the current experiment
     init_trainable_weights = {layer: weights[exp_i]
                               for layer, weights in params['weights'].items()}
     init_fixed_weights = {layer: weights[exp_i]
@@ -140,7 +142,8 @@ def loss(
         experimental_data,
         step_mask,
         cfg,
-        mode='simulation' if not cfg._return_weights_trajec else 'generation_test'
+        mode=('simulation' if mode=='training'  # Only return activation trajectories
+              else 'generation_test')  # Return both activation and weight trajectories
     )
 
     # Allow python 'if' in jitted function because cfg is static
@@ -160,8 +163,10 @@ def loss(
                                          simulated_data['outputs'])
         loss += behavior_loss
     # loss = regularization + neural_loss + behavior_loss
-
-    if cfg._return_weights_trajec:
-        # Return simulation trajectory - for debugging purposes only
-        return loss, simulated_data
-    return loss, None
+    
+    aux = ({'trajectories': simulated_data if mode=='evaluation' else None,
+            'MSE': neural_loss if "neural" in cfg.fit_data else None,
+            'BCE': behavior_loss if "behavior" in cfg.fit_data else None}
+            )
+    
+    return loss, aux

@@ -117,7 +117,7 @@ def training_loop(key, cfg,
     for epoch in range(cfg["num_epochs"] + 1):  # +1 so that we have 250th epoch
         for exp in train_experiments:
             key, subkey = jax.random.split(key)
-            (_loss, _activations), meta_grads = loss_value_and_grad(
+            (_loss, aux), meta_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_weights,
                 init_fixed_weights_train, # per-experiment arrays of fixed layers
@@ -129,11 +129,13 @@ def training_loop(key, cfg,
                 exp.step_mask,
                 exp.exp_i,
                 cfg,  # Static within losses
+                mode=('training' if not cfg._return_weights_trajec 
+                      else 'evaluation')  # Return trajectories in aux for debugging
             )
-            _activation_trajs[epoch][exp.exp_i] = _activations
-            updates, opt_state = optimizer.update(
-                meta_grads, opt_state, params
-            )
+            # For debugging: return activation trajectory of each experiment
+            _activation_trajs[epoch][exp.exp_i] = aux['trajectories']
+
+            updates, opt_state = optimizer.update(meta_grads, opt_state, params)
             params = optax.apply_updates(params, updates)
 
         if epoch % cfg.log_interval == 0:
@@ -238,7 +240,7 @@ def evaluate_loss(key, cfg,
     eval_losses = []
     for exp in experiments:
         key, subkey = jax.random.split(key)
-        loss, _activations = losses.loss(
+        loss, _aux = losses.loss(
             subkey,  # Pass subkey this time, because loss will not return key
             exp.input_weights,
             init_fixed_weights, # per-experiment arrays of fixed layers
@@ -251,6 +253,7 @@ def evaluate_loss(key, cfg,
             exp.step_mask,
             exp.exp_i,  # Internal index of the experiment
             cfg,  # Static within losses
+            mode='evaluation'
         )
 
         eval_losses.append(loss)
