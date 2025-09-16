@@ -140,12 +140,12 @@ def training_loop(key, cfg,
 
         if epoch % cfg.log_interval == 0:
             # Choose random subset of training experiments to evaluate loss
-            key, train_choise_key, _donor_choise_key = jax.random.split(key, 3)
+            key, train_choice_key = jax.random.split(key)
 
             # Choose num_test out of num_train experiments for train loss eval,
             # and other num_test as weight donors for test experiments #TODO temp
             chosen_train_exp = jax.random.permutation(
-                train_choise_key, len(train_experiments)
+                train_choice_key, len(train_experiments)
                 )[:(len(test_experiments) * 2)]
             # Silently assuming len(train_experiments) > len(test_experiments)
 
@@ -276,18 +276,13 @@ def evaluate_model(
     percent_deviance = []
 
     for exp in test_experiments:
-        (key, model_weights_key, null_weights_key,
-         model_key, null_key) = jax.random.split(key, 5)
+        key, simulation_key = jax.random.split(key)
 
         # Simulate model with learned_theta (plasticity coefficients)
-        new_model_init_weights = model.initialize_weights(
-                model_weights_key, cfg,
-                cfg.init_weights_std_training
-                )
         simulated_model_data = model.simulate_trajectory(
-            model_key,
+            simulation_key,
             exp.input_weights,
-            new_model_init_weights,  # Which weights to use here?
+            exp.new_init_weights,
             exp.feedforward_mask_training,
             exp.recurrent_mask_training,
             learned_params['theta'],  # Learned plasticity coefficients estimate
@@ -302,14 +297,10 @@ def evaluate_model(
         zero_theta, zero_plasticity_func = synapse.init_plasticity_volterra(
             key=None, init="zeros", scale=None
             )
-        new_null_init_weights = model.initialize_weights(
-                null_weights_key, cfg,
-                cfg.init_weights_std_training
-                )  # TODO Should probably be the same as new_model_init_weights
         simulated_null_data = model.simulate_trajectory(
-            null_key,
+            simulation_key,
             exp.input_weights,
-            new_null_init_weights,
+            exp.new_init_weights,  # Use the same initial weights as for learned model
             exp.feedforward_mask_training,
             exp.recurrent_mask_training,
             zero_theta,  # Zero plasticity coefficients
