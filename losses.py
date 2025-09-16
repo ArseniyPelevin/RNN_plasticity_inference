@@ -60,7 +60,8 @@ def loss(
     init_fixed_weights,
     ff_mask,
     rec_mask,
-    params,  # Current plasticity coeffs, updated on each iteration
+    theta,  # Current plasticity coeffs, updated on each iteration
+    weights,  # Current initial weights estimate, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
     step_mask,
@@ -77,11 +78,8 @@ def loss(
         init_fixed_weights (dict): Dictionary of initial weights for fixed layers.
         ff_mask (array): Feedforward sparsity mask.
         rec_mask (array): Recurrent sparsity mask.
-        params (dict): {"theta": array,
-                        "weights": dict{
-                            learned_layer: array of shape (N_experiments, ...)
-                            }
-                        }  # Current parameters being optimized.
+        theta (array): Current plasticity coeffs, updated on each iteration.
+        weights (dict): Current initial weights estimate for each trainable layer.
         plasticity_func (function): Plasticity function.
         experimental_data (dict): {"inputs", "xs", "ys", "outputs", "decisions"}.
         step_mask (N_sessions, N_steps): Mask to distinguish valid and padding steps.
@@ -98,12 +96,11 @@ def loss(
               )
     """
 
-    theta = params['theta']
     # Combine fixed and trainable initial weights for the current experiment
-    init_trainable_weights = {layer: weights[exp_i]
-                              for layer, weights in params['weights'].items()}
-    init_fixed_weights = {layer: weights[exp_i]
-                          for layer, weights in init_fixed_weights.items()}
+    init_trainable_weights = {layer: layer_weights[exp_i]
+                              for layer, layer_weights in weights.items()}
+    init_fixed_weights = {layer: layer_weights[exp_i]
+                          for layer, layer_weights in init_fixed_weights.items()}
     init_weights = {**init_fixed_weights, **init_trainable_weights}
 
     # Compute regularization for theta and add it to total loss
@@ -163,10 +160,10 @@ def loss(
                                          simulated_data['outputs'])
         loss += behavior_loss
     # loss = regularization + neural_loss + behavior_loss
-    
+
     aux = ({'trajectories': simulated_data if mode=='evaluation' else None,
             'MSE': neural_loss if "neural" in cfg.fit_data else None,
             'BCE': behavior_loss if "behavior" in cfg.fit_data else None}
             )
-    
+
     return loss, aux
