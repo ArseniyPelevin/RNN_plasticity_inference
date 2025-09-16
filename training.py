@@ -10,6 +10,7 @@ import pandas as pd
 import sklearn
 import synapse
 import utils
+import evaluation
 
 
 def generate_experiments(key, cfg,
@@ -103,12 +104,49 @@ def initialize_simulation_weights(key, cfg, experiments):
 
     return experiments, init_trainable_weights, init_fixed_weights
 
-def training_loop(key, cfg,
-                  train_experiments, test_experiments,
-                  loss_value_and_grad, optimizer, opt_state,
-                  init_fixed_weights_train, init_fixed_weights_test,
-                  params, plasticity_func):
-    """ Loop over epochs and train experiments. Compute loss and update parameters."""
+def train(key, cfg, train_experiments, test_experiments):
+    """ Initialize values and functions, start training loop.
+
+    Args:
+        key (jax.random.PRNGKey): Random key for initialization.
+        cfg (dict): Configuration dictionary.
+        train_experiments (list): List of training experiments from class Experiment.
+        test_experiments (list): List of test experiments from class Experiment.
+    """
+    key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
+
+    # Initialize plasticity coefficients for training
+    init_theta, plasticity_func = synapse.init_plasticity(
+        init_plasticity_key, cfg, mode="plasticity_model"
+    )
+
+    # Initialize new initial weights of all layers for each train and test experiment.
+    # Add them as 'new_init_weights' properties of each experiment instance.
+    # Also return the same weights of trainable layers as per-trainable_layer dict
+    # of per-experiment arrays.
+    train_experiments, init_trainable_weights_train, init_fixed_weights_train = (
+        initialize_simulation_weights(train_key, cfg, train_experiments)
+    )
+    test_experiments, init_trainable_weights_test, init_fixed_weights_test = (
+        initialize_simulation_weights(test_key, cfg, test_experiments)
+    )
+
+    params = {'theta': init_theta,
+                   'weights': init_trainable_weights_train}
+
+    # Return value (scalar) of the function (loss value) and gradient wrt its
+    # parameters at argnums (theta and init_weights) - !Check argnums!
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(5, 6), has_aux=True)
+
+    # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+    # Apply gradient clipping as in the article
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(0.2),
+        optax.adam(learning_rate=cfg["learning_rate"]),
+    )
+
+    opt_state = optimizer.init(params)
+
     # Return simulation trajectory - for debugging purposes only,
     # set cfg._return_weights_trajectory=True
     _activation_trajs = [[None for _ in range(len(train_experiments))]
@@ -142,91 +180,10 @@ def training_loop(key, cfg,
             params = optax.apply_updates(params, updates)
 
         if epoch % cfg.log_interval == 0:
-            # Choose random subset of training experiments to evaluate loss
-            key, train_choice_key = jax.random.split(key)
+            continue
+            expdata = evaluation.evaluate(...)
 
-            # Choose num_test out of num_train experiments for train loss eval,
-            # and other num_test as weight donors for test experiments #TODO temp
-            chosen_train_exp = jax.random.permutation(
-                train_choice_key, len(train_experiments)
-                )[:(len(test_experiments) * 2)]
-            # Silently assuming len(train_experiments) > len(test_experiments)
-
-            chosen_train_loss = chosen_train_exp[:len(test_experiments)]
-            _chosen_train_weight_donors = chosen_train_exp[len(test_experiments):]
-
-            key, train_losses = evaluate_loss(
-                key, cfg, params.copy(),  # TODO temp: copy to avoid in-place updates
-                plasticity_func,
-                [train_experiments[exp_i] for exp_i in chosen_train_loss],
-                init_fixed_weights_train
-            )
-            key, test_losses = evaluate_loss(
-                key, cfg, params.copy(),  # TODO temp: copy to avoid in-place updates
-                plasticity_func,
-                test_experiments,
-                init_fixed_weights_test,
-                _learned_init_weights_to_use=_chosen_train_weight_donors  # TODO temp
-            )
-            expdata = utils.print_and_log_training_info(
-                cfg, expdata, params, epoch, train_losses, test_losses
-            )
     return params, plasticity_func, expdata, _activation_trajs
-
-def train(key, cfg, experiments, test_experiments):
-    """ Initialize values and functions, start training loop.
-
-    Args:
-        key (jax.random.PRNGKey): Random key for initialization.
-        cfg (dict): Configuration dictionary.
-        experiments (list): List of experiments from class Experiment.
-    """
-    key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
-
-    # Initialize plasticity coefficients for training
-    init_theta, plasticity_func = synapse.init_plasticity(
-        init_plasticity_key, cfg, mode="plasticity_model"
-    )
-
-    # Initialize new initial weights of all layers for each train and test experiment.
-    # Add them as 'new_init_weights' properties of each experiment instance.
-    # Also return the same weights of trainable layers as per-trainable_layer dict
-    # of per-experiment arrays.
-    # TODO We DO NOT use ground truth initial weights parameters to initialize weights
-    # for train experiments, because we do not know them! Initialize randomly!
-    experiments, init_trainable_weights, init_fixed_weights_train = (
-        initialize_simulation_weights(train_key, cfg, experiments)
-    )
-    # TODO We DO NOT use ground truth initial weights parameters to initialize weights
-    # for test experiments, because we do not know them!
-    # Use statistics of initial weights learned from training experiments by this epoch
-    test_experiments, _, init_fixed_weights_test = initialize_simulation_weights(
-        test_key, cfg, test_experiments)
-
-    init_params = {'theta': init_theta,
-                   'weights': init_trainable_weights}
-
-    # Return value (scalar) of the function (loss value)
-    # and gradient wrt its parameter at argnum (init_theta) - !Check argnums!
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(5, 6), has_aux=True)
-
-    # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
-    # Apply gradient clipping as in the article
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(0.2),
-        optax.adam(learning_rate=cfg["learning_rate"]),
-    )
-
-    opt_state = optimizer.init(init_params)
-
-    learned_params, plasticity_func, expdata, _activation_trajs = training_loop(
-        key, cfg,
-        experiments, test_experiments,
-        loss_value_and_grad, optimizer, opt_state,
-        init_fixed_weights_train, init_fixed_weights_test,
-        init_params, plasticity_func)
-
-    return learned_params, plasticity_func, expdata, _activation_trajs
 
 def evaluate_loss(key, cfg,
                   params, plasticity_func,
