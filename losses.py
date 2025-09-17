@@ -117,16 +117,16 @@ def loss(
             reg_theta = 0.0
 
     # Compute regularization for initial weights and add it to total loss
-    for init_trainable_weights_layer in init_trainable_weights.values():
-        if cfg.regularization_type_weights.lower() != "none":
+    if cfg.regularization_type_weights.lower() != "none":
+        for init_trainable_weights_layer in init_trainable_weights.values():
             reg_func = (
                 jnp.abs if "l1" in cfg.regularization_type_weights.lower()
                 else jnp.square
             )
             reg_w = (cfg.regularization_scale_weights
                       * jnp.sum(reg_func(init_trainable_weights_layer)))
-        else:
-            reg_w = 0.0
+    else:
+        reg_w = 0.0
 
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(

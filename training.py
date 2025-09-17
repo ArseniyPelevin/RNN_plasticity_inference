@@ -8,7 +8,6 @@ import numpy as np
 import omegaconf
 import optax
 import pandas as pd
-import sklearn
 import synapse
 import utils
 
@@ -317,80 +316,6 @@ def evaluate_percent_deviance(experimental_data,
     eps = 1e-12
     percent_deviance = 100 * (null_deviance - model_deviance) / (null_deviance + eps)
     return percent_deviance
-
-def evaluate_r2_score(step_mask,
-                      exp_data,
-                      exp_weight_traj,
-                      model_data,
-                      cfg
-):
-    """
-    Functionality: Evaluates the R2 score for weights and activity.
-    Args:
-        step_mask (N_sessions, N_steps_per_session_max),
-        exp_data: Dict of (N_sessions, N_steps_per_session_max, ...) tensors,
-        exp_weight_traj {  # Only if not cfg.use_experimental_data and only plastic
-            'w_ff': (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),
-            'w_rec': (N_sessions, N_steps_per_session_max, N_hidden_post, N_hidden_post
-            ),
-        model_data: Tuple of (x, y, output, weights) from model.simulate_trajectory,
-        cfg
-
-    Returns:
-        Dict of R2 scores for activity (and weights).
-    """
-    r2_score = {}
-    step_mask = step_mask.flatten().astype(bool)
-
-    if cfg.fit_data == 'neural':
-        exp_activations = exp_data['ys']
-        model_activations = model_data['ys']
-    elif cfg.fit_data == 'behavioral':
-        exp_activations = exp_data['decisions']
-        model_activations = model_data['outputs']
-
-    # (N_sessions, N_steps_per_session_max, ...) -> (N_steps_per_experiment, ...)
-    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
-    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
-
-    # Choose valid steps
-    exp_activations = exp_activations[step_mask]
-    model_activations = model_activations[step_mask]
-
-    # Convert to numpy for sklearn
-    exp_activations = np.asarray(jax.device_get(exp_activations))
-    model_activations = np.asarray(jax.device_get(model_activations))
-
-    r2_score["activity"] = sklearn.metrics.r2_score(exp_activations,
-                                                    model_activations,
-                                                    multioutput='variance_weighted')
-
-    if not cfg.use_experimental_data:
-        exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
-            list(exp_weight_traj.values()))
-        model_weight_trajec = jnp.vstack(
-            list(model_data['weights'].values()))  # TODO b?
-
-        # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
-        # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)
-        exp_weight_trajec = exp_weight_trajec.reshape(
-            -1, np.prod(exp_weight_trajec.shape[2:]))
-        model_weight_trajec = model_weight_trajec.reshape(
-            -1, np.prod(model_weight_trajec.shape[2:]))
-
-        # Choose valid steps
-        step_mask = jnp.repeat(step_mask, len(cfg.plasticity_layers))
-        exp_weight_trajec = exp_weight_trajec[step_mask]
-        model_weight_trajec = model_weight_trajec[step_mask]
-
-        # Convert to numpy for sklearn
-        exp_weight_trajec = np.asarray(jax.device_get(exp_weight_trajec))
-        model_weight_trajec = np.asarray(jax.device_get(model_weight_trajec))
-
-        r2_score["weights"] = sklearn.metrics.r2_score(exp_weight_trajec,
-                                                       model_weight_trajec,
-                                                       multioutput='variance_weighted')
-    return r2_score
 
 def save_results(cfg, expdata, train_time):
     """Save training logs and parameters."""
