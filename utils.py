@@ -409,9 +409,9 @@ def validate_config(cfg: Any) -> Any:
                 "Only 'random' plasticity_coeffs_init is supported for MLP!"
             )
 
-    # Validate fit_data contains 'behavior' or 'neural'
-    if not ("behavior" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavior' or 'neural', or both!")
+    # Validate fit_data contains 'behavioral' or 'neural'
+    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
+        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
 
     # If using experimental data, validate related parameters
     if cfg.use_experimental_data:
@@ -428,8 +428,8 @@ def validate_config(cfg: Any) -> Any:
         # if cfg.num_train != 1:
         #     raise ValueError("When fitting per fly, num_train must be 1!")
 
-        if not ("behavior" in cfg.fit_data and "neural" not in cfg.fit_data):
-            raise ValueError("Only 'behavior' experimental data is available!")
+        if not ("behavioral" in cfg.fit_data and "neural" not in cfg.fit_data):
+            raise ValueError("Only 'behavioral' experimental data is available!")
 
         # Set certain cfg fields to 'N/A' for experimental data
         cfg.trials_per_session = "N/A"

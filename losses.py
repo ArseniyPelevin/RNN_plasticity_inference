@@ -8,7 +8,7 @@ import model
 import optax
 
 
-def behavior_ce_loss(decisions, logits):
+def behavioral_ce_loss(decisions, logits):
     """
     Functionality: Computes the mean of the element-wise cross entropy
     between decisions and logits.
@@ -89,18 +89,17 @@ def loss(
 
     Returns:
         loss (float): Total loss computed as the sum of theta regularization,
-            initial weights regularization, neural loss, and behavior loss.
-        aux (dict): {'trajectories': simulated_data if mode=='evaluation' else None,
-                     'MSE': neural_loss if "neural" in cfg.fit_data else None,
-                     'BCE': behavior_loss if "behavior" in cfg.fit_data else None}
-              )
+            initial weights regularization, neural loss, and behavioral loss.
+        aux (dict): {
+            'trajectories': simulated_data if mode=='evaluation' else None,
+            'neural': neural_loss if "neural" in cfg.fit_data else 0,
+            'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0
+            }
     """
 
     # Combine fixed and trainable initial weights for the current experiment
     init_trainable_weights = {layer: layer_weights[exp_i]
                               for layer, layer_weights in weights.items()}
-    init_fixed_weights = {layer: layer_weights[exp_i]
-                          for layer, layer_weights in init_fixed_weights.items()}
     init_weights = {**init_fixed_weights, **init_trainable_weights}
 
     # Compute regularization for theta and add it to total loss
@@ -155,15 +154,15 @@ def loss(
         )
         loss += neural_loss
 
-    if "behavior" in cfg.fit_data:
-        behavior_loss = behavior_ce_loss(experimental_data['decisions'],
+    if "behavioral" in cfg.fit_data:
+        behavioral_loss = behavioral_ce_loss(experimental_data['decisions'],
                                          simulated_data['outputs'])
-        loss += behavior_loss
-    # loss = regularization + neural_loss + behavior_loss
+        loss += behavioral_loss
+    # loss = regularization + neural_loss + behavioral_loss
 
     aux = ({'trajectories': simulated_data if mode=='evaluation' else None,
-            'MSE': neural_loss if "neural" in cfg.fit_data else None,
-            'BCE': behavior_loss if "behavior" in cfg.fit_data else None}
+            'neural': neural_loss if "neural" in cfg.fit_data else 0,
+            'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0}
             )
 
     return loss, aux

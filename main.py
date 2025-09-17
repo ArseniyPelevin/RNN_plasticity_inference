@@ -87,9 +87,9 @@ config = {
 
 # Plasticity
     "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
-    "generation_model": "volterra",
-    "plasticity_coeffs_init": "random",
-    "plasticity_model": "volterra",
+    "generation_model": "volterra",  # "volterra", "mlp"
+    "plasticity_model": "volterra",  # "volterra", "mlp"
+    "plasticity_coeffs_init": "random",  # "zeros", "random"
     "plasticity_coeffs_init_scale": 1e-4,
     # Restrictions on trainable plasticity parameters
     "trainable_coeffs": int(np.sum(coeff_mask)),
@@ -98,6 +98,12 @@ config = {
 # Training
     "num_epochs": 250,
     "learning_rate": 3e-3,
+    "max_grad_norm": 0.2,
+
+    "num_epochs_weights": 10,
+    "learning_rate_weights": 1e-2,
+    "max_grad_norm_weights": 1.0,
+
     "regularization_type_theta": "none",  # "l1", "l2", "none"
     "regularization_scale_theta": 0,
     "regularization_type_weights": "none",  # "l1", "l2", "none"
@@ -145,9 +151,9 @@ def validate_config(cfg):
             "Only 'l1', 'l2', and 'none' regularization types are supported!"
         )
 
-    # Validate fit_data contains 'behavior' or 'neural'
-    if not ("behavior" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavior' or 'neural', or both!")
+    # Validate fit_data contains 'behavioral' or 'neural'
+    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
+        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
 
     return cfg
 
@@ -169,10 +175,10 @@ def run_experiment(cfg, seed=None):
         training.train(train_key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
-    expdata = training.evaluate_model(eval_key, cfg,
-                                      test_experiments,
-                                      learned_params, plasticity_func,
-                                      expdata)
+    # expdata = training.evaluate_model(eval_key, cfg,
+    #                                   test_experiments,
+    #                                   learned_params, plasticity_func,
+    #                                   expdata)
     training.save_results(cfg, expdata, train_time)
     return _activation_trajs
 

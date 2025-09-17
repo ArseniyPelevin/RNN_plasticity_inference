@@ -8,7 +8,7 @@ from utils import sample_truncated_normal
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, key, exp_i, cfg, generation_theta, plasticity_func, mode):
+    def __init__(self, key, exp_i, cfg, generation_theta, generation_func, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -16,14 +16,14 @@ class Experiment:
             exp_i: Experiment index.
             cfg: Configuration dictionary.
             generation_theta: 4D tensor of plasticity coefficients.
-            plasticity_func: Function to compute plasticity.
+            generation_func: Function to compute plasticity.
             mode: "train" or "test".
         """
 
         self.exp_i = exp_i
         self.cfg = cfg
         self.generation_theta = generation_theta
-        self.plasticity_func = plasticity_func
+        self.generation_func = generation_func
         self.data = {}
 
         # Generate random keys for different parts of the model
@@ -94,8 +94,8 @@ class Experiment:
             self.init_weights,
             self.feedforward_mask_generation,
             self.recurrent_mask_generation,
-            generation_theta,
-            plasticity_func,
+            self.generation_theta,
+            self.generation_func,
             self.data,
             self.step_mask,
             cfg,

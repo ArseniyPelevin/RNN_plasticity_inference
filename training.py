@@ -1,3 +1,4 @@
+import evaluation
 import experiment
 import jax
 import jax.numpy as jnp
@@ -10,7 +11,6 @@ import pandas as pd
 import sklearn
 import synapse
 import utils
-import evaluation
 
 
 def generate_experiments(key, cfg,
@@ -63,10 +63,8 @@ def initialize_simulation_weights(key, cfg, experiments):
         experiments (list): List of experiments from class Experiment.
 
     Returns:
-        experiments (list): Updated list of experiments with new_init_weights property.
+        experiments (list): Updated experiments with init_fixed_weights property.
         init_trainable_weights (dict): Dict of arrays of trainable initial weights
-            for each experiment.
-        init_fixed_weights (dict): Dict of arrays of fixed initial weights
             for each experiment.
     """
     init_weights_keys = jax.random.split(key, len(experiments))
@@ -77,32 +75,29 @@ def initialize_simulation_weights(key, cfg, experiments):
 
     fixed_layers = [layer for layer in all_layers
                     if layer not in cfg.trainable_init_weights]
-
     trainable_layers = cfg.trainable_init_weights
 
     # Store initial weights of trainable and fixed layers separately
     init_trainable_weights = {layer: [] for layer in trainable_layers}
-    init_fixed_weights = {layer: [] for layer in fixed_layers}
 
     # Different initial synaptic weights for each simulated experiment:
     # store them as 'new_init_weights' property of each experiment instance,
     # copy into init_trainable_weights and init_fixed_weights dicts of lists
     for exp, key in zip(experiments, init_weights_keys, strict=False):
-        exp.new_init_weights = model.initialize_weights(key, cfg,
+        new_init_weights = model.initialize_weights(key, cfg,
                                                         cfg.init_weights_std_training)
-
         for layer in trainable_layers:
-            init_trainable_weights[layer].append(exp.new_init_weights[layer])
+            init_trainable_weights[layer].append(new_init_weights[layer])
+
+        exp.init_fixed_weights = {}
         for layer in fixed_layers:
-            init_fixed_weights[layer].append(exp.new_init_weights[layer])
+            exp.init_fixed_weights[layer] = new_init_weights[layer]
 
     # Stack per-experiment arrays into one array per layer
     init_trainable_weights = {layer: jnp.stack(weights)
                                for layer, weights in init_trainable_weights.items()}
-    init_fixed_weights = {layer: jnp.stack(weights)
-                          for layer, weights in init_fixed_weights.items()}
 
-    return experiments, init_trainable_weights, init_fixed_weights
+    return experiments, init_trainable_weights
 
 def train(key, cfg, train_experiments, test_experiments):
     """ Initialize values and functions, start training loop.
@@ -124,15 +119,15 @@ def train(key, cfg, train_experiments, test_experiments):
     # Add them as 'new_init_weights' properties of each experiment instance.
     # Also return the same weights of trainable layers as per-trainable_layer dict
     # of per-experiment arrays.
-    train_experiments, init_trainable_weights_train, init_fixed_weights_train = (
+    train_experiments, init_trainable_weights_train = (
         initialize_simulation_weights(train_key, cfg, train_experiments)
     )
-    test_experiments, init_trainable_weights_test, init_fixed_weights_test = (
+    test_experiments, init_trainable_weights_test = (
         initialize_simulation_weights(test_key, cfg, test_experiments)
     )
 
     params = {'theta': init_theta,
-                   'weights': init_trainable_weights_train}
+              'weights': init_trainable_weights_train}
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
     # parameters at argnums (theta and init_weights) - !Check argnums!
@@ -158,7 +153,7 @@ def train(key, cfg, train_experiments, test_experiments):
             (_loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
                 exp.input_weights,
-                init_fixed_weights_train, # per-experiment arrays of fixed layers
+                exp.init_fixed_weights, # per-experiment arrays of fixed layers
                 exp.feedforward_mask_training,
                 exp.recurrent_mask_training,
                 params['theta'],  # Current plasticity coeffs, updated on each iteration
@@ -180,46 +175,13 @@ def train(key, cfg, train_experiments, test_experiments):
             params = optax.apply_updates(params, updates)
 
         if epoch % cfg.log_interval == 0:
-            continue
-            expdata = evaluation.evaluate(...)
+            expdata = evaluation.evaluate(
+                key, cfg, params['theta'], plasticity_func,
+                train_experiments, params['weights'],
+                test_experiments, init_trainable_weights_test,
+                expdata)
 
     return params, plasticity_func, expdata, _activation_trajs
-
-def evaluate_loss(key, cfg,
-                  params, plasticity_func,
-                  experiments,
-                  init_fixed_weights,
-                  _learned_init_weights_to_use=None):
-
-    # TODO temp: use learned initial weights of some train experiments
-    # as initial weights of test experiments
-    if _learned_init_weights_to_use is not None:
-        params['weights'] = {layer: params['weights'][layer][
-            _learned_init_weights_to_use] for layer in params['weights']}
-
-    eval_losses = []
-    for exp in experiments:
-        key, subkey = jax.random.split(key)
-        loss, _aux = losses.loss(
-            subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_weights,
-            init_fixed_weights, # per-experiment arrays of fixed layers
-            exp.feedforward_mask_training,
-            exp.recurrent_mask_training,
-            # Current plasticity coeffs, updated on each iteration:
-            params['theta'],
-            params['weights'],
-            plasticity_func,  # Static within losses
-            exp.data,
-            exp.step_mask,
-            exp.exp_i,  # Internal index of the experiment
-            cfg,  # Static within losses
-            mode='evaluation'
-        )
-
-        eval_losses.append(loss)
-
-    return key, jnp.array(eval_losses)
 
 def evaluate_model(
     key,
