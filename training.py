@@ -54,21 +54,23 @@ def generate_data(key, cfg, mode="train"):
 
     return experiments
 
-def initialize_simulation_weights(key, cfg, experiments):
+def initialize_simulation_weights(key, cfg, experiments, n_restarts=1):
     """ Initialize new initial weights of all layers for each experiment.
+    Store fixed - as init_fixed_weights property of each experiment instance,
+    trainable - as per-restart list of per-layer dicts of per-exp arrays.
 
     Args:
         key (jax.random.PRNGKey): Random key for initialization.
         cfg (dict): Configuration dictionary.
         experiments (list): List of experiments from class Experiment.
+        n_restarts (int): Number of random trainable weights initializations
+            per experiment. Default is 1 for training, can be >1 for evaluation.
 
     Returns:
         experiments (list): Updated experiments with init_fixed_weights property.
-        init_trainable_weights (dict): Dict of arrays of trainable initial weights
-            for each experiment.
+        init_trainable_weights (list): Per-restart list of per-layer dicts
+            of per-exp arrays of randomly initialized weights.
     """
-    init_weights_keys = jax.random.split(key, len(experiments))
-
     all_layers = ['w_ff', 'w_out']
     if cfg.recurrent:
         all_layers.append('w_rec')
@@ -77,25 +79,27 @@ def initialize_simulation_weights(key, cfg, experiments):
                     if layer not in cfg.trainable_init_weights]
     trainable_layers = cfg.trainable_init_weights
 
-    # Store initial weights of trainable and fixed layers separately
-    init_trainable_weights = {layer: [] for layer in trainable_layers}
-
-    # Different initial synaptic weights for each simulated experiment:
-    # store them as 'new_init_weights' property of each experiment instance,
-    # copy into init_trainable_weights and init_fixed_weights dicts of lists
-    for exp, key in zip(experiments, init_weights_keys, strict=False):
-        new_init_weights = model.initialize_weights(key, cfg,
-                                                        cfg.init_weights_std_training)
+    # Initialize trainable weights
+    init_trainable_weights = [{layer: [] for layer in trainable_layers}
+                              for _ in range(n_restarts)]
+    # Different initial weights for each restart of evaluation on test experiments
+    for start in range(n_restarts):
         for layer in trainable_layers:
-            init_trainable_weights[layer].append(new_init_weights[layer])
+            layer_weights = []
+            # Different initial synaptic weights for each simulated experiment
+            for _exp in range(len(experiments)):
+                key, subkey = jax.random.split(key)
+                layer_weights.append(model.initialize_weights(
+                    subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer])
+            init_trainable_weights[start][layer] = jnp.array(layer_weights)
 
+    # Initialize fixed weights
+    for exp in experiments:
         exp.init_fixed_weights = {}
         for layer in fixed_layers:
-            exp.init_fixed_weights[layer] = new_init_weights[layer]
-
-    # Stack per-experiment arrays into one array per layer
-    init_trainable_weights = {layer: jnp.stack(weights)
-                               for layer, weights in init_trainable_weights.items()}
+            key, subkey = jax.random.split(key)
+            exp.init_fixed_weights[layer] = model.initialize_weights(
+                subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer]
 
     return experiments, init_trainable_weights
 
@@ -115,19 +119,17 @@ def train(key, cfg, train_experiments, test_experiments):
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    # Initialize new initial weights of all layers for each train and test experiment.
-    # Add them as 'new_init_weights' properties of each experiment instance.
-    # Also return the same weights of trainable layers as per-trainable_layer dict
-    # of per-experiment arrays.
-    train_experiments, init_trainable_weights_train = (
-        initialize_simulation_weights(train_key, cfg, train_experiments)
-    )
-    test_experiments, init_trainable_weights_test = (
-        initialize_simulation_weights(test_key, cfg, test_experiments)
+    # Initialize weights of all layers for each train and test experiment. Store them:
+    # fixed - as init_fixed_weights property of each experiment instance,
+    # trainable - as (per-restart list of) per-layer dicts of per-exp arrays
+    train_experiments, init_trainable_weights_train = initialize_simulation_weights(
+        train_key, cfg, train_experiments)
+    test_experiments, init_trainable_weights_test = initialize_simulation_weights(
+        test_key, cfg, test_experiments, n_restarts=cfg.num_test_restarts
     )
 
     params = {'theta': init_theta,
-              'weights': init_trainable_weights_train}
+              'weights': init_trainable_weights_train[0]}  # n_restarts=1 for training
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
     # parameters at argnums (theta and init_weights) - !Check argnums!
@@ -136,7 +138,7 @@ def train(key, cfg, train_experiments, test_experiments):
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
     # Apply gradient clipping as in the article
     optimizer = optax.chain(
-        optax.clip_by_global_norm(0.2),
+        optax.clip_by_global_norm(cfg["max_grad_norm"]),
         optax.adam(learning_rate=cfg["learning_rate"]),
     )
 

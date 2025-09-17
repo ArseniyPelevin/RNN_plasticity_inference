@@ -112,9 +112,9 @@ def loss(
                 jnp.abs if "l1" in cfg.regularization_type_theta.lower()
                 else jnp.square
             )
-            loss = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
+            reg_theta = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
         else:
-            loss = 0.0
+            reg_theta = 0.0
 
     # Compute regularization for initial weights and add it to total loss
     for init_trainable_weights_layer in init_trainable_weights.values():
@@ -123,8 +123,10 @@ def loss(
                 jnp.abs if "l1" in cfg.regularization_type_weights.lower()
                 else jnp.square
             )
-            loss += (cfg.regularization_scale_weights
-                     * jnp.sum(reg_func(init_trainable_weights_layer)))
+            reg_w = (cfg.regularization_scale_weights
+                      * jnp.sum(reg_func(init_trainable_weights_layer)))
+        else:
+            reg_w = 0.0
 
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(
@@ -152,17 +154,18 @@ def loss(
             # cfg.neural_recording_sparsity,
             # cfg.measurement_noise_scale,
         )
-        loss += neural_loss
+    else:
+        neural_loss = 0.0
 
     if "behavioral" in cfg.fit_data:
         behavioral_loss = behavioral_ce_loss(experimental_data['decisions'],
                                          simulated_data['outputs'])
-        loss += behavioral_loss
-    # loss = regularization + neural_loss + behavioral_loss
+    else:
+        behavioral_loss = 0.0
 
-    aux = ({'trajectories': simulated_data if mode=='evaluation' else None,
-            'neural': neural_loss if "neural" in cfg.fit_data else 0,
-            'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0}
-            )
+    loss = reg_theta + reg_w + neural_loss + behavioral_loss
+    aux = {'trajectories': simulated_data if mode=='evaluation' else None,
+           'neural': neural_loss,
+           'behavioral': behavioral_loss}
 
     return loss, aux

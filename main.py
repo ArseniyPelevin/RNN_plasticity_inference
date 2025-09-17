@@ -103,6 +103,7 @@ config = {
     "num_epochs_weights": 10,
     "learning_rate_weights": 1e-2,
     "max_grad_norm_weights": 1.0,
+    "num_test_restarts": 5, # Random initializations per experiment to average loss over
 
     "regularization_type_theta": "none",  # "l1", "l2", "none"
     "regularization_scale_theta": 0,

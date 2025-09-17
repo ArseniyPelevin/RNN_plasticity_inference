@@ -18,48 +18,53 @@ def evaluate(key, cfg, theta, plasticity_func,
                                           plasticity_func,
                                           theta,
                                           init_trainable_weights_train
-    )
+                                          )
 
-    # Learn initial weights for test experiments
-    learned_init_weights = learn_initial_weights(
-        key, cfg, theta, plasticity_func,  # TODO key
-        test_experiments, init_trainable_weights_test)
+    # Evaluate test loss for configured number of restarts.
+    # Use different initial weights for each restart.
+    # Use the same set of initial weights in each evaluation epoch.
+    for start in range(cfg.num_test_restarts):
+        print(f"Test restart {start+1}/{cfg.num_test_restarts}")
+        # Learn initial weights for test experiments
+        learned_init_weights = learn_initial_weights(
+            key, cfg, theta, plasticity_func,  # TODO key
+            test_experiments, init_trainable_weights_test[start])
 
-    zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
+        zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
 
-    # Compute loss of full model with learned plasticity and learned weights
-    test_losses, MSE_F, BCE_F, activation_trajs_F = evaluate_loss(key, cfg,
-                                                        test_experiments,
-                                                        plasticity_func,
-                                                        theta, learned_init_weights
-                                                        )
-    print(f"MSE_F={[f'{float(v):.6f}'  for v in jnp.asarray(MSE_F).tolist()]}")
+        # Compute loss of full model with learned plasticity and learned weights
+        test_losses, MSE_F, BCE_F, activation_trajs_F = evaluate_loss(key, cfg,
+                                                            test_experiments,
+                                                            plasticity_func,
+                                                            theta, learned_init_weights
+                                                            )
+        print(f'MSE_F={MSE_F:.6f}')
 
-    # Compute loss of theta model with learned plasticity and random weights
-    _, MSE_T, BCE_T, activation_trajs_T = evaluate_loss(key, cfg,
-                                                        test_experiments,
-                                                        plasticity_func,
-                                                        theta, init_trainable_weights_train
-                                                        )
-    print(f"MSE_T={[f'{float(v):.6f}' for v in jnp.asarray(MSE_T).tolist()]}")
-
-
-    # Compute loss of weights model with zero plasticity and learned weights
-    _, MSE_W, BCE_W, activation_trajs_W = evaluate_loss(key, cfg,
-                                                        test_experiments,
-                                                        plasticity_func,
-                                                        zero_theta, learned_init_weights
-                                                        )
-    print(f"MSE_W={[f'{float(v):.6f}' for v in jnp.asarray(MSE_W).tolist()]}")
+        # Compute loss of theta model with learned plasticity and random weights
+        _, MSE_T, BCE_T, activation_trajs_T = evaluate_loss(key, cfg,
+                                                            test_experiments,
+                                                            plasticity_func,
+                                                            theta, init_trainable_weights_train
+                                                            )
+        print(f'MSE_N={MSE_T:.6f}')
 
 
-    # Compute loss of null model with zero plasticity and random weights
-    _, MSE_N, BCE_N, activation_trajs_N = evaluate_loss(key, cfg,
-                                                        test_experiments,
-                                                        plasticity_func,
-                                                        zero_theta, init_trainable_weights_train
-                                                        )
-    print(f"MSE_N={[f'{float(v):.6f}' for v in jnp.asarray(MSE_N).tolist()]}")
+        # Compute loss of weights model with zero plasticity and learned weights
+        _, MSE_W, BCE_W, activation_trajs_W = evaluate_loss(key, cfg,
+                                                            test_experiments,
+                                                            plasticity_func,
+                                                            zero_theta, learned_init_weights
+                                                            )
+        print(f'MSE_W={MSE_W:.6f}')
+
+
+        # Compute loss of null model with zero plasticity and random weights
+        _, MSE_N, BCE_N, activation_trajs_N = evaluate_loss(key, cfg,
+                                                            test_experiments,
+                                                            plasticity_func,
+                                                            zero_theta, init_trainable_weights_train
+                                                            )
+        print(f'MSE_N={MSE_N:.6f}')
 
     # Evaluate percent deviance explained
 
@@ -137,6 +142,7 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
         behavioral_losses.append(aux['behavioral'])
         trajectories.append(aux['trajectories'])
 
-    return (jnp.array(total_losses),
-            jnp.array(neural_losses), jnp.array(behavioral_losses),
+    return (jnp.mean(jnp.asarray(total_losses)),
+            jnp.mean(jnp.asarray(neural_losses)),
+            jnp.mean(jnp.asarray(behavioral_losses)),
             trajectories)

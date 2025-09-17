@@ -25,7 +25,8 @@ def initialize_input_weights(key, num_inputs, num_pre, input_weights_scale):
     return input_weights * input_weights_scale
 
 def initialize_weights(key, cfg,
-                       weights_std, weights_mean=None):
+                       weights_std, weights_mean=None,
+                       layers=('ff', 'rec', 'out')):
     """Initialize weights for the network.
 
     num_hidden_pre -> num_hidden_post (100 -> 1000) plasticity layer
@@ -37,6 +38,7 @@ def initialize_weights(key, cfg,
             Either for generation or training.
         weights_mean: (Optional) Dictionary with means for each layer.
             Provided for generation only, defaults to 0 for training.
+        layers: Tuple of layer names to initialize. Default is all layers.
 
     Returns:
         weights (dict): w_ff: (num_hidden_pre, num_hidden_post),
@@ -58,25 +60,27 @@ def initialize_weights(key, cfg,
         weights_mean = {'ff': 0, 'rec': 0, 'out': 0}
 
     # Initialize feedforward weights
-    weights['w_ff'] = initialize_layer_weights(ff_key,
-                                             cfg['num_hidden_pre'],
-                                             cfg['num_hidden_post'],
-                                             weights_mean['ff'],
-                                             weights_std['ff'])
-    # weights['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
-    if cfg['recurrent']:  # Whether there is recurrent connectivity at all
+    if 'ff' in layers:
+        weights['w_ff'] = initialize_layer_weights(ff_key,
+                                                cfg['num_hidden_pre'],
+                                                cfg['num_hidden_post'],
+                                                weights_mean['ff'],
+                                                weights_std['ff'])
+        # weights['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
+    if cfg['recurrent'] and 'rec' in layers:
         weights['w_rec'] = initialize_layer_weights(rec_key,
                                                   cfg['num_hidden_post'],
                                                   cfg['num_hidden_post'],
                                                   weights_mean['rec'],
                                                   weights_std['rec'])
         # weights['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
-    weights['w_out'] = initialize_layer_weights(out_key,
-                                              cfg['num_hidden_post'],
-                                              cfg['num_outputs'],  # 1
-                                              weights_mean['out'],
-                                              weights_std['out'])
-    # weights['b_out'] = jnp.zeros((1,))
+    if 'out' in layers:
+        weights['w_out'] = initialize_layer_weights(out_key,
+                                                cfg['num_hidden_post'],
+                                                cfg['num_outputs'],  # 1
+                                                weights_mean['out'],
+                                                weights_std['out'])
+        # weights['b_out'] = jnp.zeros((1,))
 
     return weights
 
