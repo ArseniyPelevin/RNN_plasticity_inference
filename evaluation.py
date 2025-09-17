@@ -3,6 +3,7 @@ import jax
 import jax.numpy as jnp
 import losses
 import optax
+import synapse
 
 
 def evaluate(key, cfg, theta, plasticity_func,
@@ -11,23 +12,54 @@ def evaluate(key, cfg, theta, plasticity_func,
              expdata):
 
     # Evaluate train loss
-    key, train_losses, _, _, _ = evaluate_loss(key,  # TODO key
+    train_losses, _, _, _ = evaluate_loss(key,  # TODO key
                                           cfg,
                                           train_experiments,
-                                          theta, plasticity_func,
+                                          plasticity_func,
+                                          theta,
                                           init_trainable_weights_train
     )
 
     # Learn initial weights for test experiments
-    learned_init_trainable_weights_test = learn_initial_weights(
+    learned_init_weights = learn_initial_weights(
         key, cfg, theta, plasticity_func,  # TODO key
         test_experiments, init_trainable_weights_test)
 
-    # Simulate test experiments with learned weights and plasticity
+    zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
+
+    # Compute loss of full model with learned plasticity and learned weights
+    test_losses, MSE_F, BCE_F, activation_trajs_F = evaluate_loss(key, cfg,
+                                                        test_experiments,
+                                                        plasticity_func,
+                                                        theta, learned_init_weights
+                                                        )
+    print(f"MSE_F={[f'{float(v):.6f}'  for v in jnp.asarray(MSE_F).tolist()]}")
+
+    # Compute loss of theta model with learned plasticity and random weights
+    _, MSE_T, BCE_T, activation_trajs_T = evaluate_loss(key, cfg,
+                                                        test_experiments,
+                                                        plasticity_func,
+                                                        theta, init_trainable_weights_train
+                                                        )
+    print(f"MSE_T={[f'{float(v):.6f}' for v in jnp.asarray(MSE_T).tolist()]}")
 
 
-    # Evaluate test loss
+    # Compute loss of weights model with zero plasticity and learned weights
+    _, MSE_W, BCE_W, activation_trajs_W = evaluate_loss(key, cfg,
+                                                        test_experiments,
+                                                        plasticity_func,
+                                                        zero_theta, learned_init_weights
+                                                        )
+    print(f"MSE_W={[f'{float(v):.6f}' for v in jnp.asarray(MSE_W).tolist()]}")
 
+
+    # Compute loss of null model with zero plasticity and random weights
+    _, MSE_N, BCE_N, activation_trajs_N = evaluate_loss(key, cfg,
+                                                        test_experiments,
+                                                        plasticity_func,
+                                                        zero_theta, init_trainable_weights_train
+                                                        )
+    print(f"MSE_N={[f'{float(v):.6f}' for v in jnp.asarray(MSE_N).tolist()]}")
 
     # Evaluate percent deviance explained
 
@@ -76,8 +108,8 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
 
     return init_weights
 
-def evaluate_loss(key, cfg, experiments, theta, plasticity_func,
-                  init_trainable_weights):
+def evaluate_loss(key, cfg, experiments, plasticity_func,
+                  theta, init_trainable_weights):
 
     total_losses, neural_losses, behavioral_losses, trajectories = [], [], [], []
     for exp in experiments:
@@ -105,6 +137,6 @@ def evaluate_loss(key, cfg, experiments, theta, plasticity_func,
         behavioral_losses.append(aux['behavioral'])
         trajectories.append(aux['trajectories'])
 
-    return (key, jnp.array(total_losses),
+    return (jnp.array(total_losses),
             jnp.array(neural_losses), jnp.array(behavioral_losses),
             trajectories)

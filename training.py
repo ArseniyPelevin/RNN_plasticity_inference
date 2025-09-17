@@ -175,6 +175,7 @@ def train(key, cfg, train_experiments, test_experiments):
             params = optax.apply_updates(params, updates)
 
         if epoch % cfg.log_interval == 0:
+            print(f"Epoch {epoch}")
             expdata = evaluation.evaluate(
                 key, cfg, params['theta'], plasticity_func,
                 train_experiments, params['weights'],
