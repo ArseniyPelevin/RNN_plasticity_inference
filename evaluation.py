@@ -49,7 +49,7 @@ def evaluate(key, cfg, theta, plasticity_func,
 
         # Compute loss of theta model with learned plasticity and random weights
         losses_and_r2['T'].append(compute_loss_r2(theta,
-                                                  init_trainable_weights_train))
+                                                  init_trainable_weights_test[start]))
 
         # Compute loss of weights model with zero plasticity and learned weights
         losses_and_r2['W'].append(compute_loss_r2(zero_theta,
@@ -57,7 +57,7 @@ def evaluate(key, cfg, theta, plasticity_func,
 
         # Compute loss of null model with zero plasticity and random weights
         losses_and_r2['N'].append(compute_loss_r2(zero_theta,
-                                                  init_trainable_weights_train))
+                                                  init_trainable_weights_test[start]))
 
     # Average over restarts
     for mod in losses_and_r2:
