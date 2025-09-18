@@ -8,17 +8,29 @@ import model
 import optax
 
 
-def behavioral_ce_loss(decisions, logits):
+def behavioral_ce_loss(logits, decisions, step_mask):
     """
     Functionality: Computes the mean of the element-wise cross entropy
     between decisions and logits.
-    Inputs:
-        decisions (array): Array of decisions.
-        logits (array): Array of logits.
+
+    Args:
+        logits (array): (N_sessions, N_steps) Array of logits (output before sigmoid).
+        decisions (array): (N_sessions, N_steps) Array of binary decisions.
+        step_mask (array): (N_sessions, N_steps) Mask of valid and padding values.
+
     Returns: Mean of the element-wise cross entropy.
     """
+    step_mask = step_mask.ravel().astype(bool)
+    logits = logits.ravel()
+    decisions = decisions.ravel()
+
+    # Choose valid steps
+    logits = logits[step_mask]
+    decisions = decisions[step_mask]
+
     losses = optax.sigmoid_binary_cross_entropy(logits, decisions)
-    return jnp.mean(losses)
+
+    return jnp.sum(losses) / jnp.sum(step_mask)
 
 @jax.jit
 def neural_mse_loss(
@@ -102,28 +114,29 @@ def loss(
                               for layer, layer_weights in weights.items()}
     init_weights = {**init_fixed_weights, **init_trainable_weights}
 
-    # Compute regularization for theta and add it to total loss
+    # Apply mask to plasticity coefficients to enforce constraints
     if cfg.plasticity_model == "volterra": # Allow 'if' in jitted func: cfg is static
-        # Apply mask to plasticity coefficients to enforce constraints
         theta = jnp.multiply(theta, # ['ff'/'rec'] TODO
                              jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
-        if cfg.regularization_type_theta.lower() != "none":
-            reg_func = (
-                jnp.abs if "l1" in cfg.regularization_type_theta.lower()
-                else jnp.square
-            )
-            reg_theta = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
-        else:
-            reg_theta = 0.0
+    # Compute regularization for theta and add it to total loss
+    if cfg.regularization_type_theta.lower() != "none":
+        reg_func = (
+            jnp.abs if "l1" in cfg.regularization_type_theta.lower()
+            else jnp.square
+        )
+        reg_theta = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
+    else:
+        reg_theta = 0.0
 
     # Compute regularization for initial weights and add it to total loss
     if cfg.regularization_type_weights.lower() != "none":
+        reg_w = 0.0
         for init_trainable_weights_layer in init_trainable_weights.values():
             reg_func = (
                 jnp.abs if "l1" in cfg.regularization_type_weights.lower()
                 else jnp.square
             )
-            reg_w = (cfg.regularization_scale_weights
+            reg_w += (cfg.regularization_scale_weights
                       * jnp.sum(reg_func(init_trainable_weights_layer)))
     else:
         reg_w = 0.0
@@ -158,8 +171,11 @@ def loss(
         neural_loss = 0.0
 
     if "behavioral" in cfg.fit_data:
-        behavioral_loss = behavioral_ce_loss(experimental_data['decisions'],
-                                         simulated_data['outputs'])
+        behavioral_loss = behavioral_ce_loss(
+            simulated_data['outputs'],
+            experimental_data['decisions'],
+            step_mask
+            )
     else:
         behavioral_loss = 0.0
 

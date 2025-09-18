@@ -119,8 +119,8 @@ def network_forward(key, input_weights, weights,
     # Apply nonlinearity
     y = jax.nn.sigmoid(y)
 
-    # Compute output probability ((1,) logit) based on postsynaptic layer activity
-    output = jax.nn.sigmoid(y @ weights['w_out']).squeeze()  # + b_out
+    # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
+    output = (y @ weights['w_out']).squeeze()  # + b_out
 
     return x, y, output
 
@@ -136,7 +136,7 @@ def compute_decision(key, output):
         decision (float): Binary decision (0 or 1).
     """
 
-    return jax.random.bernoulli(key, output).astype(float)
+    return jax.random.bernoulli(key, jax.nn.sigmoid(output)).astype(float)
 
 def compute_reward(key, decision):
     """ Compute reward based on binary decision.
