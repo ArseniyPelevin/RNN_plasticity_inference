@@ -471,8 +471,8 @@ plt.close(fig)
 fig, ax = plt.subplots(2, 2, figsize=(10, 10), layout='tight')
 ax = ax.flatten()
 for i, metric in enumerate(['loss', 'MSE', 'r2_y', 'r2_w']):
-    dF = losses_and_r2['F'][f'{metric}_all'].ravel()
-    dN = losses_and_r2['N'][f'{metric}_all'].ravel()
+    dF = losses_and_r2['F'][metric].ravel()
+    dN = losses_and_r2['N'][metric].ravel()
 
     lo = np.nanmin([dF.min(), dN.min()])
     hi = np.nanmax([dF.max(), dN.max()])

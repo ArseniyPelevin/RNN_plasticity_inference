@@ -24,8 +24,7 @@ def evaluate(key, cfg, theta, plasticity_func,
                                         init_trainable_weights_train,
                                         loss_only=True
                                         )
-    train_loss_mean = jnp.mean(losses_and_r2_train['loss'])
-    train_loss_std = jnp.std(losses_and_r2_train['loss'])
+    train_loss_median = jnp.median(losses_and_r2_train['loss'])
 
     # Compute neural MSE loss and/or behavioral BCE loss.
     # Compute R2 scores for neural activity and/or behavioral output and/or weights.
@@ -33,8 +32,7 @@ def evaluate(key, cfg, theta, plasticity_func,
                                           theta, init_trainable_weights_test)  # TODO key
 
     # Extract test loss from dictionary
-    test_loss_mean = losses_and_r2['F']['loss_mean']
-    test_loss_std = losses_and_r2['F']['loss_std']
+    test_loss_median = jnp.median(losses_and_r2['F']['loss'])
 
     # Evaluate percent deviance explained
 
@@ -98,20 +96,12 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
                                                   init_trainable_weights_test[start]))
 
     # Average over restarts
-    for mod in losses_and_r2:
-        losses_and_r2[mod] = {
-            f'{metric}_mean': jnp.mean(jnp.array(
-                [losses_and_r2[mod][i][metric]
-                 for i in range(cfg.num_test_restarts)]))
-                 for metric in losses_and_r2[mod][0]} | {
-            f'{metric}_std': jnp.std(jnp.array(
-                [losses_and_r2[mod][i][metric]
-                 for i in range(cfg.num_test_restarts)]))
-                 for metric in losses_and_r2[mod][0]} | {
-            f'{metric}_all': jnp.array(
-                [losses_and_r2[mod][i][metric]
+    for model in losses_and_r2:
+        losses_and_r2[model] = {
+            metric: jnp.array(
+                [losses_and_r2[model][i][metric]
                  for i in range(cfg.num_test_restarts)])
-                 for metric in losses_and_r2[mod][0]
+                 for metric in losses_and_r2[model][0]
             }
 
     return losses_and_r2
