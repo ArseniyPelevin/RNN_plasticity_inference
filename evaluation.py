@@ -15,8 +15,10 @@ def evaluate(key, cfg, theta, plasticity_func,
              test_experiments, init_trainable_weights_test,
              expdata):
 
+    train_loss_key, losses_r2_key = jax.random.split(key, 2)
+
     # Evaluate train loss
-    losses_and_r2_train = evaluate_loss(key,  # TODO key
+    losses_and_r2_train = evaluate_loss(train_loss_key,
                                         cfg,
                                         train_experiments,
                                         plasticity_func,
@@ -26,10 +28,11 @@ def evaluate(key, cfg, theta, plasticity_func,
                                         )
     train_loss_median = jnp.median(losses_and_r2_train['loss'])
 
-    # Compute neural MSE loss and/or behavioral BCE loss.
-    # Compute R2 scores for neural activity and/or behavioral output and/or weights.
-    losses_and_r2 = compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
-                                          theta, init_trainable_weights_test)  # TODO key
+    # Compute neural MSE loss and behavioral BCE loss.
+    # Compute R2 scores for neural activity and weights.
+    losses_and_r2 = compute_losses_and_r2(losses_r2_key, cfg,
+                                          test_experiments, plasticity_func,
+                                          theta, init_trainable_weights_test)
 
     # Extract test loss from dictionary
     test_loss_median = jnp.median(losses_and_r2['F']['loss'])
@@ -54,7 +57,7 @@ def evaluate(key, cfg, theta, plasticity_func,
     PDE_W_behavioral = jnp.median(
         1 - losses_and_r2['W']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
     ) * 100
-    
+
     PDE = {
         'F': {'neural': PDE_F_neural, 'behavioral': PDE_F_behavioral},
         'T': {'neural': PDE_T_neural, 'behavioral': PDE_T_behavioral},
@@ -91,14 +94,14 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
     # Use different initial weights for each restart.
     # Use the same set of initial weights in each evaluation epoch.
     for start in range(cfg.num_test_restarts):
-        print(f"Test restart {start+1}/{cfg.num_test_restarts}")
+        key, weights_key, loss_key = jax.random.split(key, 3)
         # Learn initial weights for test experiments
         learned_init_weights = learn_initial_weights(
-            key, cfg, theta, plasticity_func,  # TODO key
+            weights_key, cfg, theta, plasticity_func,
             test_experiments, init_trainable_weights_test[start])
 
         compute_loss_r2 = partial(evaluate_loss,
-                                  key, cfg, test_experiments, plasticity_func)
+                                  loss_key, cfg, test_experiments, plasticity_func)
 
         # Compute loss of full model with learned plasticity and learned weights
         losses_and_r2['F'].append(compute_loss_r2(theta,
