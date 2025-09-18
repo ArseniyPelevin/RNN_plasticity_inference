@@ -24,8 +24,46 @@ def evaluate(key, cfg, theta, plasticity_func,
                                         init_trainable_weights_train,
                                         loss_only=True
                                         )
-    train_loss = losses_and_r2_train['loss']
+    train_loss_mean = jnp.mean(losses_and_r2_train['loss'])
+    train_loss_std = jnp.std(losses_and_r2_train['loss'])
 
+    # Compute neural MSE loss and/or behavioral BCE loss.
+    # Compute R2 scores for neural activity and/or behavioral output and/or weights.
+    losses_and_r2 = compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
+                                          theta, init_trainable_weights_test)  # TODO key
+
+    # Extract test loss from dictionary
+    test_loss_mean = losses_and_r2['F']['loss_mean']
+    test_loss_std = losses_and_r2['F']['loss_std']
+
+    # Evaluate percent deviance explained
+
+
+    # Evaluate R2
+
+
+    return expdata
+
+def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
+                          theta, init_trainable_weights_test):
+    """ Compute losses and R2 scores for different model variants:
+    Full model (F): learned plasticity and learned weights,
+    Theta model (T): learned plasticity and random weights,
+    Weights model (W): zero plasticity and learned weights,
+    Null model (N): zero plasticity and random weights.
+
+    Args:
+        key (jax.random.PRNGKey): Random key for generating random numbers.
+        cfg (dict): Configuration dictionary.
+        test_experiments (list): List of test experiments from class Experiment.
+        plasticity_func (function): Plasticity function.
+        theta (jax.numpy.ndarray): Learned plasticity coefficients.
+        init_trainable_weights_test: Random initial trainable weights
+            for test experiments.  Per-restart list of per-layer dicts
+            of per-exp arrays of randomly initialized weights.
+
+        Returns: dict: Dictionary with losses and R2 scores for each model variant.
+    """
     zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
 
     losses_and_r2 = {'F': [], 'T': [], 'W': [], 'N': []}
@@ -62,18 +100,17 @@ def evaluate(key, cfg, theta, plasticity_func,
     # Average over restarts
     for mod in losses_and_r2:
         losses_and_r2[mod] = {
-            metric: jnp.mean(jnp.array([losses_and_r2[mod][i][metric]
-                                        for i in range(cfg.num_test_restarts)]))
-                                        for metric in losses_and_r2[mod][0]}
+            f'{metric}_mean': jnp.mean(jnp.array(
+                [losses_and_r2[mod][i][metric]
+                 for i in range(cfg.num_test_restarts)]))
+                 for metric in losses_and_r2[mod][0]} | {
+            f'{metric}_std': jnp.std(jnp.array(
+                [losses_and_r2[mod][i][metric]
+                 for i in range(cfg.num_test_restarts)]))
+                 for metric in losses_and_r2[mod][0]
+            }
 
-        print(f"{mod}: {losses_and_r2[mod]['MSE']:.6f}")
-
-    # Evaluate percent deviance explained
-
-
-    # Evaluate R2
-
-    return expdata
+    return losses_and_r2
 
 def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
                           test_experiments,
@@ -177,12 +214,12 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
             )
             r2s_weights[exp_i] = r2_weights
 
-    return {'loss': jnp.mean(losses_total),
-            'MSE': jnp.mean(losses_neural),
-            'BCE': jnp.mean(losses_behavioral),
-            'r2_y': jnp.mean(r2s_neural),
-            'r2_out': jnp.mean(r2s_behavioral),
-            'r2_w': jnp.mean(r2s_weights)
+    return {'loss': losses_total,
+            'MSE': losses_neural,
+            'BCE': losses_behavioral,
+            'r2_y': r2s_neural,
+            'r2_out': r2s_behavioral,
+            'r2_w': r2s_weights
             }
 
 def evaluate_r2_score_activations(step_mask,
