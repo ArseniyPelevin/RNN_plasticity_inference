@@ -48,17 +48,29 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     # highlight a few columns (if they exist)
     highlight = {"A_1100", "A_0210"}
 
-    # top = Loss, bottom = coeff trajectories
-    fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-    top_ax, coeff_ax = axs
-
     # --- read data ---
     df = pd.read_csv(fpath)
+
+    # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
+    if 'train_loss_median' in df.columns:  # Use train_loss_median as marker of new eval
+        fig, axs = plt.subplots(3, 1, figsize=(10, 8),
+                                gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
+                                layout='tight')
+        top_ax, eval_ax, coeff_ax = axs
+    else:
+        fig, axs = plt.subplots(2, 1, figsize=(12, 7))
+        top_ax, coeff_ax = axs
+        eval_ax = None
 
     # --- Top: loss subplot (backwards-compatible) ---
     x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
 
-    if all(col in df.columns for col in ['train_loss_mean','train_loss_std',
+    if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
+        top_ax.plot(x_epochs, df['train_loss_median'],
+                    color='blue', label='train_loss_median')
+        top_ax.plot(x_epochs, df['test_loss_median'],
+                    color='red', label='test_loss_median')
+    elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
                                          'test_loss_mean','test_loss_std']):
         top_ax.plot(x_epochs, df['train_loss_mean'], color='blue', label='train_loss')
         top_ax.fill_between(x_epochs,
@@ -76,11 +88,40 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     elif 'loss' in df.columns:
         top_ax.plot(x_epochs, df['loss'], color='blue', label='train_loss')
 
-    top_ax.set_title("Loss")
+    top_ax.set_title("Train and Test Loss", fontsize=12)
     top_ax.legend(loc='upper right')
     top_ax.grid(True)
-    top_ax.set_yscale('log')
-    top_ax.set_ylabel('Loss (log scale)')
+    top_ax.set_ylabel('Loss')
+
+    # --- Middle: evaluation metrics subplot (if available) ---
+    if eval_ax is not None:
+        metrics = ['PDE_F_neural', 'PDE_T_neural', 'PDE_W_neural',
+                   'R2_F_y', 'R2_F_w', 'R2_T_y', 'R2_T_w', 'R2_W_y', 'R2_W_w']
+
+        for metric in metrics:
+            if 'PDE' in metric:
+                line_style = '-'
+                k = 1
+            elif 'R2' in metric:
+                k = 100
+                if '_y' in metric:
+                    line_style = '--'
+                elif '_w' in metric:
+                    line_style = ':'
+
+            if '_F_' in metric:
+                color = 'blue'
+            elif '_T_' in metric:
+                color = 'purple'
+            elif '_W_' in metric:
+                color = 'red'
+            if metric in df.columns:
+                eval_ax.plot(x_epochs, df[metric]*k, label=metric,
+                             linestyle=line_style, color=color)
+        eval_ax.legend(loc='center right', fontsize=8)
+        eval_ax.set_ylabel('Percent deviance / R2 * 100')
+        eval_ax.grid(True)
+        eval_ax.set_title("Evaluation Metrics", fontsize=12)
 
     # --- Bottom: coefficient trajectories ---
     # find candidate columns like "A_abcd"
@@ -94,11 +135,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
         data_cols = [c for c in candidate_cols
                      if str(c).split('_')[-1].endswith('0')]
 
-    # Fallback: if nothing found, use all columns except loss/epoch
-    if not data_cols:
-        excluded = {'epoch', 'loss', 'train_loss', 'test_loss'}
-        data_cols = [c for c in df.columns if c not in excluded]
-
+    # Fallback: if nothing found
     if not data_cols:
         coeff_ax.text(0.5, 0.5, "No coefficient columns found in CSV",
                       ha='center', va='center')
@@ -337,10 +374,11 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
             else:
                 legend_handles.append(proxy_handle(target, 0))
                 legend_labels.append(label_map.get(target, target))
-        fig.subplots_adjust(bottom=0.18, hspace=0.50, top=0.92)
+        fig.subplots_adjust(bottom=0.30, hspace=0.50, top=0.92)
+
         ncol = 9
         fig.legend(legend_handles, legend_labels,
-                   loc='lower center', bbox_to_anchor=(0.5, -0.04),
+                   loc='lower center', bbox_to_anchor=(0.5, -0.10),
                    bbox_transform=fig.transFigure,
                    ncol=ncol,
                    fontsize=11, frameon=False, handlelength=2.4,
@@ -425,7 +463,10 @@ recurrent_experiments_config_table = {
           },
      172: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
            "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           'init_w_mean_std': 'see log csv'}
+           'init_w_mean_std': 'see log csv'},
+     173: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 100, "N_out": 100, 'init_spars': 'ff: 0.5, rec: 0.5',
+           'init_w_mean_std': 'see log csv'},
 }
 
 cfg = main.create_config()
@@ -445,7 +486,7 @@ cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
 
-cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
+cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
 # cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
 # cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
 # cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
@@ -455,8 +496,8 @@ cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
 cfg.expid = 173
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
+cfg.num_hidden_pre = 100
+cfg.num_hidden_post = 100
 cfg.mean_steps_per_trial = 50
 
 cfg.num_epochs = 250
