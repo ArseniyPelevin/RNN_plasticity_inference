@@ -466,6 +466,27 @@ fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
+# Plot histograms of losses and R2 values for all experiments
+
+fig, ax = plt.subplots(2, 2, figsize=(10, 10), layout='tight')
+ax = ax.flatten()
+for i, metric in enumerate(['loss', 'MSE', 'r2_y', 'r2_w']):
+    dF = losses_and_r2['F'][f'{metric}_all'].ravel()
+    dN = losses_and_r2['N'][f'{metric}_all'].ravel()
+
+    lo = np.nanmin([dF.min(), dN.min()])
+    hi = np.nanmax([dF.max(), dN.max()])
+    edges = np.linspace(lo, hi, 41)      # 40 bins -> 41 edges
+
+    ax[i].hist(dF, bins=edges, alpha=0.5, color='blue', label='F')
+    ax[i].hist(dN, bins=edges, alpha=0.5, color='red',  label='N')
+
+    ax[i].set_title(metric)
+    ax[i].legend()
+plt.show()
+
+
+# +
 # Exp63-170
 def run(cfg):
     _activation_trajs = main.run_experiment(cfg)

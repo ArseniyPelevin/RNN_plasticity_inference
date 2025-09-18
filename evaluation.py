@@ -107,6 +107,10 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
             f'{metric}_std': jnp.std(jnp.array(
                 [losses_and_r2[mod][i][metric]
                  for i in range(cfg.num_test_restarts)]))
+                 for metric in losses_and_r2[mod][0]} | {
+            f'{metric}_all': jnp.array(
+                [losses_and_r2[mod][i][metric]
+                 for i in range(cfg.num_test_restarts)])
                  for metric in losses_and_r2[mod][0]
             }
 
