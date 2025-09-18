@@ -1,4 +1,3 @@
-
 from functools import partial
 
 import jax
@@ -39,32 +38,39 @@ def evaluate(key, cfg, theta, plasticity_func,
 
     # Evaluate percent deviance explained
     eps = 1e-12
-    PDE_F_neural = jnp.median(
-        1 - losses_and_r2['F']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
+    PDE = {f'PDE_{model}_{data}': jnp.median(
+            1 - losses_and_r2[model][metric] / (losses_and_r2['N'][metric] + eps)
         ) * 100
-    PDE_F_behavioral = jnp.median(
-        1 - losses_and_r2['F']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
-        ) * 100
-    PDE_T_neural = jnp.median(
-        1 - losses_and_r2['T']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
-    ) * 100
-    PDE_T_behavioral = jnp.median(
-        1 - losses_and_r2['T']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
-    ) * 100
-    PDE_W_neural = jnp.median(
-        1 - losses_and_r2['W']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
-    ) * 100
-    PDE_W_behavioral = jnp.median(
-        1 - losses_and_r2['W']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
-    ) * 100
-
-    PDE = {
-        'F': {'neural': PDE_F_neural, 'behavioral': PDE_F_behavioral},
-        'T': {'neural': PDE_T_neural, 'behavioral': PDE_T_behavioral},
-        'W': {'neural': PDE_W_neural, 'behavioral': PDE_W_behavioral},
+        for model in ['F', 'T', 'W']
+        for data, metric in zip(cfg.fit_data, ['MSE', 'BCE'], strict=False)
     }
 
-    return expdata
+    # Evaluate R2 scores
+    trajs = ['y', 'w'] if not cfg.use_experimental_data else ['y']
+    R2 = {f'R2_{model}_{traj}': jnp.median(
+        losses_and_r2[model][f'r2_{traj}'])
+        for model in ['F', 'T', 'W']
+        for traj in trajs
+    }
+
+    # Print and log results
+    print(f"Train Loss: {train_loss_median:.5f}")
+    print(f"Test Loss: {test_loss_median:.5f}")
+    expdata.setdefault("train_loss_median", []).append(train_loss_median)
+    expdata.setdefault("test_loss_median", []).append(test_loss_median)
+    for key, value in PDE.items():
+        print(f"{key}: {value:.5f}")
+        expdata.setdefault(key, []).append(value)
+    for model in ['F', 'T', 'W']:
+        r2_print_str = f"R2 {model}:\t"
+        for traj in trajs:
+            key = f'R2_{model}_{traj}'
+            r2_print_str += f"{traj}: {R2[key]:.5f}\t"
+            expdata.setdefault(key, []).append(R2[key])
+        print(r2_print_str)
+
+
+    return expdata, losses_and_r2
 
 def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
                           theta, init_trainable_weights_test):
@@ -206,7 +212,7 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
         losses_neural[exp_i] = aux['neural']
         losses_behavioral[exp_i] = aux['behavioral']
 
-        step_mask = exp.step_mask.flatten().astype(bool)
+        step_mask = exp.step_mask.ravel().astype(bool)
 
         if 'neural' in cfg.fit_data:
             r2_neural = evaluate_r2_score_activations(

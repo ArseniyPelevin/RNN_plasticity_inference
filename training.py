@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import losses
 import model
-import numpy as np
 import omegaconf
 import optax
 import pandas as pd
@@ -143,6 +142,9 @@ def train(key, cfg, train_experiments, test_experiments):
 
     opt_state = optimizer.init(params)
 
+    # Save and return deviances and R2s for each test sample at each evaluation epoch
+    _losses_and_r2s = {}
+
     # Return simulation trajectory - for debugging purposes only,
     # set cfg._return_weights_trajectory=True
     _activation_trajs = [[None for _ in range(len(train_experiments))]
@@ -176,79 +178,19 @@ def train(key, cfg, train_experiments, test_experiments):
             params = optax.apply_updates(params, updates)
 
         if epoch % cfg.log_interval == 0:
-            print(f"Epoch {epoch}")
-            expdata = evaluation.evaluate(
-                key, cfg, params['theta'], plasticity_func,
+            print(f"\nEpoch {epoch}")
+            expdata.setdefault("epoch", []).append(epoch)
+            expdata = utils.print_and_log_learned_params(cfg, expdata, params['theta'])
+
+            key, eval_key = jax.random.split(key)
+            expdata, losses_and_r2 = evaluation.evaluate(
+                eval_key, cfg, params['theta'], plasticity_func,
                 train_experiments, params['weights'],
                 test_experiments, init_trainable_weights_test,
                 expdata)
+            _losses_and_r2s[epoch] = losses_and_r2
 
-    return params, plasticity_func, expdata, _activation_trajs
-
-def evaluate_model(
-    key,
-    cfg,
-    test_experiments,
-    learned_params,
-    plasticity_func,
-    expdata
-):
-    """Evaluate the trained model."""
-    if cfg["num_exp_test"] == 0:
-        return expdata
-
-    r2_score = {"weights": [], "activity": []}
-    percent_deviance = []
-
-    for exp in test_experiments:
-        key, simulation_key = jax.random.split(key)
-
-        # Simulate model with learned_theta (plasticity coefficients)
-        simulated_model_data = model.simulate_trajectory(
-            simulation_key,
-            exp.input_weights,
-            exp.new_init_weights,
-            exp.feedforward_mask_training,
-            exp.recurrent_mask_training,
-            learned_params['theta'],  # Learned plasticity coefficients estimate
-            plasticity_func,
-            exp.data,
-            exp.step_mask,
-            cfg,
-            mode='generation_test'
-        )
-
-        # Simulate model with zeros plasticity coefficients for null model
-        zero_theta, zero_plasticity_func = synapse.init_plasticity_volterra(
-            key=None, init="zeros", scale=None
-            )
-        simulated_null_data = model.simulate_trajectory(
-            simulation_key,
-            exp.input_weights,
-            exp.new_init_weights,  # Use the same initial weights as for learned model
-            exp.feedforward_mask_training,
-            exp.recurrent_mask_training,
-            zero_theta,  # Zero plasticity coefficients
-            zero_plasticity_func,
-            exp.data,
-            exp.step_mask,
-            cfg,
-            mode='generation_test'
-        )
-
-        r2_score["activity"].append(r2_score_exp["activity"])
-        if 'weights' in r2_score_exp:  # if not cfg.use_experimental_data
-            r2_score["weights"].append(r2_score_exp["weights"])
-
-    expdata["percent_deviance"] = np.median(percent_deviance)
-    expdata["r2_activity"] = np.median(r2_score["activity"])
-    print('Percent deviance explained:', expdata["percent_deviance"])
-    print('R2 score (activity):', expdata["r2_activity"])
-    if 'weights' in r2_score:
-        expdata["r2_weights"] = np.median(r2_score["weights"])
-        print('R2 score (weights):', expdata["r2_weights"])
-
-    return expdata
+    return expdata, _activation_trajs, _losses_and_r2s
 
 def save_results(cfg, expdata, train_time):
     """Save training logs and parameters."""

@@ -423,12 +423,18 @@ recurrent_experiments_config_table = {
           "\ninp_spar_train": 1, "FF_spar_train": 1, "rec_spar_train": 1,
           "init_spar_gen": "{'ff': 1, 'rec': 1}",
           },
+     172: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           'init_w_mean_std': 'see log csv'}
 }
 
 cfg = main.create_config()
 
+cfg.num_exp_test = 5
+cfg.num_test_restarts = 5
+
 cfg.recurrent = True
-cfg.trainable_init_weights = ["w_rec", "w_ff"] #["w_ff"] #["w_rec", "w_ff"]
+cfg.trainable_init_weights = ["w_rec", "w_ff"]
 cfg.plasticity_layers = ["ff", "rec"]
 cfg.postsynaptic_input_sparsity_generation = 1
 cfg.postsynaptic_input_sparsity_training = 1
@@ -439,26 +445,25 @@ cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
 
-# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
 # cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
 # cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
 # cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
-cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
-cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
-cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 0.01, 'out': 0}
-cfg.init_weights_std_training = {'ff': 0.01, 'rec': 0.01, 'out': 0}
+cfg.init_weights_mean_generation = {'ff': 0.1, 'rec': -0.2, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 0.2, 'rec': 0.001, 'out': 0}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 171
-cfg.num_hidden_pre = 100
-cfg.num_hidden_post = 100
+cfg.expid = 173
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
 cfg.mean_steps_per_trial = 50
 
-cfg.num_epochs = 300
+cfg.num_epochs = 250
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
-_activation_trajs = main.run_experiment(cfg)
+_activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
 
 fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
                               use_all_81=False)
@@ -471,8 +476,8 @@ plt.close(fig)
 fig, ax = plt.subplots(2, 2, figsize=(10, 10), layout='tight')
 ax = ax.flatten()
 for i, metric in enumerate(['loss', 'MSE', 'r2_y', 'r2_w']):
-    dF = losses_and_r2['F'][metric].ravel()
-    dN = losses_and_r2['N'][metric].ravel()
+    dF = _losses_and_r2s['F'][metric].ravel()
+    dN = _losses_and_r2s['N'][metric].ravel()
 
     lo = np.nanmin([dF.min(), dN.min()])
     hi = np.nanmax([dF.max(), dN.max()])

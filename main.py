@@ -13,7 +13,7 @@ coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 config = {
     "expid": 17, # For saving results and seeding random
     "use_experimental_data": False,
-    "fit_data": "neural",  # ["behavioral", "neural"]
+    "fit_data": ["neural"],  # ["behavioral", "neural"]
     "trainable_init_weights": [],  # ['w_ff'], ['w_rec'], ['w_ff', 'w_rec'], []
 
 # Experiment design
@@ -172,17 +172,13 @@ def run_experiment(cfg, seed=None):
     test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    learned_params, plasticity_func, expdata, _activation_trajs = (
+    expdata, _activation_trajs, _losses_and_r2s = (
         training.train(train_key, cfg, experiments, test_experiments))
     train_time = time.time() - time_start
 
-    # expdata = training.evaluate_model(eval_key, cfg,
-    #                                   test_experiments,
-    #                                   learned_params, plasticity_func,
-    #                                   expdata)
     training.save_results(cfg, expdata, train_time)
-    return _activation_trajs
+    return _activation_trajs, _losses_and_r2s
 
 if __name__ == "__main__":
     cfg = create_config()
-    _activation_trajs = run_experiment(cfg)
+    _activation_trajs, _losses_and_r2s = run_experiment(cfg)

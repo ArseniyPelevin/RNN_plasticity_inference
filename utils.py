@@ -210,22 +210,18 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, params, 
-                                epoch, train_losses, test_losses):
+def print_and_log_learned_params(cfg, expdata, theta):
     """
-    Logs and prints training information including epoch, loss, and plasticity coefficients.
+    Logs and prints current plasticity coefficients.
 
     Args:
-        cfg (object): Configuration object containing model settings and hyperparameters.
+        cfg (object): Configuration object containing the model settings.
         expdata (dict): Dictionary to store experimental data.
-        params (dict): Dictionary of model parameters including plasticity coefficients.
-        epoch (int): Current epoch number.
-        loss (float): Current loss value.
+        theta (jnp.ndarray): (3, 3, 3, 3) array of plasticity coefficients.
 
     Returns:
         dict: Updated experimental data dictionary.
     """
-    theta = params['theta']
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)
@@ -244,15 +240,6 @@ def print_and_log_training_info(cfg, expdata, params,
             np.abs(theta[ind_i, ind_j, ind_k, ind_l].flatten())
         )[-5:]
 
-        train_loss_mean, train_loss_std = np.mean(train_losses), np.std(train_losses)
-        test_loss_mean, test_loss_std = np.mean(test_losses), np.std(test_losses)
-
-        logging.info(f"Epoch: {epoch}")
-        logging.info(f"Loss: {train_loss_mean} ± {train_loss_std}")
-        logging.info(f"Test Loss: {test_loss_mean} ± {test_loss_std}")
-        print(f"Epoch: {epoch}")
-        print(f"Train Loss: {train_loss_mean:.5f} ± {train_loss_std:.5f}")
-        print(f"Test Loss: {test_loss_mean:.5f} ± {test_loss_std:.5f}")
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
 
@@ -276,19 +263,11 @@ def print_and_log_training_info(cfg, expdata, params,
                 term_str += "R²"
             coeff = theta[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
             print(f"{term_str:<10} {coeff:<20.5f}")
-        print()
     else:
         print("MLP plasticity coeffs: ", theta)
         expdata.setdefault("mlp_params", []).append(theta)
 
-    expdata.setdefault("epoch", []).append(epoch)
-    expdata.setdefault("train_loss_mean", []).append(train_loss_mean)
-    expdata.setdefault("train_loss_std", []).append(train_loss_std)
-    expdata.setdefault("test_loss_mean", []).append(test_loss_mean)
-    expdata.setdefault("test_loss_std", []).append(test_loss_std)
-
     return expdata
-
 
 def save_logs(cfg, df):
     """
