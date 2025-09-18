@@ -236,20 +236,6 @@ def evaluate_model(
             mode='generation_test'
         )
 
-        percent_deviance.append(
-            evaluate_percent_deviance(
-                exp.data, simulated_model_data, simulated_null_data,
-                exp.step_mask, mode=cfg.fit_data
-            )
-        )
-
-        r2_score_exp = evaluate_r2_score(
-                exp.step_mask,
-                exp.data,
-                exp.weights_trajec,
-                simulated_model_data,
-                cfg
-                )
         r2_score["activity"].append(r2_score_exp["activity"])
         if 'weights' in r2_score_exp:  # if not cfg.use_experimental_data
             r2_score["weights"].append(r2_score_exp["weights"])
@@ -263,59 +249,6 @@ def evaluate_model(
         print('R2 score (weights):', expdata["r2_weights"])
 
     return expdata
-
-def evaluate_percent_deviance(experimental_data,
-                              simulated_model_data,
-                              simulated_null_data,
-                              step_mask,
-                              mode='neural'):
-    """ Percent deviance explained by model.
-    Calculate neg log likelihoods between model and data.
-    Calculate neg log likelihoods between zero model and data.
-    Percent deviance explained: (D_null - D_model) / D_null
-
-    Args:
-        data (dict): Dictionary of experimental data.
-        simulated_model_data: Simulated activations with learned coefficients.
-        simulated_null_data: Simulated activations with zero coefficients.
-        step_mask: Mask of valid steps.
-        mode: ['neural', 'behavioral'].
-
-    Returns:
-        Percent deviance explained scalar
-    """
-    if mode == 'neural':
-        exp_activations = experimental_data['ys']
-        model_activations = simulated_model_data['ys']
-        null_activations = simulated_null_data['ys']
-    elif mode == 'behavioral':
-        exp_activations = experimental_data['decisions']
-        model_activations = simulated_model_data['outputs']
-        null_activations = simulated_null_data['outputs']
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-
-    # Flatten sessions and steps
-    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
-    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
-    null_activations = null_activations.reshape(-1, *null_activations.shape[2:])
-    step_mask = step_mask.flatten().astype(bool)
-
-    # Choose only valid steps
-    exp_activations = exp_activations[step_mask]
-    model_activations = model_activations[step_mask]
-    null_activations = null_activations[step_mask]
-
-    if mode == 'behavioral':
-        model_deviance = utils.binary_deviance(model_activations, exp_activations)
-        null_deviance = utils.binary_deviance(null_activations, exp_activations)
-    elif mode == 'neural':
-        model_deviance = utils.sse_deviance(model_activations, exp_activations)
-        null_deviance = utils.sse_deviance(null_activations, exp_activations)
-
-    eps = 1e-12
-    percent_deviance = 100 * (null_deviance - model_deviance) / (null_deviance + eps)
-    return percent_deviance
 
 def save_results(cfg, expdata, train_time):
     """Save training logs and parameters."""

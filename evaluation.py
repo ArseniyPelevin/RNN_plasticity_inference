@@ -35,10 +35,31 @@ def evaluate(key, cfg, theta, plasticity_func,
     test_loss_median = jnp.median(losses_and_r2['F']['loss'])
 
     # Evaluate percent deviance explained
-
-
-    # Evaluate R2
-
+    eps = 1e-12
+    PDE_F_neural = jnp.median(
+        1 - losses_and_r2['F']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
+        ) * 100
+    PDE_F_behavioral = jnp.median(
+        1 - losses_and_r2['F']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
+        ) * 100
+    PDE_T_neural = jnp.median(
+        1 - losses_and_r2['T']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
+    ) * 100
+    PDE_T_behavioral = jnp.median(
+        1 - losses_and_r2['T']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
+    ) * 100
+    PDE_W_neural = jnp.median(
+        1 - losses_and_r2['W']['MSE'] / (losses_and_r2['N']['MSE'] + eps)
+    ) * 100
+    PDE_W_behavioral = jnp.median(
+        1 - losses_and_r2['W']['BCE'] / (losses_and_r2['N']['BCE'] + eps)
+    ) * 100
+    
+    PDE = {
+        'F': {'neural': PDE_F_neural, 'behavioral': PDE_F_behavioral},
+        'T': {'neural': PDE_T_neural, 'behavioral': PDE_T_behavioral},
+        'W': {'neural': PDE_W_neural, 'behavioral': PDE_W_behavioral},
+    }
 
     return expdata
 
