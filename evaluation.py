@@ -163,8 +163,7 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
      losses_neural,
      losses_behavioral,
      r2s_neural,
-     r2s_behavioral,
-     r2s_weights) = (np.zeros(len(experiments)) for _ in range(6))
+     r2s_weights) = (np.zeros(len(experiments)) for _ in range(5))
 
     for exp_i, exp in enumerate(experiments):
         key, subkey = jax.random.split(key)
@@ -202,13 +201,6 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
                 aux['trajectories']['ys'])
             r2s_neural[exp_i] = r2_neural
 
-        if 'behavioral' in cfg.fit_data:
-            r2_behavioral = evaluate_r2_score_activations(
-                step_mask,
-                exp.data['decisions'],
-                aux['trajectories']['outputs'])
-            r2s_behavioral[exp_i] = r2_behavioral
-
         if not cfg.use_experimental_data:
             r2_weights = evaluate_r2_score_weights(
                 step_mask,
@@ -222,7 +214,6 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
             'MSE': losses_neural,
             'BCE': losses_behavioral,
             'r2_y': r2s_neural,
-            'r2_out': r2s_behavioral,
             'r2_w': r2s_weights
             }
 
