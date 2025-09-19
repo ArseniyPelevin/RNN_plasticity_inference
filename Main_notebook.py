@@ -503,6 +503,10 @@ recurrent_experiments_config_table = {
            "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
            '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
            '\nx': '{0, 1}', 'n_epochs': 500,},
+     187: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 0.5}', 'n_epochs': 500,},
 }
 
 cfg = main.create_config()
@@ -533,7 +537,7 @@ cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 186
+cfg.expid = 187
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
 cfg.mean_steps_per_trial = 50
@@ -553,6 +557,180 @@ fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
 fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
+# +
+import utils
+from scipy import stats
+
+# Configurations
+dt = 0.001
+
+mean_trial_time = 29  # s, including 2s teleportation
+std_trial_time = 5  # s
+trial_time = utils.sample_truncated_normal(key = jax.random.PRNGKey(0),
+    mean=mean_trial_time, std=std_trial_time)
+velocity_std = 0.2
+velocity_smoothing_window = 5  # seconds
+
+trial_distance = 230 # cm, fixed
+num_place_neurons = 20
+
+place_field_width_mean = 20  # 70 cm - from article
+place_field_width_std = 5  # 50 cm - from article
+place_field_amplitude_mean = 1.0
+place_field_amplitude_std = 0.1
+place_field_center_jitter = 1.  # cm
+
+def place_cell_firing(key, positions):
+    """
+    positions: (n_steps,) in [0, trial_distance)
+    returns: (n_steps, num_place_neurons)
+    """
+    # Arrays of place field centers for each neuron
+    place_field_centers = jnp.linspace(0, trial_distance, num_place_neurons)
+    place_field_centers += jax.random.normal(key, (num_place_neurons,)) \
+        * place_field_center_jitter
+
+    # Array of peak firing rates for each neuron
+    amplitudes = jax.random.normal(key, (num_place_neurons,)) \
+        * place_field_amplitude_std + place_field_amplitude_mean
+    amplitudes = jnp.clip(amplitudes, a_min=0.0)  # avoid negative maxima
+
+    # Array of place field widths for each neuron
+    place_field_widths = jax.random.normal(key, (num_place_neurons,)) \
+        * place_field_width_std + place_field_width_mean
+
+    # Convert linear variables to circular
+    theta = 2 * jnp.pi * positions / float(trial_distance)  # (n_steps,)
+    mu = 2 * jnp.pi * place_field_centers / float(trial_distance)  # (num_place_neurons,)
+    ang_sigma = 2 * jnp.pi * place_field_widths / float(trial_distance)  # (num_place_neurons,)
+
+    # Compute firing rates using von Mises function
+    dtheta = theta[:, None] - mu[None, :]  # (n_steps, num_place_neurons)
+    kappa = 1.0 / (ang_sigma**2 + 1e-12)
+    vonMises = jnp.exp(kappa * (jnp.cos(dtheta) - 1.0))
+
+    rates = vonMises * amplitudes[None, :]
+
+    return rates, place_field_centers
+
+def generate_velocity_and_position(dt, trial_distance,
+                                   trial_time, velocity_std,
+                                   velocity_smoothing_window):
+
+    # Derived parameters
+    steps_per_trial = (trial_time - 2) / dt  # steps, minus 2s for teleportation
+    velocity_mean = trial_distance / steps_per_trial  # cm per step
+    velocity_smoothing_window = int(velocity_smoothing_window / dt)  # steps
+    num_steps = int(steps_per_trial)
+
+    # Generate raw velocity signal and smooth it
+    v = jax.random.normal(jax.random.PRNGKey(1), (num_steps,)) * velocity_std
+    gaussian_filter = stats.norm.pdf(jnp.linspace(-3, 3, velocity_smoothing_window))
+    gaussian_filter /= jnp.sum(gaussian_filter)
+    v_smooth = jnp.convolve(v, gaussian_filter, mode='same') + velocity_mean
+
+    positions = jnp.cumsum(v_smooth)  # in cm
+    scale = trial_distance / positions[-1]
+    v_smooth = v_smooth * scale
+    positions = jnp.cumsum(v_smooth)  # in cm
+
+    position_at_teleport = jnp.ones(int(2/dt)) * trial_distance
+    v_smooth = jnp.concatenate([v_smooth, jnp.zeros(int(2/dt))])  # Teleport to start
+    positions = jnp.concatenate([positions, position_at_teleport])  # Teleport to start
+    t = jnp.arange(0, trial_time, dt)
+
+
+    return t, v_smooth, positions
+
+def generate_visual_sequence(cfg, positions):
+    pass
+
+
+t, velocity, positions = generate_velocity_and_position(
+    dt, trial_distance, trial_time, velocity_std, velocity_smoothing_window)
+
+visual_type = generate_visual_sequence(cfg, positions)
+
+
+place_cell_firings, _place_field_centers = place_cell_firing(jax.random.PRNGKey(2),
+                                                             positions)
+
+color_map = plt.get_cmap('viridis')
+
+
+fig, ax = plt.subplots(2, 1, figsize=(10,8))
+# plt.plot(t, v, label='Raw signal', alpha=0.5)
+# ax.plot(t, velocity, label='Smoothed signal', linewidth=2)
+# # ax.axhline(velocity_mean, color='red', linestyle='--', label='Mean velocity')
+# ax.plot(t, positions/10, label='Position (m)', color='green')
+
+for i in range(num_place_neurons):
+    ax[0].plot(t, place_cell_firings[:, i],
+            color=color_map(i / num_place_neurons), alpha=0.8)
+    ax[1].plot(positions, place_cell_firings[:, i],
+            color=color_map(i / num_place_neurons), alpha=0.8)
+    ax[1].axvline(_place_field_centers[i], color=color_map(i / num_place_neurons),
+                  linestyle='--', alpha=0.5)
+
+# Shade rectangle at last 2 seconds for teleportation
+ax[0].axvspan(t[-1]-2, t[-1], color='gray', alpha=0.5)
+
+ax[0].set_title('Place Cell Firings in Time and Space')
+ax[0].set_xlabel('Time step')
+ax[1].set_xlabel('Position (cm)')
+ax[0].set_ylabel('Firing rate')
+ax[1].set_ylabel('Firing rate')
+plt.show()
+
+
+# +
+def gen_2acfc(key, n, lambd=0.7, max_rep=3):
+    """ Generate a 2AFC sequence with Poisson-distributed repeats. """
+
+    rep_key, first_key = jax.random.split(key)
+
+    # Sample repeats (Poisson + 1, clipped to max_rep)
+    reps = jax.random.poisson(rep_key, lambd, shape=(n,)).astype(jnp.int32) + 1
+    reps = jnp.clip(reps, 1, max_rep)
+
+    t0 = jax.random.randint(first_key, (), 0, 2)  # First trial
+    types = (t0 + jnp.arange(reps.shape[0])) % 2
+
+    return jnp.repeat(types, reps)[:n]
+
+key = jax.random.PRNGKey(3)
+task_types = gen_2acfc(key, 1000)
+task_type = task_types[0]
+
+# [1,1,1,1,1,1,2,2,2,2,1,1,1,4,4,1,1,1,5,5,1,1,1,0,0,0]
+visual_cue_seq = [jnp.repeat(1, 6),
+                   jnp.repeat(2, 4) + task_type,  # Indicator
+                   jnp.repeat(1, 3),
+                   jnp.repeat(4, 2),  # Reward near
+                   jnp.repeat(1, 3),
+                   jnp.repeat(5, 2),  # Reward far
+                   jnp.repeat(1, 3),
+                   jnp.repeat(0, 3),  # Teleportation
+                   ]
+visual_type_seq = jnp.concatenate(visual_cue_seq)
+
+# Compute segment index from continuous position (floor of x/10)
+segment_at_time = jnp.floor(positions / 10.0).astype(jnp.int32)
+# Choose visual cue in the current segment
+cue_at_time = visual_type_seq[segment_at_time]
+
+fig, ax = plt.subplots(figsize=(10,4))
+ax.plot(t, cue_at_time*50, label='Visual cue', linewidth=2)
+ax.plot(t, positions, label='Position (cm)', linewidth=2)
+ax.plot(t, segment_at_time*10, label='10 cm segment', linewidth=2)
+ax.plot(t+0.1, velocity*10000+3, label='Velocity x 1e+4 (cs/ms)',
+        linewidth=2, linestyle='--')
+ax.legend()
+ax.set_xlabel('Time (s)')
+ax.set_ylabel('Distance (cm)')
+plt.show()
+print(jnp.mean(velocity), jnp.std(velocity))
+
 # +
 # Explore different n_steps
 cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
