@@ -103,6 +103,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
                 line_style = '-'
                 k = 1
             elif 'R2' in metric:
+                continue
                 k = 100
                 if '_y' in metric:
                     line_style = '--'
