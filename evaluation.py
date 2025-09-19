@@ -102,9 +102,12 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
     for start in range(cfg.num_test_restarts):
         key, weights_key, loss_key = jax.random.split(key, 3)
         # Learn initial weights for test experiments
-        learned_init_weights = learn_initial_weights(
-            weights_key, cfg, theta, plasticity_func,
-            test_experiments, init_trainable_weights_test[start])
+        if len(cfg.trainable_init_weights) > 0:
+            learned_init_weights = learn_initial_weights(
+                weights_key, cfg, theta, plasticity_func,
+                test_experiments, init_trainable_weights_test[start])
+        else:
+            learned_init_weights = init_trainable_weights_test[start]
 
         compute_loss_r2 = partial(evaluate_loss,
                                   loss_key, cfg, test_experiments, plasticity_func)
@@ -125,7 +128,7 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
         losses_and_r2['N'].append(compute_loss_r2(zero_theta,
                                                   init_trainable_weights_test[start]))
 
-    # Average over restarts
+    # Convert lists of dicts to dict of arrays
     for model in losses_and_r2:
         losses_and_r2[model] = {
             metric: jnp.array(

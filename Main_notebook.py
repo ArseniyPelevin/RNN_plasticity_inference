@@ -467,6 +467,15 @@ recurrent_experiments_config_table = {
      173: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
            "\nN_in": 100, "N_out": 100, 'init_spars': 'ff: 0.5, rec: 0.5',
            'init_w_mean_std': 'see log csv'},
+     174: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     175: {'recurrent': False, 'plasticity': "ff", 'train_w': "w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     176: {'recurrent': False, 'plasticity': "ff, rec", 'train_w': "none",
+          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
 }
 
 cfg = main.create_config()
@@ -474,8 +483,8 @@ cfg = main.create_config()
 cfg.num_exp_test = 5
 cfg.num_test_restarts = 5
 
-cfg.recurrent = True
-cfg.trainable_init_weights = ["w_rec", "w_ff"]
+cfg.recurrent = False
+cfg.trainable_init_weights = []#["w_rec", "w_ff"]
 cfg.plasticity_layers = ["ff", "rec"]
 cfg.postsynaptic_input_sparsity_generation = 1
 cfg.postsynaptic_input_sparsity_training = 1
@@ -495,9 +504,9 @@ cfg.init_weights_std_generation = {'ff': 0.2, 'rec': 0.001, 'out': 0}
 cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 173
-cfg.num_hidden_pre = 100
-cfg.num_hidden_post = 100
+cfg.expid = 177
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
 cfg.mean_steps_per_trial = 50
 
 cfg.num_epochs = 250
