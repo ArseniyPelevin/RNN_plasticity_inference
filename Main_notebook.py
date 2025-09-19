@@ -477,6 +477,32 @@ recurrent_experiments_config_table = {
      176: {'recurrent': False, 'plasticity': "ff, rec", 'train_w': "none",
           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
           '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     177: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=0.1, rec=-0.4', 'init_w_std': 'ff=1, rec=0.001'},
+     178: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1'},
+     182: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{-1, 1}'},
+     183: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}'},
+     184: {'recurrent': True, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}'},
+     185: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}', 'n_epochs': 250,},
+     186: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}', 'n_epochs': 500,},
 }
 
 cfg = main.create_config()
@@ -484,8 +510,10 @@ cfg = main.create_config()
 cfg.num_exp_test = 5
 cfg.num_test_restarts = 5
 
-cfg.recurrent = False
-cfg.trainable_init_weights = []#["w_rec", "w_ff"]
+cfg.fit_data = 'neural'
+
+cfg.recurrent = True
+cfg.trainable_init_weights = []#"w_rec", "w_ff"]
 cfg.plasticity_layers = ["ff", "rec"]
 cfg.postsynaptic_input_sparsity_generation = 1
 cfg.postsynaptic_input_sparsity_training = 1

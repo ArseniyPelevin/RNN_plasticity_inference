@@ -96,7 +96,7 @@ def network_forward(key, input_weights, weights,
     # x = jnp.dot(input_onehot, input_weights)
 
     # Makeshift for input firing (TODO)  # x IS input firing
-    x = step_input
+    x = (jnp.sign(step_input) / 2 + 0.5) * 0.5  # x in {0, 0.5}
 
     # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
@@ -369,6 +369,8 @@ def simulate_trajectory(
                 output_data['rewards'] = reward * cfg.reward_scale
                 output_data['expected_rewards'] = expected_reward * cfg.reward_scale
             else:
+                # Reuse reward from data
+                # TODO make reward depend on simulated decision
                 reward = input_data['rewards'] * cfg.reward_scale
                 expected_reward = input_data['expected_rewards'] * cfg.reward_scale
 
