@@ -496,31 +496,67 @@ cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
 
-cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
 # cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
 # cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
 # cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
-cfg.init_weights_mean_generation = {'ff': 0.1, 'rec': -0.2, 'out': 0}
-cfg.init_weights_std_generation = {'ff': 0.2, 'rec': 0.001, 'out': 0}
-cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
+cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 177
+cfg.expid = 186
 cfg.num_hidden_pre = 10
 cfg.num_hidden_post = 10
 cfg.mean_steps_per_trial = 50
+cfg.sd_steps_per_trial = 0
+cfg.mean_trials_per_session = 1
+cfg.mean_num_sessions = 1
 
-cfg.num_epochs = 250
+cfg.num_epochs = 500
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
 _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+
 
 fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
                               use_all_81=False)
 fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
+# +
+# Explore different n_steps
+cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+cfg.init_weights_mean_generation = {'ff': -0.2, 'rec': 0.3, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
+
+# Exp57 = scaling by number of inputs, ff sparsity = 1
+cfg.expid = 180
+cfg.num_hidden_pre = 1000
+cfg.num_hidden_post = 1000
+
+cfg.num_epochs = 300
+
+for steps in [5, 10, 15, 20, 50, 100, 150]:
+    cfg.mean_steps_per_trial = steps
+    cfg.expid += 1
+    _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+
+    param_table = {
+        cfg.expid: {
+            'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 1000, "N_out": 1000, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=-0.2, rec=0.3', 'init_w_std': 'ff=1, rec=1',
+           '\nn_steps': steps}}
+
+    fig = plot_coeff_trajectories(cfg.expid, param_table,
+                                use_all_81=False)
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
 # +
 # Plot histograms of losses and R2 values for all experiments
 
