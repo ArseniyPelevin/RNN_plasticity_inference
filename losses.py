@@ -8,17 +8,22 @@ import model
 import optax
 
 
-def behavior_ce_loss(decisions, logits):
+def behavioral_ce_loss(logits, decisions, step_mask):
     """
     Functionality: Computes the mean of the element-wise cross entropy
     between decisions and logits.
-    Inputs:
-        decisions (array): Array of decisions.
-        logits (array): Array of logits.
+
+    Args:
+        logits (array): (N_sessions, N_steps) Array of logits (output before sigmoid).
+        decisions (array): (N_sessions, N_steps) Array of binary decisions.
+        step_mask (array): (N_sessions, N_steps) Mask of valid and padding values.
+
     Returns: Mean of the element-wise cross entropy.
     """
     losses = optax.sigmoid_binary_cross_entropy(logits, decisions)
-    return jnp.mean(losses)
+    losses = losses * step_mask  # Mask out padding steps
+
+    return jnp.sum(losses) / jnp.sum(step_mask)  # Mean over valid steps only
 
 @jax.jit
 def neural_mse_loss(
@@ -53,67 +58,96 @@ def neural_mse_loss(
     return mse_loss
 
 
-@partial(jax.jit, static_argnames=["plasticity_func", "cfg"])
+@partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
 def loss(
     key,
-    input_params,
-    init_params,
+    input_weights,
+    init_fixed_weights,
     ff_mask,
     rec_mask,
-    plasticity_coeffs,  # Current plasticity coeffs, updated on each iteration
+    theta,  # Current plasticity coeffs, updated on each iteration
+    weights,  # Current initial weights estimate, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
     step_mask,
+    exp_i,  # Index of the current experiment to extract initial weights from params
     cfg,  # Static within losses
+    mode  # 'training' or 'evaluation'
 ):
     """
     Computes the total loss for the model.
 
     Args:
         key (int): Seed for the random number generator.
-        params (array): Array of parameters.
-        plasticity_coeffs (array): Array of plasticity coefficients.
+        input_weights (array): Embedding weights for the inputs.
+        init_fixed_weights (dict): Dictionary of initial weights for fixed layers.
+        ff_mask (array): Feedforward sparsity mask.
+        rec_mask (array): Recurrent sparsity mask.
+        theta (array): Current plasticity coeffs, updated on each iteration.
+        weights (dict): Current initial weights estimate for each trainable layer.
         plasticity_func (function): Plasticity function.
-        xs (array): Array of inputs.
-        rewards (array): Array of rewards.
-        expected_rewards (array): Array of expected rewards.
-        neural_recordings (array): Array of neural recordings.
-        decisions (array): Array of decisions.
+        experimental_data (dict): {"inputs", "xs", "ys", "outputs", "decisions"}.
+        step_mask (N_sessions, N_steps): Mask to distinguish valid and padding steps.
+        exp_i (int): Index of current experiment to extract init_weights from params.
         cfg (object): Configuration object containing the model settings.
+        mode (str): "training" or "evaluation" - decides returning trajectories.
 
     Returns:
-        float: Loss for the cross entropy model.
+        loss (float): Total loss computed as the sum of theta regularization,
+            initial weights regularization, neural loss, and behavioral loss.
+        aux (dict): {
+            'trajectories': simulated_data if mode=='evaluation' else None,
+            'neural': neural_loss if "neural" in cfg.fit_data else 0,
+            'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0
+            }
     """
 
-    # Allow python 'if' in jitted function because cfg is static
-    if cfg.plasticity_model == "volterra":
-        # Apply mask to plasticity coefficients to enforce constraints
-        plasticity_coeffs = jnp.multiply(plasticity_coeffs,
-                                         jnp.array(cfg.coeff_mask))
-        # Compute regularization and add it to total loss
-        if cfg.regularization_type.lower() != "none":
+    # Combine fixed and trainable initial weights for the current experiment
+    init_trainable_weights = {layer: layer_weights[exp_i]
+                              for layer, layer_weights in weights.items()}
+    init_weights = {**init_fixed_weights, **init_trainable_weights}
+
+    # Apply mask to plasticity coefficients to enforce constraints
+    if cfg.plasticity_model == "volterra": # Allow 'if' in jitted func: cfg is static
+        theta = jnp.multiply(theta, # ['ff'/'rec'] TODO
+                             jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
+    # Compute regularization for theta and add it to total loss
+    if cfg.regularization_type_theta.lower() != "none":
+        reg_func = (
+            jnp.abs if "l1" in cfg.regularization_type_theta.lower()
+            else jnp.square
+        )
+        reg_theta = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
+    else:
+        reg_theta = 0.0
+
+    # Compute regularization for initial weights and add it to total loss
+    if cfg.regularization_type_weights.lower() != "none":
+        reg_w = 0.0
+        for init_trainable_weights_layer in init_trainable_weights.values():
             reg_func = (
-                jnp.abs if "l1" in cfg.regularization_type.lower()
+                jnp.abs if "l1" in cfg.regularization_type_weights.lower()
                 else jnp.square
             )
-            loss = cfg.regularization_scale * \
-                jnp.sum(reg_func(plasticity_coeffs))
-        else:
-            loss = 0.0
+            reg_w += (cfg.regularization_scale_weights
+                      * jnp.sum(reg_func(init_trainable_weights_layer)))
+    else:
+        reg_w = 0.0
 
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(
         key,
-        input_params,
-        init_params,
+        input_weights,
+        init_weights,
         ff_mask,
         rec_mask,
-        plasticity_coeffs,  # Our current plasticity coefficients estimate
+        theta,  # Our current plasticity coefficients estimate
         plasticity_func,
         experimental_data,
         step_mask,
         cfg,
-        mode='simulation' if not cfg._return_params_trajec else 'generation_test'
+        mode=('simulation' if mode=='training'  # Only return activation trajectories
+              else 'generation_test')  # Return both activation and weight trajectories
     )
 
     # Allow python 'if' in jitted function because cfg is static
@@ -126,15 +160,21 @@ def loss(
             # cfg.neural_recording_sparsity,
             # cfg.measurement_noise_scale,
         )
-        loss += neural_loss
+    else:
+        neural_loss = 0.0
 
-    if "behavior" in cfg.fit_data:
-        behavior_loss = behavior_ce_loss(experimental_data['decisions'],
-                                         simulated_data['outputs'])
-        loss += behavior_loss
-    # loss = regularization + neural_loss + behavior_loss
+    if "behavioral" in cfg.fit_data:
+        behavioral_loss = behavioral_ce_loss(
+            simulated_data['outputs'],
+            experimental_data['decisions'],
+            step_mask
+            )
+    else:
+        behavioral_loss = 0.0
 
-    if cfg._return_params_trajec:
-        # Return simulation trajectory - for debugging purposes only
-        return loss, simulated_data
-    return loss, None
+    loss = reg_theta + reg_w + neural_loss + behavioral_loss
+    aux = {'trajectories': simulated_data if mode=='evaluation' else None,
+           'neural': neural_loss,
+           'behavioral': behavioral_loss}
+
+    return loss, aux

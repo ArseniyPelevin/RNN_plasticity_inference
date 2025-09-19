@@ -9,21 +9,14 @@ import numpy as np
 from utils import generate_gaussian, standardize_coeff_init
 
 
-def volterra_plasticity_function(x, y, w, r, coeff):
+def volterra_plasticity_function(X, Y, W, R, coeff):
     """
     Vectorized Volterra/Taylor plasticity:
       dw_{j,i} = sum_{a,b,c,d=0..2} coeff[a,b,c,d] * x_j^a * y_i^b * w_{j,i}^c * r^d
     Shapes:
-      x: (N_pre,), y: (N_post,), w: (N_pre, N_post), r: scalar, coeff: (3,3,3,3)
+      X: (3, N_pre,), Y: (3, N_post,), W: (3, N_pre, N_post), R: (3,), coeff: (3,3,3,3)
       returns dw: (N_pre, N_post)
     """
-
-    # basis powers
-    X = jnp.stack([jnp.ones_like(x), x, x * x], axis=0)  # (3, N_pre)
-    Y = jnp.stack([jnp.ones_like(y), y, y * y], axis=0)  # (3, N_post)
-    W = jnp.stack([jnp.ones_like(w), w, w * w], axis=0)  # (3, N_pre, N_post)
-    R = jnp.array([1.0, r, r * r])  # (3,)
-
     # successive contractions to keep memory stable:
     # 1) contract coeff over r-powers -> (3,3,3)
     theta_R = jnp.tensordot(coeff, R, axes=(3, 0))  # (a,b,c)
@@ -215,7 +208,7 @@ def init_plasticity(key, cfg, mode):
             return init_plasticity_mlp(key, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
         if cfg.plasticity_model == "volterra":
-            return init_plasticity_volterra(key, 
+            return init_plasticity_volterra(key,  # ['ff'/'rec'] TODO
                                             init=cfg.plasticity_coeffs_init,
                                             scale=cfg.plasticity_coeffs_init_scale)
         elif cfg.plasticity_model == "mlp":

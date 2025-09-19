@@ -8,33 +8,34 @@ from utils import sample_truncated_normal
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, key, exp_i, cfg, plasticity_coeffs, plasticity_func, mode):
+    def __init__(self, key, exp_i, cfg, generation_theta, generation_func, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
             key: JAX random key.
             exp_i: Experiment index.
             cfg: Configuration dictionary.
-            plasticity_coeffs: 4D tensor of plasticity coefficients.
-            plasticity_func: Function to compute plasticity.
+            generation_theta: 4D tensor of plasticity coefficients.
+            generation_func: Function to compute plasticity.
             mode: "train" or "test".
         """
 
         self.exp_i = exp_i
         self.cfg = cfg
-        self.plasticity_coeffs = plasticity_coeffs
-        self.plasticity_func = plasticity_func
+        self.generation_theta = generation_theta
+        self.generation_func = generation_func
         self.data = {}
 
         # Generate random keys for different parts of the model
         (key,
          sessions_key,
          inputs_key,
-         input_params_key,
+         input_weights_key,
          ff_mask_key,
          rec_mask_key,
-         params_key,
-         simulation_key) = jax.random.split(key, 8)
+         weights_key,
+         func_sparse_key,
+         simulation_key) = jax.random.split(key, 9)
 
         # Pick random number of sessions in this experiment given mean and std
         num_sessions = sample_truncated_normal(
@@ -46,36 +47,55 @@ class Experiment:
          ) = self.generate_inputs(inputs_key, num_sessions)
 
         # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
-        self.input_params = model.initialize_input_parameters(
-            input_params_key,
+        self.input_weights = model.initialize_input_weights(  #TODO redefine?
+            input_weights_key,
             cfg["num_inputs"], cfg["num_hidden_pre"],
-            input_params_scale=cfg["input_params_scale"]
+            input_weights_scale=cfg["input_weights_scale"]
         )
 
-        self.feedforward_mask = self.generate_feedforward_mask(
+        self.feedforward_mask_generation = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["feedforward_sparsity"], cfg["postsynaptic_input_sparsity"]
+            cfg["feedforward_sparsity_generation"],
+            cfg["postsynaptic_input_sparsity_generation"]
+        )
+        self.feedforward_mask_training = self.generate_feedforward_mask(
+            ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
+            cfg["feedforward_sparsity_training"],
+            cfg["postsynaptic_input_sparsity_training"]
         )
 
-        self.recurrent_mask = self.generate_recurrent_mask(
-            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity"],
-            self.feedforward_mask
+        self.recurrent_mask_generation = self.generate_recurrent_mask(
+            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity_generation"],
+            self.feedforward_mask_generation
+        )
+        self.recurrent_mask_training = self.generate_recurrent_mask(
+            rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity_training"],
+            self.feedforward_mask_training
         )
 
         # num_hidden_pre -> num_hidden_post plasticity layer
-        init_params = model.initialize_parameters(
-            params_key,
-            cfg["num_hidden_pre"], cfg["num_hidden_post"],
-            cfg["init_params_scale"], cfg["plasticity_layers"]
-        )
+        self.init_weights = model.initialize_weights(
+            weights_key,
+            cfg,
+            cfg.init_weights_std_generation,
+            cfg.init_weights_mean_generation
+            )
+
+        # Apply functional sparsity to plastic weights initialization during generation
+        for layer in cfg.plasticity_layers:
+            func_sparse_key, _ = jax.random.split(func_sparse_key)
+            self.init_weights[f'w_{layer}'] *= jax.random.bernoulli(
+                func_sparse_key,
+                cfg.init_weights_sparsity_generation[layer],
+                shape=self.init_weights[f'w_{layer}'].shape)
 
         trajectories = model.simulate_trajectory(simulation_key,
-            self.input_params,
-            init_params,
-            self.feedforward_mask,  # if cfg.feedforward_sparsity < 1.0 else None,
-            self.recurrent_mask,  # if cfg.recurrent_sparsity < 1.0 else None,
-            plasticity_coeffs,
-            plasticity_func,
+            self.input_weights,
+            self.init_weights,
+            self.feedforward_mask_generation,
+            self.recurrent_mask_generation,
+            self.generation_theta,
+            self.generation_func,
             self.data,
             self.step_mask,
             cfg,
@@ -84,7 +104,7 @@ class Experiment:
         self.data.update(trajectories)
 
         if mode == 'test':
-            self.params_trajec = self.data.pop('params')
+            self.weights_trajec = self.data.pop('weights')
 
     def generate_inputs(self, key, num_sessions):
         def generate_input(key):

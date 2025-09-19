@@ -112,18 +112,6 @@ def kl_divergence(logits1, logits2):
     q = jax.nn.softmax(logits2)
     kl_matrix = kl_div(p, q)
     return np.sum(kl_matrix)
-
-def binary_deviance(predicted_outputs, decisions):
-    """Return -2 * log-likelihood summed over all elements (scalar)."""
-    eps = 1e-12
-    p = jnp.clip(predicted_outputs, eps, 1.0 - eps)
-    d = decisions.astype(p.dtype)
-    nll = -2.0 * (d * jnp.log(p) + (1.0 - d) * jnp.log(1.0 - p))
-    return jnp.sum(nll)
-
-def sse_deviance(predicted_activations, observed_activations):
-    """Sum of squared errors (scalar)."""
-    return jnp.sum((observed_activations - predicted_activations) ** 2)
     
 def softclip(x, cap, p=10):
     return x / ((1.0 + jnp.abs(x / cap) ** p) ** (1.0 / p))
@@ -222,17 +210,14 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_training_info(cfg, expdata, plasticity_coeffs, 
-                                epoch, train_losses, test_losses):
+def print_and_log_learned_params(cfg, expdata, theta):
     """
-    Logs and prints training information including epoch, loss, and plasticity coefficients.
+    Logs and prints current plasticity coefficients.
 
     Args:
-        cfg (object): Configuration object containing model settings and hyperparameters.
+        cfg (object): Configuration object containing the model settings.
         expdata (dict): Dictionary to store experimental data.
-        plasticity_coeffs (array-like): Array of plasticity coefficients.
-        epoch (int): Current epoch number.
-        loss (float): Current loss value.
+        theta (jnp.ndarray): (3, 3, 3, 3) array of plasticity coefficients.
 
     Returns:
         dict: Updated experimental data dictionary.
@@ -240,30 +225,21 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs,
 
     if cfg.plasticity_model == "volterra":
         coeff_mask = np.array(cfg.coeff_mask)
-        plasticity_coeffs = np.multiply(plasticity_coeffs, coeff_mask)
+        theta = np.multiply(theta, coeff_mask)
         for i in range(3):
             for j in range(3):
                 for k in range(3):
                     for l in range(3):
                         dict_key = f"A_{i}{j}{k}{l}"
                         expdata.setdefault(dict_key, []).append(
-                            plasticity_coeffs[i, j, k, l]
+                            theta[i, j, k, l]
                         )
 
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
         top_indices = np.argsort(
-            np.abs(plasticity_coeffs[ind_i, ind_j, ind_k, ind_l].flatten())
+            np.abs(theta[ind_i, ind_j, ind_k, ind_l].flatten())
         )[-5:]
 
-        train_loss_mean, train_loss_std = np.mean(train_losses), np.std(train_losses)
-        test_loss_mean, test_loss_std = np.mean(test_losses), np.std(test_losses)
-
-        logging.info(f"Epoch: {epoch}")
-        logging.info(f"Loss: {train_loss_mean} ± {train_loss_std}")
-        logging.info(f"Test Loss: {test_loss_mean} ± {test_loss_std}")
-        print(f"Epoch: {epoch}")
-        print(f"Train Loss: {train_loss_mean:.5f} ± {train_loss_std:.5f}")
-        print(f"Test Loss: {test_loss_mean:.5f} ± {test_loss_std:.5f}")
         print("Top learned plasticity terms:")
         print("{:<10} {:<20}".format("Term", "Coefficient"))
 
@@ -285,21 +261,13 @@ def print_and_log_training_info(cfg, expdata, plasticity_coeffs,
                 term_str += "R"
             elif ind_l[idx] == 2:
                 term_str += "R²"
-            coeff = plasticity_coeffs[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
+            coeff = theta[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
             print(f"{term_str:<10} {coeff:<20.5f}")
-        print()
     else:
-        print("MLP plasticity coeffs: ", plasticity_coeffs)
-        expdata.setdefault("mlp_params", []).append(plasticity_coeffs)
-
-    expdata.setdefault("epoch", []).append(epoch)
-    expdata.setdefault("train_loss_mean", []).append(train_loss_mean)
-    expdata.setdefault("train_loss_std", []).append(train_loss_std)
-    expdata.setdefault("test_loss_mean", []).append(test_loss_mean)
-    expdata.setdefault("test_loss_std", []).append(test_loss_std)
+        print("MLP plasticity coeffs: ", theta)
+        expdata.setdefault("mlp_params", []).append(theta)
 
     return expdata
-
 
 def save_logs(cfg, df):
     """
@@ -408,9 +376,9 @@ def validate_config(cfg: Any) -> Any:
                 "Only 'random' plasticity_coeffs_init is supported for MLP!"
             )
 
-    # Validate fit_data contains 'behavior' or 'neural'
-    if not ("behavior" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavior' or 'neural', or both!")
+    # Validate fit_data contains 'behavioral' or 'neural'
+    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
+        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
 
     # If using experimental data, validate related parameters
     if cfg.use_experimental_data:
@@ -427,8 +395,8 @@ def validate_config(cfg: Any) -> Any:
         # if cfg.num_train != 1:
         #     raise ValueError("When fitting per fly, num_train must be 1!")
 
-        if not ("behavior" in cfg.fit_data and "neural" not in cfg.fit_data):
-            raise ValueError("Only 'behavior' experimental data is available!")
+        if not ("behavioral" in cfg.fit_data and "neural" not in cfg.fit_data):
+            raise ValueError("Only 'behavioral' experimental data is available!")
 
         # Set certain cfg fields to 'N/A' for experimental data
         cfg.trials_per_session = "N/A"

@@ -17,177 +17,19 @@
 
 import itertools
 import os
-import time
-from importlib import reload
 
-import experiment
 import jax
 import jax.numpy as jnp
+import main
 import matplotlib.pyplot as plt
-import model
 import numpy as np
 import pandas as pd
 import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from omegaconf import OmegaConf
-
-# +
-# coeff_mask = np.zeros((3, 3, 3, 3))
-# coeff_mask[0:2, 0, 0, 0:2] = 1
-coeff_mask = np.ones((3, 3, 3, 3))
-coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
-
-config = {
-    "expid": 17, # For saving results and seeding random
-    "use_experimental_data": False,
-    "fit_data": "neural",  # ["behavioral", "neural"]
-
-# Experiment design
-    "num_exp_train": 25,  # Number of experiments/trajectories/animals
-    "num_exp_test": 5,
-     # Below commented are real values as per CA1 recording article. Be modest for now
-    # "mean_num_sessions": 9,  # Number of sessions/days per experiment
-    # "sd_num_sessions": 3,  # Standard deviation of sessions/days per experiment
-    # "mean_trials_per_session": 124,  # Number of trials/runs in each session/day
-    # "sd_trials_per_session": 43,  # Standard deviation of trials in each session/day
-    # #TODO steps are seconds for now
-    # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
-    # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
-    "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
-    "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
-    "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
-    "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
-    #TODO steps are seconds for now
-    "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
-
-# Network architecture
-    "num_inputs": 6,  # Number of input classes (num_epochs * 4 for random normal)
-    "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
-    "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
-    "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
-    "recurrent": True,  # Whether to include recurrent connections
-    "plasticity_layers": ["recurrent"],  # ["feedforward", "recurrent"]
-    "postsynaptic_input_sparsity": 1,  # Fraction of posts. neurons receiving FF input,
-        # only effective if recurrent connections are present, otherwise 1
-    "feedforward_sparsity": 0.2,  # Fraction of nonzero weights in feedforward layer,
-        # of all postsynaptic neurons receiving FF input (postsynaptic_input_sparsity),
-        # all presynaptic neurons are guaranteed to have some output
-    "recurrent_sparsity": 1,  # Fraction of nonzero weights in recurrent layer,
-        # all neurons receive some input (FF or rec, not counting self-connections)
-    "neural_recording_sparsity": 1,
-
-# Network dynamics
-    "input_params_scale": 1,
-    "presynaptic_firing_mean": 0,
-    "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
-    "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
-    "feedforward_input_scale": 1,  # Scale of feedforward weights,
-        # only if no feedforward plasticity
-    "recurrent_input_scale": 1,  # Scale of recurrent weights,
-        # only if no recurrent plasticity
-    "init_params_scale": 0.01,  # float or 'Xavier'
-    "reward_scale": 0,
-    "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
-    "synapse_learning_rate": 1,
-    "measurement_noise_scale": 0,
-
-# Plasticity
-    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
-    "generation_model": "volterra",
-    "plasticity_coeffs_init": "random",
-    "plasticity_model": "volterra",
-    "plasticity_coeffs_init_scale": 1e-4,
-    # Restrictions on trainable plasticity parameters
-    "trainable_coeffs": int(np.sum(coeff_mask)),
-    "coeff_mask": coeff_mask.tolist(),
-
-# Training
-    "num_epochs": 250,
-    "learning_rate": 3e-3,
-    "regularization_type": "none",  # "l1", "l2", "none"
-    "regularization_scale": 0,
-
-# Logging
-    "log_expdata": True,
-    "log_interval": 10,
-    "data_dir": "../../../../03_data/01_original_data/",
-    "log_dir": "../../../../03_data/02_training_data/",
-    "fig_dir": "../../../../05_figures/",
-
-    "_return_params_trajec": False,  # For debugging
-}
-cfg = OmegaConf.create(config)
-#TODO cfg = validate_config(cfg)
-# -
-
-def run_experiment():
-
-    key = jax.random.PRNGKey(cfg["expid"])
-    # Pass subkeys, so that adding more experiments doesn't affect earlier ones
-    train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
-
-    experiments = training.generate_data(train_exp_key, cfg, mode='train')
-    test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
-
-    time_start = time.time()
-    plasticity_coeffs, plasticity_func, expdata, _activation_trajs = (
-        training.train(train_key, cfg, experiments, test_experiments))
-    train_time = time.time() - time_start
-
-    expdata = training.evaluate_model(eval_key, cfg,
-                                      test_experiments,
-                                      plasticity_coeffs, plasticity_func,
-                                      expdata)
-    training.save_results(cfg, expdata, train_time)
-    return _activation_trajs
 
 
 # +
-# Run Exp10-16
-print("\nEXPERIMENT 10")
-cfg.expid = 10
-cfg.presynaptic_firing_std = 0.5
-run_experiment()
-
-print("\nEXPERIMENT 11")
-cfg.expid = 11
-cfg.presynaptic_firing_std = 0.1
-run_experiment()
-
-cfg.presynaptic_firing_std = 1
-
-print("\nEXPERIMENT 12")
-cfg.expid = 12
-cfg.synapse_learning_rate = 0.5
-run_experiment()
-
-print("\nEXPERIMENT 13")
-cfg.expid = 13
-cfg.synapse_learning_rate = 1
-run_experiment()
-
-cfg.synapse_learning_rate = 0.1
-
-print("\nEXPERIMENT 14")
-cfg.expid = 14
-cfg.init_params_scale = 0.05
-run_experiment()
-
-print("\nEXPERIMENT 15")
-cfg.expid = 15
-cfg.init_params_scale = 0.01
-run_experiment()
-
-cfg.init_params_scale = 0.1
-
-print("\nEXPERIMENT 16")
-cfg.expid = 16
-run_experiment()
-
-# -
-
 def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     """
     Plot a single experiment's loss (top) and coefficient trajectories (bottom).
@@ -206,17 +48,29 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     # highlight a few columns (if they exist)
     highlight = {"A_1100", "A_0210"}
 
-    # top = Loss, bottom = coeff trajectories
-    fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-    top_ax, coeff_ax = axs
-
     # --- read data ---
     df = pd.read_csv(fpath)
+
+    # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
+    if 'train_loss_median' in df.columns:  # Use train_loss_median as marker of new eval
+        fig, axs = plt.subplots(3, 1, figsize=(10, 8),
+                                gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
+                                layout='tight')
+        top_ax, eval_ax, coeff_ax = axs
+    else:
+        fig, axs = plt.subplots(2, 1, figsize=(12, 7))
+        top_ax, coeff_ax = axs
+        eval_ax = None
 
     # --- Top: loss subplot (backwards-compatible) ---
     x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
 
-    if all(col in df.columns for col in ['train_loss_mean','train_loss_std',
+    if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
+        top_ax.plot(x_epochs, df['train_loss_median'],
+                    color='blue', label='train_loss_median')
+        top_ax.plot(x_epochs, df['test_loss_median'],
+                    color='red', label='test_loss_median')
+    elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
                                          'test_loss_mean','test_loss_std']):
         top_ax.plot(x_epochs, df['train_loss_mean'], color='blue', label='train_loss')
         top_ax.fill_between(x_epochs,
@@ -234,11 +88,41 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     elif 'loss' in df.columns:
         top_ax.plot(x_epochs, df['loss'], color='blue', label='train_loss')
 
-    top_ax.set_title("Loss")
+    top_ax.set_title("Train and Test Loss", fontsize=12)
     top_ax.legend(loc='upper right')
     top_ax.grid(True)
-    top_ax.set_yscale('log')
-    top_ax.set_ylabel('Loss (log scale)')
+    top_ax.set_ylabel('Loss')
+
+    # --- Middle: evaluation metrics subplot (if available) ---
+    if eval_ax is not None:
+        metrics = ['PDE_F_neural', 'PDE_T_neural', 'PDE_W_neural',
+                   'R2_F_y', 'R2_F_w', 'R2_T_y', 'R2_T_w', 'R2_W_y', 'R2_W_w']
+
+        for metric in metrics:
+            if 'PDE' in metric:
+                line_style = '-'
+                k = 1
+            elif 'R2' in metric:
+                continue
+                k = 100
+                if '_y' in metric:
+                    line_style = '--'
+                elif '_w' in metric:
+                    line_style = ':'
+
+            if '_F_' in metric:
+                color = 'blue'
+            elif '_T_' in metric:
+                color = 'purple'
+            elif '_W_' in metric:
+                color = 'red'
+            if metric in df.columns:
+                eval_ax.plot(x_epochs, df[metric]*k, label=metric,
+                             linestyle=line_style, color=color)
+        eval_ax.legend(loc='center right', fontsize=8)
+        eval_ax.set_ylabel('Percent deviance / R2 * 100')
+        eval_ax.grid(True)
+        eval_ax.set_title("Evaluation Metrics", fontsize=12)
 
     # --- Bottom: coefficient trajectories ---
     # find candidate columns like "A_abcd"
@@ -252,11 +136,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
         data_cols = [c for c in candidate_cols
                      if str(c).split('_')[-1].endswith('0')]
 
-    # Fallback: if nothing found, use all columns except loss/epoch
-    if not data_cols:
-        excluded = {'epoch', 'loss', 'train_loss', 'test_loss'}
-        data_cols = [c for c in df.columns if c not in excluded]
-
+    # Fallback: if nothing found
     if not data_cols:
         coeff_ax.text(0.5, 0.5, "No coefficient columns found in CSV",
                       ha='center', va='center')
@@ -331,7 +211,7 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
             ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
                     markerfacecolor='none', markeredgecolor=color)
 
-    # title with params if available
+    # title with parameters if available
     basename = os.path.basename(fpath)
     exp_num = exp_id
     if exp_num is not None and exp_num in params_table:
@@ -495,10 +375,11 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
             else:
                 legend_handles.append(proxy_handle(target, 0))
                 legend_labels.append(label_map.get(target, target))
-        fig.subplots_adjust(bottom=0.18, hspace=0.50, top=0.92)
+        fig.subplots_adjust(bottom=0.30, hspace=0.50, top=0.92)
+
         ncol = 9
         fig.legend(legend_handles, legend_labels,
-                   loc='lower center', bbox_to_anchor=(0.5, -0.04),
+                   loc='lower center', bbox_to_anchor=(0.5, -0.10),
                    bbox_transform=fig.transFigure,
                    ncol=ncol,
                    fontsize=11, frameon=False, handlelength=2.4,
@@ -532,6 +413,310 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
 
     return fig
 
+cfg = main.create_config()
+
+# +
+# Set parameters and run experiment
+# training = reload(training)
+# experiment = reload(experiment)
+# model = reload(model)
+
+# parameters table to include in subplot titles
+# import json
+# with open("feedforward_experiments_config_table.json", "r") as f:
+#     feedforward_experiments_config_table = json.load(f)
+
+recurrent_experiments_config_table = {
+     1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
+         "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
+         },
+     11: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
+          "\ninp_spar": 0.2, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
+          },
+     16: {'recurrent': False, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     17: {'recurrent': True, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     18: {'recurrent': True, 'plasticity': "feedforward+recurrent",
+          "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     19: {'recurrent': True, 'plasticity': "recurrent", "N_in": 10, "N_out": 10,
+          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
+          },
+     57: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": True
+          },
+     58: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": False
+          },
+     59: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
+          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by N_in_i": True
+          },
+     60: {'recurrent': True, 'plasticity': "ff", "N_in": 50, "N_out": 50},
+     61: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50},
+     62: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50,
+          "\ninp_spar_gen": 0.5, "FF_spar_gen": 0.5, "rec_spar_gen": 0.5,
+          "\ninp_spar_train": 1, "FF_spar_train": 1, "rec_spar_train": 1,
+          "init_spar_gen": "{'ff': 1, 'rec': 1}",
+          },
+     172: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           'init_w_mean_std': 'see log csv'},
+     173: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 100, "N_out": 100, 'init_spars': 'ff: 0.5, rec: 0.5',
+           'init_w_mean_std': 'see log csv'},
+     174: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     175: {'recurrent': False, 'plasticity': "ff", 'train_w': "w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     176: {'recurrent': False, 'plasticity': "ff, rec", 'train_w': "none",
+          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
+     177: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=0.1, rec=-0.4', 'init_w_std': 'ff=1, rec=0.001'},
+     178: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1'},
+     182: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{-1, 1}'},
+     183: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}'},
+     184: {'recurrent': True, 'plasticity': "ff", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}'},
+     185: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}', 'n_epochs': 250,},
+     186: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
+           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
+           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
+           '\nx': '{0, 1}', 'n_epochs': 500,},
+}
+
+cfg = main.create_config()
+
+cfg.num_exp_test = 5
+cfg.num_test_restarts = 5
+
+cfg.fit_data = 'neural'
+
+cfg.recurrent = True
+cfg.trainable_init_weights = []#"w_rec", "w_ff"]
+cfg.plasticity_layers = ["ff", "rec"]
+cfg.postsynaptic_input_sparsity_generation = 1
+cfg.postsynaptic_input_sparsity_training = 1
+cfg.feedforward_sparsity_generation = 1
+cfg.feedforward_sparsity_training = 1
+cfg.recurrent_sparsity_generation = 1
+cfg.recurrent_sparsity_training = 1
+
+cfg.presynaptic_firing_mean = 0
+
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
+# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
+
+# Exp57 = scaling by number of inputs, ff sparsity = 1
+cfg.expid = 186
+cfg.num_hidden_pre = 10
+cfg.num_hidden_post = 10
+cfg.mean_steps_per_trial = 50
+cfg.sd_steps_per_trial = 0
+cfg.mean_trials_per_session = 1
+cfg.mean_num_sessions = 1
+
+cfg.num_epochs = 500
+
+cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
+
+_activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+
+
+fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
+                              use_all_81=False)
+fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+            dpi=300, bbox_inches="tight")
+plt.close(fig)
+# +
+# Explore different n_steps
+cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+cfg.init_weights_mean_generation = {'ff': -0.2, 'rec': 0.3, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
+
+# Exp57 = scaling by number of inputs, ff sparsity = 1
+cfg.expid = 180
+cfg.num_hidden_pre = 1000
+cfg.num_hidden_post = 1000
+
+cfg.num_epochs = 300
+
+for steps in [5, 10, 15, 20, 50, 100, 150]:
+    cfg.mean_steps_per_trial = steps
+    cfg.expid += 1
+    _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+
+    param_table = {
+        cfg.expid: {
+            'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+           "\nN_in": 1000, "N_out": 1000, 'init_spars': 'ff: 0.5, rec: 0.5',
+           '\ninit_w_mean': 'ff=-0.2, rec=0.3', 'init_w_std': 'ff=1, rec=1',
+           '\nn_steps': steps}}
+
+    fig = plot_coeff_trajectories(cfg.expid, param_table,
+                                use_all_81=False)
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+# +
+# Plot histograms of losses and R2 values for all experiments
+
+fig, ax = plt.subplots(2, 2, figsize=(10, 10), layout='tight')
+ax = ax.flatten()
+for i, metric in enumerate(['loss', 'MSE', 'r2_y', 'r2_w']):
+    dF = _losses_and_r2s['F'][metric].ravel()
+    dN = _losses_and_r2s['N'][metric].ravel()
+
+    lo = np.nanmin([dF.min(), dN.min()])
+    hi = np.nanmax([dF.max(), dN.max()])
+    edges = np.linspace(lo, hi, 41)      # 40 bins -> 41 edges
+
+    ax[i].hist(dF, bins=edges, alpha=0.5, color='blue', label='F')
+    ax[i].hist(dN, bins=edges, alpha=0.5, color='red',  label='N')
+
+    ax[i].set_title(metric)
+    ax[i].legend()
+plt.show()
+
+
+# +
+# Exp63-170
+def run(cfg):
+    _activation_trajs = main.run_experiment(cfg)
+
+    params_table = {cfg.expid: {
+        'trainable': str(cfg.trainable_init_weights),
+        'inp_spar': cfg.postsynaptic_input_sparsity_generation,
+        'ff_spar': cfg.feedforward_sparsity_generation,
+        'rec_spar': cfg.recurrent_sparsity_generation,
+        'init_spar_gen': cfg.init_weights_sparsity_generation,
+        }}
+
+    fig = plot_coeff_trajectories(cfg.expid, params_table,
+                                use_all_81=False)
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+cfg.recurrent = True
+cfg.plasticity_layers = ["ff", "rec"]
+cfg.init_weights_std_training = {'ff': 0.01, 'rec': 0.01, 'out': 0}
+last_expid = 62
+cfg.num_hidden_pre = 100
+cfg.num_hidden_post = 100
+cfg.mean_steps_per_trial = 50
+cfg.num_epochs = 300
+i = 1
+
+for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
+    cfg.trainable_init_weights = trainable
+    for input_spars in [0.3, 0.6, 1]:
+        for ff_spars in [0.3, 0.6, 1]:
+            for rec_spars in [0.3, 0.6, 1]:
+                cfg.postsynaptic_input_sparsity_generation = input_spars
+                cfg.postsynaptic_input_sparsity_training = input_spars
+                cfg.feedforward_sparsity_generation = ff_spars
+                cfg.feedforward_sparsity_training = ff_spars
+                cfg.recurrent_sparsity_generation = rec_spars
+                cfg.recurrent_sparsity_training = rec_spars
+
+                cfg.expid = last_expid + i
+
+                run(cfg)
+                i += 1
+
+    cfg.postsynaptic_input_sparsity_generation = 1
+    cfg.postsynaptic_input_sparsity_training = 1
+    cfg.feedforward_sparsity_generation = 1
+    cfg.feedforward_sparsity_training = 1
+    cfg.recurrent_sparsity_generation = 1
+    cfg.recurrent_sparsity_training = 1
+
+    for init_spar_ff in [0.3, 0.6, 1]:
+        for init_spar_rec in [0.3, 0.6, 1]:
+            cfg.init_weights_sparsity_generation = {'ff': init_spar_ff,
+                                                    'rec': init_spar_rec}
+            cfg.expid = last_expid + i
+            run(cfg)
+            i += 1
+
+# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+
+
+
+
+# +
+# Run Exp10-16
+print("\nEXPERIMENT 10")
+cfg.expid = 10
+cfg.presynaptic_firing_std = 0.5
+main.run_experiment()
+
+print("\nEXPERIMENT 11")
+cfg.expid = 11
+cfg.presynaptic_firing_std = 0.1
+main.run_experiment()
+
+cfg.presynaptic_firing_std = 1
+
+print("\nEXPERIMENT 12")
+cfg.expid = 12
+cfg.synapse_learning_rate = 0.5
+main.run_experiment()
+
+print("\nEXPERIMENT 13")
+cfg.expid = 13
+cfg.synapse_learning_rate = 1
+main.run_experiment()
+
+cfg.synapse_learning_rate = 0.1
+
+print("\nEXPERIMENT 14")
+cfg.expid = 14
+cfg.init_weights_std = 0.05
+main.run_experiment()
+
+print("\nEXPERIMENT 15")
+cfg.expid = 15
+cfg.init_weights_std = 0.01
+main.run_experiment()
+
+cfg.init_weights_std = 0.1
+
+print("\nEXPERIMENT 16")
+cfg.expid = 16
+main.run_experiment()
+
 
 # +
 # Explore space of input-output layer sizes
@@ -540,14 +725,14 @@ cfg.num_exp_train = 25
 cfg.presynaptic_noise_std = 0
 cfg.presynaptic_firing_std = 1
 cfg.synapse_learning_rate = 1
-cfg.init_params_scale = 0.01
+cfg.init_weights_std = 0.01
 
 for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
                                       [10, 50, 100, 500, 1000]))):
     cfg.num_hidden_pre = N_in
     cfg.num_hidden_post = N_out
     cfg.expid = 50 + i
-    run_experiment()
+    main.run_experiment()
     params_dict = {cfg.expid: {"N_in": N_in, "N_out": N_out}}
     fig = plot_coeff_trajectories(cfg.expid, params_dict)
     fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
@@ -558,12 +743,12 @@ for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000
 # +
 # Diagnose trajectories for NaN
 
-_activation_trajs = run_experiment()
+_activation_trajs = main.run_experiment()
 print(len(_activation_trajs)) # num epochs
 print(len(_activation_trajs[0])) # num experiments
 print(len(_activation_trajs[0][0])) # (x, y, output)
-print(_activation_trajs[0][0]['params'][0].shape)  # w.shape
-print(_activation_trajs[0][0]['params'][1].shape)  # b.shape
+print(_activation_trajs[0][0]['weights'][0].shape)  # w.shape
+print(_activation_trajs[0][0]['weights'][1].shape)  # b.shape
 print(_activation_trajs[0][0]['xs'].shape)  # x.shape
 print(_activation_trajs[0][0]['ys'].shape)  # y.shape
 print(_activation_trajs[0][0]['outputs'].shape)  # output.shape
@@ -594,84 +779,111 @@ print(f'{epoch_i=}, {exp_i=}, {sess_i=}, {step_i=}')
 # w = _activation_trajs[57][20][0][0][0]
 
 # +
-# Set parameters and run experiment
-training = reload(training)
-experiment = reload(experiment)
-model = reload(model)
+# Plot experimental vs modelled neural activity
+(_activation_trajs,
+ return_exp_activations,
+ return_model_activations) = main.run_experiment()
+# exp = _experiments[0]
+print(return_exp_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
+print(return_model_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
+sess=3
+vmin = jnp.min(return_exp_activations - return_model_activations)
+vmax = jnp.max(return_exp_activations - return_model_activations)
+fig, ax = plt.subplots(5, 3, figsize=(8, 8), layout='tight')
+im1 = ax[0, 0].imshow(return_exp_activations.mean(2), aspect='auto',
+                      cmap='viridis', interpolation='none')
+im2 = ax[0, 1].imshow(return_model_activations.mean(2), aspect='auto',
+                      cmap='viridis', interpolation='none')
+im3 = ax[0, 2].imshow(return_exp_activations.mean(2)
+                      - return_model_activations.mean(2),
+                      aspect='auto', cmap='bwr', interpolation='none',
+                      vmin=vmin,
+                      vmax=vmax)
+fig.colorbar(im1, ax=ax[0, 0], fraction=0.046, pad=0.04)
+fig.colorbar(im2, ax=ax[0, 1], fraction=0.046, pad=0.04)
+fig.colorbar(im3, ax=ax[0, 2], fraction=0.046, pad=0.04)
+ax[0, 0].set_title("Experimental data")
+ax[0, 1].set_title("Modelled data")
+ax[0, 0].set_ylabel("Sessions")
+ax[0, 0].set_xlabel("Steps")
+ax[0, 1].set_xlabel("Steps")
+ax[0, 2].set_title("Exp - Model")
+ax[0, 2].set_xlabel("Steps")
 
-# parameters table to include in subplot titles
-# import json
-# with open("feedforward_experiments_config_table.json", "r") as f:
-#     feedforward_experiments_config_table = json.load(f)
+for sess in range(return_exp_activations.shape[0]):
+    ax[1+sess, 0].set_title(f"Exp{sess} data")
+    ax[1+sess, 1].set_title(f"Model of Exp{sess} data")
+    ax[1+sess, 0].set_ylabel("Steps")
+    ax[1+sess, 0].set_xlabel("Neurons")
+    ax[1+sess, 1].set_xlabel("Neurons")
+    im3 = ax[1+sess, 0].imshow(return_exp_activations[sess], aspect='auto',
+                               cmap='viridis', interpolation='none')
+    im4 = ax[1+sess, 1].imshow(return_model_activations[sess], aspect='auto',
+                               cmap='viridis', interpolation='none')
+    fig.colorbar(im3, ax=ax[1+sess, 0], fraction=0.046, pad=0.04)
+    fig.colorbar(im4, ax=ax[1+sess, 1], fraction=0.046, pad=0.04)
+    im5 = ax[1+sess, 2].imshow(return_exp_activations[sess]
+                               - return_model_activations[sess],
+                        aspect='auto', cmap='bwr', interpolation='none',
+                        vmin=vmin,
+                        vmax=vmax)
+    fig.colorbar(im5, ax=ax[1+sess, 2], fraction=0.046, pad=0.04)
+    ax[1+sess, 2].set_title(f"Exp{sess} - Model of Exp{sess}")
+    ax[1+sess, 0].set_ylabel("Steps")
+    ax[1+sess, 0].set_xlabel("Neurons")
+    ax[1+sess, 2].set_xlabel("Neurons")
+plt.show()
 
-recurrent_experiments_config_table = {
-     1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
-         "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
-         },
-}
-
-cfg.expid = 1
-cfg.num_hidden_pre = 50
-cfg.num_hidden_post = 50
-cfg.recurrent = True
-cfg.plasticity_layers = ["recurrent"]
-cfg.postsynaptic_input_sparsity = 1
-cfg.feedforward_sparsity = 0.2
-cfg.recurrent_sparsity = 1
-cfg.feedforward_input_scale = 1
-cfg.recurrent_input_scale = 1
-
-cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
-
-# _activation_trajs = run_experiment()
-
-fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
-                              use_all_81=False)
-fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
-            dpi=300, bbox_inches="tight")
-plt.close(fig)
 # +
-# Explore recurrent parameters
+# Explore recurrent sparsity parameters
 cfg.num_hidden_pre = 50
 cfg.num_hidden_post = 50
 cfg.recurrent = True
-cfg.plasticity_layers = ["recurrent"]
+cfg.plasticity_layers = ["rec"]
 cfg.feedforward_input_scale = 1
 cfg.recurrent_input_scale = 1
+last_exp_id = 19
+i = 1
 
-for input_sparsity in [1, 0.6, 0.3]:
-    for ff_sparsity in [1, 0.6, 0.3]:
-        for rec_sparsity in [1, 0.6, 0.3]:
-    # for ff_scale in [1, 0.5, 0.2]:
-    #     for rec_scale in [1, 0.5, 0.2]:
-            cfg.postsynaptic_input_sparsity = input_sparsity
-            cfg.feedforward_sparsity = ff_sparsity
-            cfg.recurrent_sparsity = rec_sparsity
-            # cfg.feedforward_input_scale = ff_scale
-            # cfg.recurrent_input_scale = rec_scale
-            exp_id = (1 + len(recurrent_experiments_config_table))
-            cfg.expid = exp_id
-            print(f"\nEXPERIMENT {cfg.expid}:")
-            _activation_trajs = run_experiment()
-            params_dict = {cfg.expid: {"inp_spar": input_sparsity,
-                                        "FF_spar": ff_sparsity,
-                                        "rec_spar": rec_sparsity,
-                                    #    "FF_scale": ff_scale,
-                                    #    "rec_scale": rec_scale}}
-                                            }}
-            recurrent_experiments_config_table.update(params_dict)
-            fig = plot_coeff_trajectories(cfg.expid,
-                                            recurrent_experiments_config_table,
-                                            use_all_81=False)
-            fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
-                        dpi=300, bbox_inches="tight")
-            plt.close(fig)
+for plasticity in [["rec"], ["ff", "rec"]]:
+    for input_sparsity in [1, 0.6, 0.3]:
+        for ff_sparsity in [1, 0.6, 0.3]:
+            for rec_sparsity in [1, 0.6, 0.3]:
+        # for ff_scale in [1, 0.5, 0.2]:
+        #     for rec_scale in [1, 0.5, 0.2]:
+                cfg.plasticity_layers = plasticity
+                cfg.postsynaptic_input_sparsity = input_sparsity
+                cfg.feedforward_sparsity = ff_sparsity
+                cfg.recurrent_sparsity = rec_sparsity
+                # cfg.feedforward_input_scale = ff_scale
+                # cfg.recurrent_input_scale = rec_scale
+                exp_id = last_exp_id + i
+                cfg.expid = exp_id
+                print(f"\nEXPERIMENT {cfg.expid}:")
+                _activation_trajs = main.run_experiment()
+                params_dict = {cfg.expid: {"N_in": 50, "N_out": 50,
+                                        "plasticity": "+".join(plasticity),
+                                           "\ninp_spar": input_sparsity,
+                                            "FF_spar": ff_sparsity,
+                                            "rec_spar": rec_sparsity,
+                                        #    "FF_scale": ff_scale,
+                                        #    "rec_scale": rec_scale}}
+                                                }}
+                recurrent_experiments_config_table.update(params_dict)
+                fig = plot_coeff_trajectories(cfg.expid,
+                                                recurrent_experiments_config_table,
+                                                use_all_81=False)
+                fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                            dpi=300, bbox_inches="tight")
+                plt.close(fig)
+                i += 1
+print(recurrent_experiments_config_table)
 
 
 # +
 # Plot xs and ys, optionally evolution of weights
 
-# _activation_trajs, _model_activations, _null_activations = run_experiment()
+# _activation_trajs, _model_activations, _null_activations = main.run_experiment()
 
 # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 epoch = 8
@@ -683,7 +895,7 @@ session = 0
 # ys = experiments[exp].data["ys"][0]  # (n_sess, n_steps, ydim)
 xs = _activation_trajs[epoch][exp]['xs'][session]
 ys = _activation_trajs[epoch][exp]['ys'][session]
-w = _activation_trajs[epoch][exp]['params'][0][session]
+w = _activation_trajs[epoch][exp]['weights'][0][session]
 # xs = x_bad
 # ys = y_bad
 
@@ -773,9 +985,9 @@ for exp in experiments:
     # print(f'{exp.data["inputs"].shape=}')
     # print(f'{exp.data["xs"].shape=}')
     # print(f'{exp.data["ys"].shape=}')
-    # print(f'{jnp.mean(exp.input_params)=}')
+    # print(f'{jnp.mean(exp.input_weights)=}')
     # print(f'{exp.steps_per_session=}')
-    # print(f'{exp.params[0].shape=}')
+    # print(f'{exp.weights[0].shape=}')
     yrange += jnp.max(exp.data["ys"][0, -1]) - jnp.min(exp.data["ys"][0, -1])
 print(f'{exp.data["ys"].shape=}')
 print(f'{jnp.min(exp.data["xs"])=}, {jnp.max(exp.data["xs"])=}')
@@ -786,7 +998,7 @@ print(f'Average yrange: {yrange / len(experiments)}')
 # -
 
 # Plot weights distribution
-flat = np.concatenate([exp['params'][0].ravel() for epoch in _activation_trajs
+flat = np.concatenate([exp['weights'][0].ravel() for epoch in _activation_trajs
                        for exp in epoch])
 print(flat.shape)
 flat = flat[flat < 50]
