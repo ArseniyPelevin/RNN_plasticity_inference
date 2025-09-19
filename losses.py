@@ -20,17 +20,10 @@ def behavioral_ce_loss(logits, decisions, step_mask):
 
     Returns: Mean of the element-wise cross entropy.
     """
-    step_mask = step_mask.ravel().astype(bool)
-    logits = logits.ravel()
-    decisions = decisions.ravel()
-
-    # Choose valid steps
-    logits = logits[step_mask]
-    decisions = decisions[step_mask]
-
     losses = optax.sigmoid_binary_cross_entropy(logits, decisions)
+    losses = losses * step_mask  # Mask out padding steps
 
-    return jnp.sum(losses) / jnp.sum(step_mask)
+    return jnp.sum(losses) / jnp.sum(step_mask)  # Mean over valid steps only
 
 @jax.jit
 def neural_mse_loss(
