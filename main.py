@@ -152,6 +152,8 @@ def validate_config(cfg):
             "Only 'l1', 'l2', and 'none' regularization types are supported!"
         )
 
+    if type(cfg.fit_data) is str:
+        cfg.fit_data = [cfg.fit_data]
     # Validate fit_data contains 'behavioral' or 'neural'
     if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
         raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")

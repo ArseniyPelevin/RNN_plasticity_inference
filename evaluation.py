@@ -32,24 +32,27 @@ def evaluate(key, cfg, theta, plasticity_func,
     losses_and_r2 = compute_losses_and_r2(losses_r2_key, cfg,
                                           test_experiments, plasticity_func,
                                           theta, init_trainable_weights_test)
+    losses_and_r2_N = losses_and_r2.pop('N')  # Null model for reference
 
     # Extract test loss from dictionary
     test_loss_median = jnp.median(losses_and_r2['F']['loss'])
 
     # Evaluate percent deviance explained
     eps = 1e-12
+    metric_for = {"neural": "MSE", "behavioral": "BCE"}
     PDE = {f'PDE_{model}_{data}': jnp.median(
-            1 - losses_and_r2[model][metric] / (losses_and_r2['N'][metric] + eps)
+        1 - (losses_and_r2[model][metric_for[data]] /
+             (losses_and_r2_N[metric_for[data]] + eps))
         ) * 100
-        for model in ['F', 'T', 'W']
-        for data, metric in zip(cfg.fit_data, ['MSE', 'BCE'], strict=False)
-    }
+        for model in losses_and_r2
+        for data in cfg.fit_data
+        }
 
     # Evaluate R2 scores
     trajs = ['y', 'w'] if not cfg.use_experimental_data else ['y']
     R2 = {f'R2_{model}_{traj}': jnp.median(
         losses_and_r2[model][f'r2_{traj}'])
-        for model in ['F', 'T', 'W']
+        for model in losses_and_r2
         for traj in trajs
     }
 
@@ -58,10 +61,12 @@ def evaluate(key, cfg, theta, plasticity_func,
     print(f"Test Loss: {test_loss_median:.5f}")
     expdata.setdefault("train_loss_median", []).append(train_loss_median)
     expdata.setdefault("test_loss_median", []).append(test_loss_median)
+    # Log PDE
     for key, value in PDE.items():
         print(f"{key}: {value:.5f}")
         expdata.setdefault(key, []).append(value)
-    for model in ['F', 'T', 'W']:
+    # Log R2
+    for model in losses_and_r2:
         r2_print_str = f"R2 {model}:\t"
         for traj in trajs:
             key = f'R2_{model}_{traj}'
@@ -94,7 +99,7 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
     """
     zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
 
-    losses_and_r2 = {'F': [], 'T': [], 'W': [], 'N': []}
+    losses_and_r2 = {}
 
     # Evaluate test loss for configured number of restarts.
     # Use different initial weights for each restart.
@@ -113,19 +118,20 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
                                   loss_key, cfg, test_experiments, plasticity_func)
 
         # Compute loss of full model with learned plasticity and learned weights
-        losses_and_r2['F'].append(compute_loss_r2(theta,
+        losses_and_r2.setdefault("F", []).append(compute_loss_r2(theta,
                                                   learned_init_weights))
 
-        # Compute loss of theta model with learned plasticity and random weights
-        losses_and_r2['T'].append(compute_loss_r2(theta,
-                                                  init_trainable_weights_test[start]))
+        if cfg.trainable_init_weights:
+            # Compute loss of theta model with learned plasticity and random weights
+            losses_and_r2.setdefault("T", []).append(compute_loss_r2(theta,
+                                                    init_trainable_weights_test[start]))
 
-        # Compute loss of weights model with zero plasticity and learned weights
-        losses_and_r2['W'].append(compute_loss_r2(zero_theta,
-                                                  learned_init_weights))
+            # Compute loss of weights model with zero plasticity and learned weights
+            losses_and_r2.setdefault("W", []).append(compute_loss_r2(zero_theta,
+                                                    learned_init_weights))
 
         # Compute loss of null model with zero plasticity and random weights
-        losses_and_r2['N'].append(compute_loss_r2(zero_theta,
+        losses_and_r2.setdefault("N", []).append(compute_loss_r2(zero_theta,
                                                   init_trainable_weights_test[start]))
 
     # Convert lists of dicts to dict of arrays
@@ -217,7 +223,7 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
 
         step_mask = exp.step_mask.ravel().astype(bool)
 
-        if 'neural' in cfg.fit_data:
+        if 'neural' in cfg.fit_data:  # TODO? Don't use for training, but evaluate
             r2_neural = evaluate_r2_score_activations(
                 step_mask,
                 exp.data['ys'],
