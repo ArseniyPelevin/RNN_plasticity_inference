@@ -562,13 +562,13 @@ import utils
 from scipy import stats
 
 # Configurations
-dt = 0.001
+dt = 0.1
 
 mean_trial_time = 29  # s, including 2s teleportation
 std_trial_time = 5  # s
 trial_time = utils.sample_truncated_normal(key = jax.random.PRNGKey(0),
     mean=mean_trial_time, std=std_trial_time)
-velocity_std = 0.2
+velocity_std = 2  # cm/s
 velocity_smoothing_window = 5  # seconds
 
 trial_distance = 230 # cm, fixed
@@ -576,7 +576,7 @@ num_place_neurons = 20
 
 place_field_width_mean = 20  # 70 cm - from article
 place_field_width_std = 5  # 50 cm - from article
-place_field_amplitude_mean = 1.0
+place_field_amplitude_mean = 1.0  # Units of firing rate
 place_field_amplitude_std = 0.1
 place_field_center_jitter = 1.  # cm
 
@@ -613,46 +613,58 @@ def place_cell_firing(key, positions):
 
     return rates, place_field_centers
 
-def generate_velocity_and_position(dt, trial_distance,
-                                   trial_time, velocity_std,
-                                   velocity_smoothing_window):
+def generate_velocity_and_position(key, cfg, velocity_std,
+                                                        velocity_smoothing_window,
+                                                        trial_time, dt,
+                                                        trial_distance):
 
     # Derived parameters
     steps_per_trial = (trial_time - 2) / dt  # steps, minus 2s for teleportation
-    velocity_mean = trial_distance / steps_per_trial  # cm per step
+    velocity_mean = trial_distance / steps_per_trial  # cm/dt
     velocity_smoothing_window = int(velocity_smoothing_window / dt)  # steps
     num_steps = int(steps_per_trial)
 
     # Generate raw velocity signal and smooth it
-    v = jax.random.normal(jax.random.PRNGKey(1), (num_steps,)) * velocity_std
+    v = jax.random.normal(key, (num_steps,))
     gaussian_filter = stats.norm.pdf(jnp.linspace(-3, 3, velocity_smoothing_window))
     gaussian_filter /= jnp.sum(gaussian_filter)
-    v_smooth = jnp.convolve(v, gaussian_filter, mode='same') + velocity_mean
+    v_smooth = jnp.convolve(v, gaussian_filter, mode='same')
 
-    positions = jnp.cumsum(v_smooth)  # in cm
+    # Rescale to desired mean and std
+    target_velocity_std = velocity_std * dt  # cm/s -> cm/dt
+    observed_velocity_std = jnp.std(v_smooth)
+    v_smooth = v_smooth * target_velocity_std / (observed_velocity_std + 1e-12)
+    v_smooth = v_smooth + velocity_mean
+
+    # Integrate to get position, rescale to desired distance
+    positions = jnp.cumsum(v_smooth)  # cm
     scale = trial_distance / positions[-1]
     v_smooth = v_smooth * scale
-    positions = jnp.cumsum(v_smooth)  # in cm
+    positions = jnp.cumsum(v_smooth)  # cm
 
+    # Add 2s of zero velocity and teleport to start (position is circular)
     position_at_teleport = jnp.ones(int(2/dt)) * trial_distance
     v_smooth = jnp.concatenate([v_smooth, jnp.zeros(int(2/dt))])  # Teleport to start
     positions = jnp.concatenate([positions, position_at_teleport])  # Teleport to start
-    t = jnp.arange(0, trial_time, dt)
 
+    t = jnp.arange(0, trial_time, dt)
 
     return t, v_smooth, positions
 
 def generate_visual_sequence(cfg, positions):
     pass
 
-
-t, velocity, positions = generate_velocity_and_position(
-    dt, trial_distance, trial_time, velocity_std, velocity_smoothing_window)
+# key = jax.random.PRNGKey(0)
+key, pos_key, visual_key, firing_key = jax.random.split(key, 4)
+t, velocity, positions = generate_velocity_and_position(pos_key, cfg, velocity_std,
+                                                        velocity_smoothing_window,
+                                                        trial_time, dt,
+                                                        trial_distance)
 
 visual_type = generate_visual_sequence(cfg, positions)
 
 
-place_cell_firings, _place_field_centers = place_cell_firing(jax.random.PRNGKey(2),
+place_cell_firings, _place_field_centers = place_cell_firing(firing_key,
                                                              positions)
 
 color_map = plt.get_cmap('viridis')
@@ -700,7 +712,7 @@ def gen_2acfc(key, n, lambd=0.7, max_rep=3):
 
 key = jax.random.PRNGKey(3)
 task_types = gen_2acfc(key, 1000)
-task_type = task_types[0]
+task_type = 0  # task_types[0]
 
 # [1,1,1,1,1,1,2,2,2,2,1,1,1,4,4,1,1,1,5,5,1,1,1,0,0,0]
 visual_cue_seq = [jnp.repeat(1, 6),
