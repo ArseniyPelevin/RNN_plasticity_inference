@@ -731,17 +731,39 @@ segment_at_time = jnp.floor(positions / 10.0).astype(jnp.int32)
 # Choose visual cue in the current segment
 cue_at_time = visual_type_seq[segment_at_time]
 
+rewarded_position = jnp.zeros_like(positions)
+if task_type == 0:
+    rewarded_position = jnp.where(cue_at_time == 4, 1.0, 0.0)
+elif task_type == 1:
+    rewarded_position = jnp.where(cue_at_time == 5, 1.0, 0.0)
+
 fig, ax = plt.subplots(figsize=(10,4))
 ax.plot(t, cue_at_time*50, label='Visual cue', linewidth=2)
 ax.plot(t, positions, label='Position (cm)', linewidth=2)
 ax.plot(t, segment_at_time*10, label='10 cm segment', linewidth=2)
-ax.plot(t+0.1, velocity*10000+3, label='Velocity x 1e+4 (cs/ms)',
+ax.plot(t, velocity*100+3, label='Velocity x 10 (cm/s)',
         linewidth=2, linestyle='--')
+ax.plot(t, rewarded_position*10, label='Rewarded position',
+        linewidth=2, linestyle=':', color='green')
 ax.legend()
 ax.set_xlabel('Time (s)')
 ax.set_ylabel('Distance (cm)')
+ax.set_title('2AFC Task Structure with Visual Cues and Rewards\nNear trial')
 plt.show()
-print(jnp.mean(velocity), jnp.std(velocity))
+print(jnp.mean(velocity[:-int(2/dt)]), jnp.std(velocity[:-int(2/dt)]))
+
+# +
+print(cue_at_time.shape)
+num_visual_types = 6
+
+neurons_per_visual_type = 10
+
+visual_inputs = jax.nn.one_hot(cue_at_time, num_visual_types)
+visual_inputs = visual_inputs.at[:,0].set(0)  # No visual input at teleportation
+visual_inputs = visual_inputs.repeat(neurons_per_visual_type, axis=1)  # Encode in neurons_per_visual_type
+print(visual_inputs.shape)
+print(visual_inputs)
+plt.imshow(visual_inputs.T, aspect='auto', cmap='gray_r', interpolation='none', origin='lower')
 
 # +
 # Explore different n_steps
