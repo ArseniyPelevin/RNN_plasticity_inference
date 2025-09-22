@@ -9,7 +9,7 @@ import sklearn.metrics
 import synapse
 
 
-def evaluate(key, cfg, theta, plasticity_func,
+def evaluate(key, cfg, theta, plasticity_func, init_theta,
              train_experiments, init_trainable_weights_train,
              test_experiments, init_trainable_weights_test,
              expdata):
@@ -30,7 +30,7 @@ def evaluate(key, cfg, theta, plasticity_func,
     # Compute neural MSE loss and behavioral BCE loss.
     # Compute R2 scores for neural activity and weights.
     losses_and_r2 = compute_losses_and_r2(losses_r2_key, cfg,
-                                          test_experiments, plasticity_func,
+                                          test_experiments, plasticity_func, init_theta,
                                           theta, init_trainable_weights_test)
     losses_and_r2_N = losses_and_r2.pop('N')  # Null model for reference
 
@@ -77,7 +77,7 @@ def evaluate(key, cfg, theta, plasticity_func,
 
     return expdata, losses_and_r2
 
-def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
+def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func, init_theta,
                           theta, init_trainable_weights_test):
     """ Compute losses and R2 scores for different model variants:
     Full model (F): learned plasticity and learned weights,
@@ -97,7 +97,8 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
 
         Returns: dict: Dictionary with losses and R2 scores for each model variant.
     """
-    zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
+    # zero_theta, _ = synapse.init_plasticity_volterra(key=None, 
+    #                                                  init="zeros", scale=None)
 
     losses_and_r2 = {}
 
@@ -118,21 +119,21 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
                                   loss_key, cfg, test_experiments, plasticity_func)
 
         # Compute loss of full model with learned plasticity and learned weights
-        losses_and_r2.setdefault("F", []).append(compute_loss_r2(theta,
-                                                  learned_init_weights))
+        losses_and_r2.setdefault("F", []).append(
+            compute_loss_r2(theta, learned_init_weights))
 
         if cfg.trainable_init_weights:
             # Compute loss of theta model with learned plasticity and random weights
-            losses_and_r2.setdefault("T", []).append(compute_loss_r2(theta,
-                                                    init_trainable_weights_test[start]))
+            losses_and_r2.setdefault("T", []).append(
+                compute_loss_r2(theta, init_trainable_weights_test[start]))
 
             # Compute loss of weights model with zero plasticity and learned weights
-            losses_and_r2.setdefault("W", []).append(compute_loss_r2(zero_theta,
-                                                    learned_init_weights))
+            losses_and_r2.setdefault("W", []).append(
+                compute_loss_r2(init_theta, learned_init_weights))
 
         # Compute loss of null model with zero plasticity and random weights
-        losses_and_r2.setdefault("N", []).append(compute_loss_r2(zero_theta,
-                                                  init_trainable_weights_test[start]))
+        losses_and_r2.setdefault("N", []).append(
+            compute_loss_r2(init_theta, init_trainable_weights_test[start]))
 
     # Convert lists of dicts to dict of arrays
     for model in losses_and_r2:

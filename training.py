@@ -184,7 +184,7 @@ def train(key, cfg, train_experiments, test_experiments):
 
             key, eval_key = jax.random.split(key)
             expdata, losses_and_r2 = evaluation.evaluate(
-                eval_key, cfg, params['theta'], plasticity_func,
+                eval_key, cfg, params['theta'], plasticity_func, init_theta,
                 train_experiments, params['weights'],
                 test_experiments, init_trainable_weights_test,
                 expdata)
