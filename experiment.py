@@ -140,6 +140,22 @@ class Experiment:
             step_mask = step_mask.at[s, :len(session)].set(1)
 
         return inputs_tensor, step_mask
+    
+    def gen_2acdc(self, key, n, lambd=0.7, max_rep=3):
+        """ Generate a 2AFC sequence with Poisson-distributed repeats. """
+
+        rep_key, first_key = jax.random.split(key)
+
+        # Sample repeats (Poisson + 1, clipped to max_rep)
+        reps = jax.random.poisson(rep_key, lambd, shape=(n,)).astype(jnp.int32) + 1
+        reps = jnp.clip(reps, 1, max_rep)
+
+        # Randomly choose first trial type and start alternating sequence
+        t0 = jax.random.randint(first_key, (), 0, 2)  # First trial
+        types = (t0 + jnp.arange(reps.shape[0])) % 2
+
+        # Repeat trial types according to sampled repeats
+        return jnp.repeat(types, reps)[:n]
 
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):
