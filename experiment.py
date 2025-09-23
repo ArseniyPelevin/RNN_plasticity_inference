@@ -31,20 +31,28 @@ class Experiment:
         (key,
          sessions_key,
          inputs_key,
+         x_gen_key,
+         x_train_key,
          ff_mask_key,
          rec_mask_key,
          weights_key,
          func_sparse_key,
-         simulation_key) = jax.random.split(key, 8)
+         simulation_key) = jax.random.split(key, 10)
 
         # Pick random number of sessions in this experiment given mean and std
         num_sessions = sample_truncated_normal(
             sessions_key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
         )
 
-        (self.data['inputs'],
-         self.step_mask  # (N_sessions, N_steps_per_session_max)
-         ) = self.generate_inputs(inputs_key, num_sessions)
+        # Generate inputs and step mask for this experiment
+        inputs, self.step_mask = self.generate_inputs(inputs_key, num_sessions)
+        self.rewarded_pos = inputs['rewarded_pos']
+
+        # Generate real presynaptic activity and don't save it - it is latent variable
+        x_gen = self.generate_x(x_gen_key, inputs, mode='generation')
+        # Generate assumed presynaptic activity and save for training
+        x_train = self.generate_x(x_train_key, inputs, mode='training')
+        self.data['x_train'] = x_train
 
         self.feedforward_mask_generation = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
@@ -99,48 +107,63 @@ class Experiment:
             self.weights_trajec = self.data.pop('weights')
 
     def generate_inputs(self, key, num_sessions):
-        def generate_input(key):
-            # # Generate input - one integer out of number of classes num_inputs
-            # step_input = jax.random.randint(key, shape=(1),
-            #                                 minval=0, maxval=self.cfg.num_inputs)
 
-            # Generate makeshift presynaptic input (TODO)
-            step_input = jax.random.normal(key, shape=(self.cfg.num_hidden_pre,))
-            step_input = (step_input * self.cfg.presynaptic_firing_std
-                          + self.cfg.presynaptic_firing_mean)
-            return step_input
+        # TODO? Is it a bad idea to use dict here?
+        inputs = {}
 
-        inputs = [[] for _ in range(num_sessions)]
-
-        max_steps_per_session = 0
         for session in range(num_sessions):
-            key, subkey = jax.random.split(key)
+            key, n_trials_key, acdc_key = jax.random.split(key, 3)
             num_trials = sample_truncated_normal(
-                subkey,
+                n_trials_key,
                 self.cfg["mean_trials_per_session"],
                 self.cfg["sd_trials_per_session"])
-            for _trial in range(num_trials):
-                key, subkey = jax.random.split(subkey)
-                num_steps = sample_truncated_normal(
-                    subkey,
-                    self.cfg["mean_steps_per_trial"],
-                    self.cfg["sd_steps_per_trial"])
-                for _step in range(num_steps):
-                    key, subkey = jax.random.split(subkey)
-                    step_input = generate_input(subkey)
-                    inputs[session].append(step_input)
-            max_steps_per_session = max(max_steps_per_session, len(inputs[session]))
+            task_types = self.gen_2acdc(acdc_key, num_trials)
+            for task_type in task_types:
+                key, subkey = jax.random.split(key)
 
-        # Pad and convert to tensor
-        inputs_tensor = jnp.zeros((num_sessions, max_steps_per_session,
-                                   *inputs[0][0].shape))
-        # Create mask of valid steps
-        step_mask = jnp.zeros_like(inputs_tensor[..., 0])
-        for s, session in enumerate(inputs):
-            inputs_tensor = inputs_tensor.at[s, :len(session)].set(jnp.array(session))
-            step_mask = step_mask.at[s, :len(session)].set(1)
+                if self.cfg["input_type"] == 'random':
+                    trial_inputs = self.generate_random_trial_input(subkey)
+                elif self.cfg["input_type"] == 'task':
+                    trial_inputs = self.generate_task_trial_input(subkey, task_type)
 
-        return inputs_tensor, step_mask
+                for var in trial_inputs:
+                    (inputs.setdefault(var, [[] for _ in range(num_sessions)])[session]
+                     .extend(trial_inputs[var]))
+
+        return self.nested_inputs_lists_to_tensors(inputs)
+
+    def nested_inputs_lists_to_tensors(self, inputs):
+        """ Convert nested list of inputs per session to padded tensor and step mask.
+        Args:
+            inputs: per-input-variable dict of nested lists,
+                outer list is over sessions, inner list is over time steps in session
+
+        Returns:
+            inputs_tensors: dict of arrays,
+                shape (num_sessions, max_steps_per_session, var_dim)
+            step_mask: array of shape (num_sessions, max_steps_per_session),
+                1 for valid steps, 0 for padding
+        """
+        # Create step mask
+        sample_input = inputs[list(inputs.keys())[0]]
+        session_lengths = jnp.array([len(session) for session in sample_input])
+        max_steps_per_session = jnp.max(session_lengths)
+        step_mask = (jnp.arange(max_steps_per_session)[None, :]
+                     < session_lengths[:, None]
+                     ).astype(jnp.int32)
+
+        # For each variable, convert nested list to padded tensor
+        inputs_tensors = {}
+        for var, var_input in inputs.items():
+            # Create tensor and pad: (num_sessions, max_steps_per_session, var_dim)
+            inputs_tensor = jnp.zeros((step_mask.shape[0], step_mask.shape[1],
+                                       *var_input[0][0].shape))
+            for s, session in enumerate(var_input):
+                inputs_tensor = (inputs_tensor.at[s, :len(session)]
+                                 .set(jnp.array(session)))
+            inputs_tensors[var] = inputs_tensor
+
+        return inputs_tensors, step_mask
 
     def gen_2acdc(self, key, n, lambd=0.7, max_rep=3):
         """ Generate a 2AFC sequence with Poisson-distributed repeats. """
