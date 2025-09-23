@@ -13,31 +13,46 @@ coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 config = {
     "expid": 17, # For saving results and seeding random
     "use_experimental_data": False,
+    "input_type": 'random',  # 'random' (Mehta et al., 2023) / 'task' (Sun et al., 2025)
     "fit_data": ["neural"],  # ["behavioral", "neural"]
     "trainable_init_weights": [],  # ['w_ff'], ['w_rec'], ['w_ff', 'w_rec'], []
 
 # Experiment design
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
     "num_exp_test": 5,
+
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
     # "sd_num_sessions": 3,  # Standard deviation of sessions/days per experiment
     # "mean_trials_per_session": 124,  # Number of trials/runs in each session/day
     # "sd_trials_per_session": 43,  # Standard deviation of trials in each session/day
-    # #TODO steps are seconds for now
-    # "mean_steps_per_trial": 29,  # Number of sequential time steps in one trial/run
-    # "sd_steps_per_trial": 10,  # Standard deviation of steps in each trial/run
+    # "mean_trial_time": 29,  # s, including 2s teleportation
+    # "std_trial_time": 10,  # s
+
     "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
     "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
     "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
     "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
-    #TODO steps are seconds for now
+
+    # For input_type 'random':
     "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
+    # For input_type 'task':
+    "dt": 1,  # s, time step of simulation
+    "mean_trial_time": 29,  # s, including 2s teleportation
+    "std_trial_time": 10,  # s
+    "velocity_std": 2,  # cm/s
+    "velocity_smoothing_window": 5,  # seconds
+    "trial_distance": 230,  # cm, fixed
 
 # Network architecture
-    "num_inputs": 6,  # Number of input classes (num_epochs * 4 for random normal)
+    # For input_type 'task':
+    "num_place_neurons": 20,
+    "num_visual_neurons_per_type": 10,
+    "num_velocity_neurons": 10,  # TODO how is it supposed to work?
+    # For input_type 'random':
     "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
+
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
     "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "recurrent": True,  # Whether to include recurrent connections
@@ -60,7 +75,12 @@ config = {
     # TODO? output_sparsity?  # Fraction of postsynaptic neurons contributing to output
 
 # Network dynamics
-    "input_weights_scale": 1,
+    "place_field_width_mean": 20,  # 70 cm - from article
+    "place_field_width_std": 5,  # 50 cm - from article
+    "place_field_amplitude_mean": 1.0,  # Units of firing rate
+    "place_field_amplitude_std": 0.1,
+    "place_field_center_jitter": 1.0,  # cm
+
     "presynaptic_firing_mean": 0,  # TODO rename into x
     "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
     "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
