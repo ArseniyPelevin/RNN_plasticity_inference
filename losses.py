@@ -68,6 +68,7 @@ def loss(
     weights,  # Current initial weights estimate, updated on each iteration
     plasticity_func,  # Static within losses
     experimental_data,
+    rewarded_pos,
     step_mask,
     exp_i,  # Index of the current experiment to extract initial weights from params
     cfg,  # Static within losses
@@ -140,7 +141,8 @@ def loss(
         rec_mask,
         theta,  # Our current plasticity coefficients estimate
         plasticity_func,
-        experimental_data,
+        experimental_data['x_train'],
+        rewarded_pos,
         step_mask,
         cfg,
         mode=('simulation' if mode=='training'  # Only return activation trajectories

@@ -172,6 +172,7 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
                 init_weights,  # Current initial weights, to be optimized
                 plasticity_func,  # Static within losses
                 exp.data,
+                exp.rewarded_pos,
                 exp.step_mask,
                 exp.exp_i,
                 cfg,  # Static within losses
@@ -206,6 +207,7 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
 
             plasticity_func,  # Static within losses
             exp.data,
+            exp.rewarded_pos,
             exp.step_mask,
             exp.exp_i,  # Internal index of the experiment
             cfg,  # Static within losses

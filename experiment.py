@@ -96,7 +96,8 @@ class Experiment:
             self.recurrent_mask_generation,
             self.generation_theta,
             self.generation_func,
-            self.data,
+            x_gen,
+            self.rewarded_pos,
             self.step_mask,
             cfg,
             mode=f'generation_{mode}'

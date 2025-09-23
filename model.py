@@ -69,11 +69,8 @@ def initialize_weights(key, cfg,
 def network_forward(key, weights,
                     ff_mask, rec_mask,
                     ff_scale, rec_scale,
-                    step_input, cfg):
+                    x, cfg):
     """ Propagate through all layers from input to output. """
-
-    # Makeshift for input firing (TODO)  # x IS input firing
-    x = (jnp.sign(step_input) / 2 + 0.5)  # x in {0, 1}
 
     # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
@@ -99,7 +96,7 @@ def network_forward(key, weights,
     # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
     output = (y @ weights['w_out']).squeeze()  # + b_out
 
-    return x, y, output
+    return y, output
 
 def compute_decision(key, output):
     """ Make binary decision based on output (probability of decision).
@@ -235,7 +232,8 @@ def simulate_trajectory(
     rec_mask,
     theta,
     plasticity_func,
-    exp_data,  # Data of one whole experiment, {(N_sessions, N_steps_per_session_max)}
+    exp_x,
+    exp_rewarded_pos,
     step_mask,
     cfg,
     mode
@@ -250,7 +248,10 @@ def simulate_trajectory(
                 (b_ff, b_rec, b_out are not used for now)
         theta: Plasticity coefficients for the model.
         plasticity_func: Plasticity function to use.
-        exp_data (dict): Data in {(N_sessions, N_steps_per_session_max, dim_element)}
+        exp_data (N_sessions, N_steps_per_session_max, N_hidden_pre):
+            Presynaptic activity of one exp.
+        exp_rewarded_pos (N_sessions, N_steps_per_session_max):
+            Rewarded positions of one exp.
         step_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
         cfg: Configuration dictionary.
         mode:
@@ -260,13 +261,10 @@ def simulate_trajectory(
 
     Returns:
         activity_trajec_exp {
-            x_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_pre),
             y_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_post),
             output_trajec_exp (N_sessions, N_steps_per_session_max),
                 # If 'generation' in mode:
             decision_trajec_exp (N_sessions, N_steps_per_session_max),
-            reward_trajec_exp (N_sessions, N_steps_per_session_max),
-            expected_reward_trajec_exp (N_sessions, N_steps_per_session_max),
                 # If 'test' in mode:
             [weights_trajec_exp {  # Only the plastic layers
                 w_ff: (N_sessions, N_steps_per_session_max,
@@ -284,21 +282,18 @@ def simulate_trajectory(
         Args:
             weights: Initial weights at the start of the session.
             session_variables: Tuple of (
-                session_inputs, (N_steps_per_session_max,)
-                session_rewards,
-                session_expected_rewards,
-                session_mask) for the session.
+                session_x,
+                session_rewarded_pos,
+                session_mask,
+                session_keys) for the session.
 
         Returns:
             weights_session: Parameters at the end of the session.
             activity_trajec_session: {
-                x_trajec_session (N_steps_per_session_max, N_hidden_pre),
                 y_trajec_session (N_steps_per_session_max, N_hidden_post),
                 output_trajec_session (N_steps_per_session_max),
                     # If 'generation' in mode:
                 decision_trajec_session (N_steps_per_session_max),
-                reward_trajec_session (N_steps_per_session_max),
-                expected_reward_trajec_session (N_steps_per_session_max),
                     # If 'test' in mode:
                 weights_trajec_session: {  # Only the plastic layers
                     w_ff: (N_steps_per_session_max, N_hidden_pre, N_hidden_post),
@@ -312,42 +307,35 @@ def simulate_trajectory(
             Args:
                 weights (N_hidden_pre, N_hidden_post): carry for jax.lax.scan.
                 step_variables: (
+                    x,
+                    rewarded_pos,
+                    valid,
+                    step_key)
                     data: {inputs[, rewards, expected_rewards]}
                     valid: mask for this step (0 or 1)
                     step_key: Random key for PRNG.
 
             Returns:
                 weights: Updated weighteters after the step.
-                output_data: {x, y, output[,
-                              decision, reward, expected_reward[, weights]]}
+                output_data: {y, output[, decision[, weights]]}
             """
-            input_data, valid, step_key = step_variables
+            x, rewarded_pos, valid, step_key = step_variables
             output_data = {}
-            x, y, output = network_forward(step_key,
-                                           weights,
-                                           ff_mask, rec_mask,
-                                           ff_scale, rec_scale,
-                                           input_data['inputs'], cfg)
-            output_data['xs'] = x
+            y, output = network_forward(step_key,
+                                        weights,
+                                        ff_mask, rec_mask,
+                                        ff_scale, rec_scale,
+                                        x, cfg)
             output_data['ys'] = y
             output_data['outputs'] = output
 
-            # Allow python 'if' in jitted function because mode is static
+            decision = compute_decision(step_key, output)
             if 'generation' in mode:
-                decision = compute_decision(step_key, output)
-                # TODO reward is only temporarily probabilistic
-                reward_key, _ = jax.random.split(step_key)
-                reward = compute_reward(reward_key, decision)
-                expected_reward = compute_expected_reward(reward, None)
-
                 output_data['decisions'] = decision
-                output_data['rewards'] = reward * cfg.reward_scale
-                output_data['expected_rewards'] = expected_reward * cfg.reward_scale
-            else:
-                # Reuse reward from data
-                # TODO make reward depend on simulated decision
-                reward = input_data['rewards'] * cfg.reward_scale
-                expected_reward = input_data['expected_rewards'] * cfg.reward_scale
+
+            # Reward if lick at rewarded position
+            reward = decision * rewarded_pos  # TODO cfg.reward_scale
+            expected_reward = compute_expected_reward(reward, None)
 
             weights = jax.lax.cond(valid,
                                   lambda p: update_weights(
@@ -363,6 +351,7 @@ def simulate_trajectory(
                     output_data['weights']['w_ff'] = weights['w_ff']
                 if "rec" in cfg.plasticity_layers:
                     output_data['weights']['w_rec'] = weights['w_rec']
+
             return weights, output_data
 
         # Run inner scan over steps within one session
@@ -376,7 +365,7 @@ def simulate_trajectory(
     n_steps = step_mask.shape[1]
     total_keys = int(n_sessions * n_steps)
     flat_keys = jax.random.split(key, total_keys + 1)[1:]
-    session_step_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
+    exp_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
 
     # Scale ff weights: by constant scale and by number of inputs to each neuron
     n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
@@ -392,9 +381,10 @@ def simulate_trajectory(
     _weights_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
         init_weights,
-        (exp_data,
+        (exp_x,
+         exp_rewarded_pos,
          step_mask,
-         session_step_keys)
+         exp_keys)
     )
 
     return activity_trajec_exp

@@ -162,6 +162,7 @@ def train(key, cfg, train_experiments, test_experiments):
                 params['weights'],  # Current initial weights, updated on each iteration
                 plasticity_func,  # Static within losses
                 exp.data,
+                exp.rewarded_pos,
                 exp.step_mask,
                 exp.exp_i,
                 cfg,  # Static within losses
