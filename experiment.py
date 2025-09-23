@@ -30,12 +30,11 @@ class Experiment:
         (key,
          sessions_key,
          inputs_key,
-         input_weights_key,
          ff_mask_key,
          rec_mask_key,
          weights_key,
          func_sparse_key,
-         simulation_key) = jax.random.split(key, 9)
+         simulation_key) = jax.random.split(key, 8)
 
         # Pick random number of sessions in this experiment given mean and std
         num_sessions = sample_truncated_normal(
@@ -45,13 +44,6 @@ class Experiment:
         (self.data['inputs'],
          self.step_mask  # (N_sessions, N_steps_per_session_max)
          ) = self.generate_inputs(inputs_key, num_sessions)
-
-        # num_inputs -> num_hidden_pre embedding, fixed for one exp/animal
-        self.input_weights = model.initialize_input_weights(  #TODO redefine?
-            input_weights_key,
-            cfg["num_inputs"], cfg["num_hidden_pre"],
-            input_weights_scale=cfg["input_weights_scale"]
-        )
 
         self.feedforward_mask_generation = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
@@ -90,7 +82,6 @@ class Experiment:
                 shape=self.init_weights[f'w_{layer}'].shape)
 
         trajectories = model.simulate_trajectory(simulation_key,
-            self.input_weights,
             self.init_weights,
             self.feedforward_mask_generation,
             self.recurrent_mask_generation,

@@ -5,25 +5,6 @@ import jax.numpy as jnp
 import utils
 
 
-def initialize_input_weights(key, num_inputs, num_pre, input_weights_scale):
-    """Initialize input weights for the embedding layer.
-
-    num_inputs -> num_hidden_pre (6 -> 100) embedding, fixed for one exp/animal
-
-    Args:
-        key: JAX random key.
-        num_inputs: Number of input classes.
-        num_pre: Number of presynaptic neurons.
-
-    Returns:
-        input_weights: (num_inputs, num_pre) Array of input weights.
-    """
-    input_weights = jax.random.normal(key, (num_inputs, num_pre))
-    # Standardize for each neuron across all classes
-    input_weights -= jnp.mean(input_weights, axis=0, keepdims=True)
-    input_weights /= jnp.std(input_weights, axis=0, keepdims=True) + 1e-8
-    return input_weights * input_weights_scale
-
 def initialize_weights(key, cfg,
                        weights_std, weights_mean=None,
                        layers=('ff', 'rec', 'out')):
@@ -85,18 +66,14 @@ def initialize_weights(key, cfg,
     return weights
 
 @partial(jax.jit, static_argnames=("cfg"))
-def network_forward(key, input_weights, weights,
+def network_forward(key, weights,
                     ff_mask, rec_mask,
                     ff_scale, rec_scale,
                     step_input, cfg):
     """ Propagate through all layers from input to output. """
 
-    # # Embed input integer into presynaptic layer activity
-    # input_onehot = jax.nn.one_hot(step_input, cfg.num_inputs).squeeze()
-    # x = jnp.dot(input_onehot, input_weights)
-
     # Makeshift for input firing (TODO)  # x IS input firing
-    x = (jnp.sign(step_input) / 2 + 0.5) * 0.5  # x in {0, 0.5}
+    x = (jnp.sign(step_input) / 2 + 0.5)  # x in {0, 1}
 
     # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
@@ -253,7 +230,6 @@ def update_weights(
 @partial(jax.jit, static_argnames=("plasticity_func", "cfg", "mode"))
 def simulate_trajectory(
     key,
-    input_weights,
     init_weights,
     ff_mask,
     rec_mask,
@@ -268,7 +244,6 @@ def simulate_trajectory(
 
     Args:
         key: Random key for PRNG.
-        input_weights (N_inputs, N_hidden_pre): inputs --> presynaptic activations
         init_weights (dict): w_ff: (num_hidden_pre, num_hidden_post),
                 w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                 w_out: (num_hidden_post, 1)
@@ -349,7 +324,7 @@ def simulate_trajectory(
             input_data, valid, step_key = step_variables
             output_data = {}
             x, y, output = network_forward(step_key,
-                                           input_weights, weights,
+                                           weights,
                                            ff_mask, rec_mask,
                                            ff_scale, rec_scale,
                                            input_data['inputs'], cfg)

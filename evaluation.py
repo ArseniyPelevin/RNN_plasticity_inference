@@ -6,7 +6,6 @@ import losses
 import numpy as np
 import optax
 import sklearn.metrics
-import synapse
 
 
 def evaluate(key, cfg, theta, plasticity_func, init_theta,
@@ -97,7 +96,7 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func, init_thet
 
         Returns: dict: Dictionary with losses and R2 scores for each model variant.
     """
-    # zero_theta, _ = synapse.init_plasticity_volterra(key=None, 
+    # zero_theta, _ = synapse.init_plasticity_volterra(key=None,
     #                                                  init="zeros", scale=None)
 
     losses_and_r2 = {}
@@ -151,7 +150,7 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
                           init_weights):
 
     # Compute gradients of loss wrt initial weights only
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=6, has_aux=True)
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=5, has_aux=True)
 
     # Apply gradient clipping
     optimizer = optax.chain(
@@ -166,7 +165,6 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
             key, subkey = jax.random.split(key)
             (_loss, _aux), w_grads = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
-                exp.input_weights,
                 exp.init_fixed_weights, # per-experiment arrays of fixed layers
                 exp.feedforward_mask_training,
                 exp.recurrent_mask_training,
@@ -199,7 +197,6 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
         key, subkey = jax.random.split(key)
         loss, aux = losses.loss(
             subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_weights,
             exp.init_fixed_weights, # per-experiment arrays of fixed layers
             exp.feedforward_mask_training,
             exp.recurrent_mask_training,

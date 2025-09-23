@@ -61,7 +61,6 @@ def neural_mse_loss(
 @partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
 def loss(
     key,
-    input_weights,
     init_fixed_weights,
     ff_mask,
     rec_mask,
@@ -79,7 +78,6 @@ def loss(
 
     Args:
         key (int): Seed for the random number generator.
-        input_weights (array): Embedding weights for the inputs.
         init_fixed_weights (dict): Dictionary of initial weights for fixed layers.
         ff_mask (array): Feedforward sparsity mask.
         rec_mask (array): Recurrent sparsity mask.
@@ -137,7 +135,6 @@ def loss(
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(
         key,
-        input_weights,
         init_weights,
         ff_mask,
         rec_mask,

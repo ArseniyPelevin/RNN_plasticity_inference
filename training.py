@@ -131,7 +131,7 @@ def train(key, cfg, train_experiments, test_experiments):
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
     # parameters at argnums (theta and init_weights) - !Check argnums!
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(5, 6), has_aux=True)
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(4, 5), has_aux=True)
 
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
     # Apply gradient clipping as in the article
@@ -155,7 +155,6 @@ def train(key, cfg, train_experiments, test_experiments):
             key, subkey = jax.random.split(key)
             (_loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
-                exp.input_weights,
                 exp.init_fixed_weights, # per-experiment arrays of fixed layers
                 exp.feedforward_mask_training,
                 exp.recurrent_mask_training,
