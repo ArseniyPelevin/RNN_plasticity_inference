@@ -294,20 +294,19 @@ def evaluate_r2_score_weights(step_mask,
     Returns:
         R2 scores for weights, variance-weighted
     """
-    exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
-        list(exp_weight_traj.values()))
-    model_weight_trajec = jnp.vstack(
-        list(model_weight_traj.values()))  # TODO b?
+    # (N_sessions, N_steps_per_session_max, N_pre, N_post) ->
+    # (N_steps_per_experiment, N_pre * N_post) for each layer
+    exp_layers = [v.reshape(-1, int(np.prod(v.shape[2:])))
+                 for v in exp_weight_traj.values()]
+    model_layers = [v.reshape(-1, int(np.prod(v.shape[2:])))
+                   for v in model_weight_traj.values()]
 
-    # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
-    # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)
-    exp_weight_trajec = exp_weight_trajec.reshape(
-        -1, np.prod(exp_weight_trajec.shape[2:]))
-    model_weight_trajec = model_weight_trajec.reshape(
-        -1, np.prod(model_weight_trajec.shape[2:]))
+    # Concatenate all plastic layers into arrays of shape
+    # (N_steps_per_experiment, sum(N_pre * N_post))
+    exp_weight_trajec = jnp.concatenate(exp_layers, axis=1)
+    model_weight_trajec = jnp.concatenate(model_layers, axis=1)
 
     # Choose valid steps
-    step_mask = jnp.repeat(step_mask, len(cfg.plasticity_layers))
     exp_weight_trajec = exp_weight_trajec[step_mask]
     model_weight_trajec = model_weight_trajec[step_mask]
 

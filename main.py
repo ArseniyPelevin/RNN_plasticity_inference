@@ -158,6 +158,12 @@ def validate_config(cfg):
     if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
         raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
 
+    if cfg.input_type == 'task':
+        num_visual_types = 5  # Teleportation is not encoded, it is lack of input
+        cfg.num_hidden_pre = (cfg.num_place_neurons
+                              + num_visual_types * cfg.num_visual_neurons_per_type)
+                              # + cfg.num_velocity_neurons)  # TODO
+
     return cfg
 
 def run_experiment(cfg, seed=None):

@@ -381,12 +381,12 @@ def simulate_trajectory(
     # Scale ff weights: by constant scale and by number of inputs to each neuron
     n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
     n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
-    ff_scale = cfg.feedforward_input_scale / jnp.sqrt(n_ff_inputs)[:, None]
+    ff_scale = cfg.feedforward_input_scale / jnp.sqrt(n_ff_inputs)[None, :]
 
     # Scale rec weights: by constant scale and by number of inputs to each neuron
     n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
     n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
-    rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[:, None]
+    rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
 
     # Run outer scan over sessions
     _weights_exp, activity_trajec_exp = jax.lax.scan(
