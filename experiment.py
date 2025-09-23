@@ -2,6 +2,7 @@
 import jax
 import jax.numpy as jnp
 import model
+from scipy import stats
 from utils import sample_truncated_normal
 
 
@@ -140,7 +141,7 @@ class Experiment:
             step_mask = step_mask.at[s, :len(session)].set(1)
 
         return inputs_tensor, step_mask
-    
+
     def gen_2acdc(self, key, n, lambd=0.7, max_rep=3):
         """ Generate a 2AFC sequence with Poisson-distributed repeats. """
 
@@ -156,6 +157,121 @@ class Experiment:
 
         # Repeat trial types according to sampled repeats
         return jnp.repeat(types, reps)[:n]
+
+    def generate_random_trial_input(self, key):
+        """ Generate random input for one trial (Mehta et al., 2023).
+
+        Returns:
+            inputs: {'x' (num_steps, num_hidden_pre): array of presynaptic activity,
+                     'rewarded_pos': (num_steps,) dummy to fit task input format}
+        """
+        key, n_steps_key = jax.random.split(key)
+        # Configuration set specifically for random input regardless of time
+        num_steps = sample_truncated_normal(n_steps_key,
+                                            self.cfg["mean_steps_per_trial"],
+                                            self.cfg["sd_steps_per_trial"])
+
+        inputs = jnp.zeros((num_steps, self.cfg.num_hidden_pre))
+        for step in range(num_steps):
+            key, subkey = jax.random.split(key)
+            step_input = jax.random.normal(subkey, shape=(self.cfg.num_hidden_pre,))
+            step_input = (step_input * self.cfg.presynaptic_firing_std
+                          + self.cfg.presynaptic_firing_mean)
+            inputs = inputs.at[step].set(step_input)
+
+        return {'x': inputs,
+                'rewarded_pos': jnp.zeros((num_steps,))  # Dummy, not used
+                }
+
+    def generate_task_trial_input(self, key, trial_type):
+        """ Generate structured task-based input for one trial (Sun et al., 2025).
+
+        Args:
+            key: JAX random key.
+            trial_type: Integer indicating the type of trial (0 - near, 1 - far).
+
+        Returns:
+            inputs: {'t' (num_steps,): trial time in seconds,
+                     'v' (num_steps,): velocity in cm/step,
+                     'pos' (num_steps,): position in cm at each time step,
+                     'cue' (num_steps,): visual cue type at each time step,
+                     'rewarded_pos': (num_steps,) binary array of rewarded positions}
+        """
+        trial_time_key, v_pos_key = jax.random.split(key)
+        trial_time = sample_truncated_normal(
+            trial_time_key,
+            mean=self.cfg.mean_trial_time,
+            std=self.cfg.std_trial_time)
+
+        # Generate velocity and position inputs
+        t, v, pos = self.generate_velocity_and_position(v_pos_key, trial_time)
+
+        # Generate visual cue sequence
+        # [1,1,1,1,1,1,2,2,2,2,1,1,1,4,4,1,1,1,5,5,1,1,1,0,0,0]
+        visual_cue_seq = [jnp.repeat(1, 6),
+                        jnp.repeat(2, 4) + trial_type,  # Indicator
+                        jnp.repeat(1, 3),
+                        jnp.repeat(4, 2),  # Reward near
+                        jnp.repeat(1, 3),
+                        jnp.repeat(5, 2),  # Reward far
+                        jnp.repeat(1, 3),
+                        jnp.repeat(0, 3),  # Teleportation
+                        ]
+        visual_type_seq = jnp.concatenate(visual_cue_seq)
+
+        # Compute segment index from continuous position (floor of x/10)
+        segment_at_time = jnp.floor(pos / 10.0).astype(jnp.int32)
+        # Choose visual cue in the current segment
+        cue_at_time = visual_type_seq[segment_at_time]
+
+        # Define rewarded positions along the trial length based on trial type
+        rewarded_position = jnp.zeros_like(pos)
+        if trial_type == 0:
+            rewarded_position = jnp.where(cue_at_time == 4, 1.0, 0.0)
+        elif trial_type == 1:
+            rewarded_position = jnp.where(cue_at_time == 5, 1.0, 0.0)
+
+        return {'t': t,  # Careful, after concatenating trials, time is not continuous
+                'v': v,
+                'pos': pos,
+                'cue': cue_at_time,
+                'rewarded_pos': rewarded_position}
+
+    def generate_velocity_and_position(self, key, trial_time):
+        """ Generate velocity and position time series for one trial. """
+
+        # Derived parameters
+        num_steps = (trial_time - 2) / self.cfg.dt  # steps, minus 2s for teleportation
+        v_mean = self.cfg.trial_distance / num_steps  # cm/dt
+        v_window = int(self.cfg.velocity_smoothing_window / self.cfg.dt)  # steps
+        num_steps = int(num_steps)
+
+        # Generate raw velocity signal and smooth it
+        v = jax.random.normal(key, (num_steps,))
+        gaussian_filter = stats.norm.pdf(jnp.linspace(-3, 3, v_window))
+        gaussian_filter /= jnp.sum(gaussian_filter)
+        v_smooth = jnp.convolve(v, gaussian_filter, mode='same')
+
+        # Rescale to desired mean and std
+        target_velocity_std = self.cfg.velocity_std * self.cfg.dt  # cm/s -> cm/dt
+        observed_velocity_std = jnp.std(v_smooth)
+        v_smooth = v_smooth * target_velocity_std / (observed_velocity_std + 1e-12)
+        v_smooth = v_smooth + v_mean  # cm/dt
+
+        # Integrate to get position, rescale to desired distance
+        positions = jnp.cumsum(v_smooth)  # cm
+        scale = self.cfg.trial_distance / positions[-1]
+        v_smooth = v_smooth * scale
+        positions = jnp.cumsum(v_smooth)  # cm
+
+        # Add 2s of zero velocity and teleport to start (position is circular)
+        position_at_teleport = jnp.ones(int(2/self.cfg.dt)) * self.cfg.trial_distance
+        v_smooth = jnp.concatenate([v_smooth, jnp.zeros(int(2/self.cfg.dt))])
+        positions = jnp.concatenate([positions, position_at_teleport])
+
+        t = jnp.arange(0, trial_time, self.cfg.dt)
+
+        return t, v_smooth, positions
 
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):
