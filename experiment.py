@@ -273,6 +273,87 @@ class Experiment:
 
         return t, v_smooth, positions
 
+    def generate_x(self, key, inputs, mode):
+        """ Generate presynaptic activity based on input.
+
+        Args:
+            key: JAX random key.
+            inputs: dict of input arrays.
+            mode: 'generation' or 'training', adds variability in generation mode
+
+        Returns:
+            x: (n_sessions, n_steps, num_hidden_pre) presynaptic activity
+        """
+        if self.cfg["input_type"] == 'random':
+            return inputs['x']  # Random input is already presynaptic activity
+        elif self.cfg["input_type"] == 'task':
+            # Positional presynaptic activity (n_sessions, n_steps, num_place_neurons)
+            x_pos, _place_field_centers = self.generate_x_pos(key, inputs['pos'], mode)
+            # Visual presynaptic activity (n_sessions, n_steps, num_visual_neurons)
+            x_visual = jax.nn.one_hot(inputs['cue'],
+                                      jnp.unique(inputs['cue']).shape[0])
+            x_visual = x_visual.at[:,:,1:].get()  # No visual input at teleportation
+            x_visual = x_visual.repeat(self.cfg.num_visual_neurons_per_type, axis=-1)
+            # x_velocity = None  # TODO implement velocity input
+            return jnp.concatenate([x_pos, x_visual], axis=-1)
+
+    def generate_x_pos(self, key, positions, mode):
+        """
+        Generate presynaptic firing rates based on position using place fields.
+
+        Args:
+            key: JAX random key.
+            positions: (n_sessions, n_steps) Array of positions at each time step in cm
+            mode: 'generation' or 'training', adds variability in generation mode
+
+        Returns:
+            rates: (n_sessions, n_steps, num_place_neurons)
+            place_field_centers: (num_place_neurons,)
+        """
+        # Arrays of place field centers for each neuron
+        place_field_centers = jnp.linspace(0, self.cfg.trial_distance,
+                                           self.cfg.num_place_neurons)
+        # Array of peak firing rates for each neuron
+        amplitudes = jnp.ones((self.cfg.num_place_neurons,)) \
+            * self.cfg.place_field_amplitude_mean
+        # Array of place field widths for each neuron
+        place_field_widths = jnp.ones((self.cfg.num_place_neurons,)) \
+            * self.cfg.place_field_width_mean
+
+        # Add latent variability to place field parameters for generation
+        if mode == 'generation':
+            centers_key, amp_key, width_key = jax.random.split(key, 3)
+            # Add some jitter to place field centers for generation
+            place_field_centers += jax.random.normal(
+                centers_key, (self.cfg.num_place_neurons,)
+                ) * self.cfg.place_field_center_jitter
+            # Add some jitter to amplitudes for generation
+            amplitudes += jax.random.normal(
+                amp_key, (self.cfg.num_place_neurons,)
+                ) * self.cfg.place_field_amplitude_std
+            amplitudes = jnp.clip(amplitudes,
+                                  a_min=0.0)  # avoid negative maxima
+            # Add some jitter to widths for generation
+            place_field_widths += jax.random.normal(
+                width_key, (self.cfg.num_place_neurons,)
+                ) * self.cfg.place_field_width_std
+            place_field_widths = jnp.clip(place_field_widths,
+                                          a_min=0.0)  # avoid negative widths
+
+        # Convert linear variables to circular
+        theta = 2 * jnp.pi * positions / self.cfg.trial_distance
+        mu = 2 * jnp.pi * place_field_centers / self.cfg.trial_distance
+        ang_sigma = 2 * jnp.pi * place_field_widths / self.cfg.trial_distance
+
+        # Compute firing rates using von Mises function
+        dtheta = theta[..., None] - mu[None, :]
+        kappa = 1.0 / (ang_sigma**2 + 1e-12)
+        vonMises = jnp.exp(kappa * (jnp.cos(dtheta) - 1.0))
+
+        rates = vonMises * amplitudes[None, None, :]
+
+        return rates, place_field_centers
+
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):
         """Generate a binary mask for the feedforward weights to enforce sparsity.
