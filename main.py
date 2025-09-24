@@ -184,6 +184,9 @@ def validate_config(cfg):
                               + num_visual_types * cfg.num_visual_neurons_per_type)
                               # + cfg.num_velocity_neurons)  # TODO
 
+        cfg.mean_steps_per_trial = int(cfg.mean_trial_time / cfg.dt)
+        cfg.sd_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
+
     return cfg
 
 def run_experiment(cfg, seed=None):
