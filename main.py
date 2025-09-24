@@ -1,7 +1,9 @@
 import time
 
+import experiment
 import jax
 import numpy as np
+import synapse
 import training
 from omegaconf import OmegaConf
 
@@ -34,9 +36,10 @@ config = {
     "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
     "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
 
-    # For input_type 'random':
+    # Overwritten as mean_trial_time/dt if input_type is 'task'
     "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
     "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
+
     # For input_type 'task':
     "dt": 1,  # s, time step of simulation
     "mean_trial_time": 29,  # s, including 2s teleportation
@@ -52,9 +55,7 @@ config = {
     "num_velocity_neurons": 10,  # TODO how is it supposed to work?
     # For input_type 'random':
     "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
-
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
-    "num_outputs": 1,  # m, binary decision (licking/not licking at this time step)
     "recurrent": True,  # Whether to include recurrent connections
     "plasticity_layers": ["ff"],  # ["ff", "rec"]
     # Fraction of postsynaptic neurons receiving FF input, for generation and training,
@@ -189,6 +190,19 @@ def validate_config(cfg):
 
     return cfg
 
+def generate_data(key, cfg, mode="train"):
+    # Generate model activity
+    plasticity_key, experiments_key = jax.random.split(key, 2)
+    #TODO add branching for experimental data
+    generation_theta, generation_func = synapse.init_plasticity(
+        plasticity_key, cfg, mode="generation_model"
+    )
+    experiments = experiment.generate_experiments(
+        experiments_key, cfg, generation_theta, generation_func, mode,
+    )
+
+    return experiments
+
 def run_experiment(cfg, seed=None):
     cfg = validate_config(cfg)
     if seed is None:
@@ -199,8 +213,8 @@ def run_experiment(cfg, seed=None):
     # Pass subkeys, so that adding more experiments doesn't affect earlier ones
     train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
 
-    experiments = training.generate_data(train_exp_key, cfg, mode='train')
-    test_experiments = training.generate_data(test_exp_key, cfg, mode='test')
+    experiments = generate_data(train_exp_key, cfg, mode='train')
+    test_experiments = generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
     expdata, _activation_trajs, _losses_and_r2s = (

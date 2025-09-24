@@ -1,5 +1,4 @@
 import evaluation
-import experiment
 import jax
 import jax.numpy as jnp
 import losses
@@ -10,47 +9,6 @@ import pandas as pd
 import synapse
 import utils
 
-
-def generate_experiments(key, cfg,
-                         generation_theta, generation_func,
-                         mode="train"):
-    """ Generate all experiments/trajectories as instances of class Experiment. """
-
-    if mode == "train":
-        num_experiments = cfg.num_exp_train
-    elif mode == "test":
-        num_experiments = cfg.num_exp_test
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-    print(f"\nGenerating {num_experiments} {mode} trajectories")
-
-    # Presplit keys for each experiment
-    experiment_keys = jax.random.split(key, num_experiments)
-
-    experiments = []
-    for exp_i in range(num_experiments):
-        exp = experiment.Experiment(experiment_keys[exp_i],
-                                    exp_i, cfg,
-                                    generation_theta, generation_func,
-                                    mode)
-        experiments.append(exp)
-        print(f"Generated {mode} experiment {exp_i}",
-              f"with {exp.step_mask.shape[0]} sessions")
-
-    return experiments
-
-def generate_data(key, cfg, mode="train"):
-    # Generate model activity
-    plasticity_key, experiments_key = jax.random.split(key, 2)
-    #TODO add branching for experimental data
-    generation_theta, generation_func = synapse.init_plasticity(
-        plasticity_key, cfg, mode="generation_model"
-    )
-    experiments = generate_experiments(
-        experiments_key, cfg, generation_theta, generation_func, mode,
-    )
-
-    return experiments
 
 def initialize_simulation_weights(key, cfg, experiments, n_restarts=1):
     """ Initialize new initial weights of all layers for each experiment.

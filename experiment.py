@@ -1,4 +1,6 @@
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import model
@@ -6,16 +8,192 @@ from scipy import stats
 from utils import sample_truncated_normal
 
 
+def generate_experiments(key, cfg,
+                         generation_theta, generation_func,
+                         mode="train"):
+    """ Generate all experiments/trajectories as instances of class Experiment. """
+
+    if mode == "train":
+        num_experiments = cfg.num_exp_train
+    elif mode == "test":
+        num_experiments = cfg.num_exp_test
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+    print(f"\nGenerating {num_experiments} {mode} trajectories")
+
+    # Presplit keys for each experiment
+    shapes_key, *experiment_keys = jax.random.split(key, num_experiments+1)
+
+    shapes, step_masks = define_experiments_shapes(shapes_key, num_experiments, cfg)
+
+    experiments = []
+    for exp_i in range(num_experiments):
+        exp = Experiment(experiment_keys[exp_i],
+                         exp_i, cfg,
+                         shapes, step_masks[exp_i],
+                         generation_theta, generation_func,
+                         mode)
+        experiments.append(exp)
+        print(f"Generated {mode} experiment {exp_i}",
+              f"with {shapes[0][exp_i]} sessions")
+
+    return experiments
+
+def define_experiments_shapes(key, num_exps, cfg):
+    """ Define number of sessions, trials, and steps for all experiments.
+    Also create step mask for all sessions in all experiments.
+
+    Args:
+        key: JAX random key.
+        num_exps: Number of experiments.
+        cfg: Configuration dictionary.
+
+    Returns:
+        shapes: Tuple of arrays:
+            num_sessions: (num_experiments,),
+            num_trials: (num_experiments, max_sessions),
+            num_steps: (num_experiments, max_sessions, max_trials),
+        step_mask: array (num_experiments, max_sessions, max_steps_per_session),
+            1 for valid steps, 0 for padding.
+    """
+    sess_key, tr_key, st_key = jax.random.split(key, 3)
+
+    # Define number of sessions in all experiments given mean and std
+    num_sessions = sample_truncated_normal(
+        sess_key,
+        cfg["mean_num_sessions"], cfg["sd_num_sessions"],
+        num_exps
+    )
+    max_sessions = int(num_sessions.max())
+
+    # Define number of trials in all sessions of all experiments
+    num_trials = sample_truncated_normal(
+        tr_key,
+        cfg["mean_trials_per_session"], cfg["sd_trials_per_session"],
+        (num_exps, max_sessions)
+    )
+    sessions_idx = jnp.arange(max_sessions)[None, :]  # (1, max_sessions)
+    sessions_mask = sessions_idx < num_sessions[:, None]  # (num_exps, max_sessions)
+    num_trials = num_trials * sessions_mask  # Zero for nonexistent sessions
+    max_trials = int(num_trials.max())
+
+    # Define number of steps in all trials of all sessions of all experiments
+    num_steps = sample_truncated_normal(
+        st_key,
+        cfg["mean_steps_per_trial"], cfg["sd_steps_per_trial"],
+        (num_exps, max_sessions, max_trials)
+    )
+    trials_idx = jnp.arange(max_trials)[None, None, :]  # (1,1,max_trials)
+    trial_mask = trials_idx < num_trials[:, :, None]  # (num_exps, max_sess, max_trials)
+    num_steps = num_steps * trial_mask  # Zero for nonexistent trials
+
+    # Create step mask for all sessions in all experiments
+    steps_per_session = jnp.sum(num_steps, axis=2)  # (num_experiments, max_sessions)
+    max_steps_per_session = int(steps_per_session.max())  # scalar
+    # (num_experiments, max_sessions, max_steps_per_session)
+    step_mask = (jnp.arange(max_steps_per_session)[None, None, :] # (1,1,max_steps)
+                    < steps_per_session[:, :, None])
+
+    return (num_sessions, num_trials, num_steps), step_mask.astype(jnp.int32)
+
+@partial(jax.jit, static_argnames=["cfg", "mode"])
+def generate_x(key, inputs, cfg, mode):
+    """ Generate presynaptic activity based on input.
+
+    Args:
+        key: JAX random key.
+        inputs: dict of input arrays.
+        cfg: Configuration dictionary.
+        mode: 'generation' or 'training', adds variability in generation mode
+
+    Returns:
+        x: (n_sessions, n_steps, num_hidden_pre) presynaptic activity
+    """
+    if cfg["input_type"] == 'random':
+        return inputs['x']  # Random input is already presynaptic activity
+
+    elif cfg["input_type"] == 'task':
+        # Positional presynaptic activity (n_sessions, n_steps, num_place_neurons)
+        x_pos, _place_field_centers = generate_x_pos(key, inputs['pos'], cfg, mode)
+        # Visual presynaptic activity (n_sessions, n_steps, num_visual_neurons)
+        num_visual_types = 6  # Including teleportation
+        x_visual = jax.nn.one_hot(inputs['cue'],
+                                  num_visual_types)
+        x_visual = x_visual.at[:,:,1:].get()  # No visual input at teleportation
+        x_visual = x_visual.repeat(cfg.num_visual_neurons_per_type, axis=-1)
+        # x_velocity = None  # TODO implement velocity input
+        return jnp.concatenate([x_pos, x_visual], axis=-1)
+
+def generate_x_pos(key, positions, cfg, mode):
+    """
+    Generate presynaptic firing rates based on position using place fields.
+
+    Args:
+        key: JAX random key.
+        positions: (n_sessions, n_steps) Array of positions at each time step in cm
+        cfg: Configuration dictionary.
+        mode: 'generation' or 'training', adds variability in generation mode
+
+    Returns:
+        rates: (n_sessions, n_steps, num_place_neurons)
+        place_field_centers: (num_place_neurons,)
+    """
+    # Arrays of place field centers for each neuron
+    place_field_centers = jnp.linspace(0, cfg.trial_distance,
+                                        cfg.num_place_neurons)
+    # Array of peak firing rates for each neuron
+    amplitudes = jnp.ones((cfg.num_place_neurons,)) \
+        * cfg.place_field_amplitude_mean
+    # Array of place field widths for each neuron
+    place_field_widths = jnp.ones((cfg.num_place_neurons,)) \
+        * cfg.place_field_width_mean
+
+    # Add latent variability to place field parameters for generation
+    if mode == 'generation':
+        centers_key, amp_key, width_key = jax.random.split(key, 3)
+        # Add some jitter to place field centers for generation
+        place_field_centers += jax.random.normal(
+            centers_key, (cfg.num_place_neurons,)
+            ) * cfg.place_field_center_jitter
+        # Add some jitter to amplitudes for generation
+        amplitudes += jax.random.normal(
+            amp_key, (cfg.num_place_neurons,)
+            ) * cfg.place_field_amplitude_std
+        amplitudes = jnp.clip(amplitudes,
+                                a_min=0.0)  # avoid negative maxima
+        # Add some jitter to widths for generation
+        place_field_widths += jax.random.normal(
+            width_key, (cfg.num_place_neurons,)
+            ) * cfg.place_field_width_std
+        place_field_widths = jnp.clip(place_field_widths,
+                                        a_min=0.0)  # avoid negative widths
+
+    # Convert linear variables to circular
+    theta = 2 * jnp.pi * positions / cfg.trial_distance
+    mu = 2 * jnp.pi * place_field_centers / cfg.trial_distance
+    ang_sigma = 2 * jnp.pi * place_field_widths / cfg.trial_distance
+
+    # Compute firing rates using von Mises function
+    dtheta = theta[..., None] - mu[None, :]
+    kappa = 1.0 / (ang_sigma**2 + 1e-12)
+    vonMises = jnp.exp(kappa * (jnp.cos(dtheta) - 1.0))
+
+    rates = vonMises * amplitudes[None, None, :]
+
+    return rates, place_field_centers
+
 class Experiment:
     """Class to run a single experiment/animal/trajectory and handle generated data"""
 
-    def __init__(self, key, exp_i, cfg, generation_theta, generation_func, mode):
+    def __init__(self, key, exp_i, cfg, shapes, step_mask,
+                 generation_theta, generation_func, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
             key: JAX random key.
             exp_i: Experiment index.
             cfg: Configuration dictionary.
+            shapes: Tuple of (num_sessions, num_trials, num_steps) arrays,
             generation_theta: 4D tensor of plasticity coefficients.
             generation_func: Function to compute plasticity.
             mode: "train" or "test".
@@ -26,10 +204,10 @@ class Experiment:
         self.generation_theta = generation_theta
         self.generation_func = generation_func
         self.data = {}
+        self.step_mask = step_mask
 
         # Generate random keys for different parts of the model
         (key,
-         sessions_key,
          inputs_key,
          x_gen_key,
          x_train_key,
@@ -37,32 +215,29 @@ class Experiment:
          rec_mask_key,
          weights_key,
          func_sparse_key,
-         simulation_key) = jax.random.split(key, 10)
-
-        # Pick random number of sessions in this experiment given mean and std
-        num_sessions = sample_truncated_normal(
-            sessions_key, cfg["mean_num_sessions"], cfg["sd_num_sessions"]
-        )
+         simulation_key) = jax.random.split(key, 9)
 
         # Generate inputs and step mask for this experiment
-        inputs, self.step_mask = self.generate_inputs(inputs_key, num_sessions)
+        inputs = self.generate_inputs(inputs_key,
+                                      shapes, step_mask,
+                                      cfg, exp_i)
         self.rewarded_pos = inputs['rewarded_pos']
 
         # Generate real presynaptic activity and don't save it - it is latent variable
-        x_gen = self.generate_x(x_gen_key, inputs, mode='generation')
+        x_gen = generate_x(x_gen_key, inputs, cfg, mode='generation')
         # Generate assumed presynaptic activity and save for training
-        x_train = self.generate_x(x_train_key, inputs, mode='training')
+        x_train = generate_x(x_train_key, inputs, cfg, mode='training')
         self.data['x_train'] = x_train
 
         self.feedforward_mask_generation = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
             cfg["feedforward_sparsity_generation"],
-            cfg["postsynaptic_input_sparsity_generation"]
+            cfg["postsynaptic_input_sparsity_generation"] if cfg.recurrent else 1.0
         )
         self.feedforward_mask_training = self.generate_feedforward_mask(
             ff_mask_key, cfg["num_hidden_pre"], cfg["num_hidden_post"],
             cfg["feedforward_sparsity_training"],
-            cfg["postsynaptic_input_sparsity_training"]
+            cfg["postsynaptic_input_sparsity_training"] if cfg.recurrent else 1.0
         )
 
         self.recurrent_mask_generation = self.generate_recurrent_mask(
@@ -83,10 +258,10 @@ class Experiment:
             )
 
         # Apply functional sparsity to plastic weights initialization during generation
-        for layer in cfg.plasticity_layers:
-            func_sparse_key, _ = jax.random.split(func_sparse_key)
+        func_sparse_keys = jax.random.split(func_sparse_key, len(cfg.plasticity_layers))
+        for i, layer in enumerate(cfg.plasticity_layers):
             self.init_weights[f'w_{layer}'] *= jax.random.bernoulli(
-                func_sparse_key,
+                func_sparse_keys[i],
                 cfg.init_weights_sparsity_generation[layer],
                 shape=self.init_weights[f'w_{layer}'].shape)
 
@@ -107,37 +282,15 @@ class Experiment:
         if mode == 'test':
             self.weights_trajec = self.data.pop('weights')
 
-    def generate_inputs(self, key, num_sessions):
+    def generate_inputs(self, key, shapes, step_mask, cfg, exp_i):
+        """ Generate inputs for all sessions in one experiment.
 
-        # TODO? Is it a bad idea to use dict here?
-        inputs = {}
-
-        for session in range(num_sessions):
-            key, n_trials_key, acdc_key = jax.random.split(key, 3)
-            num_trials = sample_truncated_normal(
-                n_trials_key,
-                self.cfg["mean_trials_per_session"],
-                self.cfg["sd_trials_per_session"])
-            task_types = self.gen_2acdc(acdc_key, num_trials)
-            for task_type in task_types:
-                key, subkey = jax.random.split(key)
-
-                if self.cfg["input_type"] == 'random':
-                    trial_inputs = self.generate_random_trial_input(subkey)
-                elif self.cfg["input_type"] == 'task':
-                    trial_inputs = self.generate_task_trial_input(subkey, task_type)
-
-                for var in trial_inputs:
-                    (inputs.setdefault(var, [[] for _ in range(num_sessions)])[session]
-                     .extend(trial_inputs[var]))
-
-        return self.nested_inputs_lists_to_tensors(inputs)
-
-    def nested_inputs_lists_to_tensors(self, inputs):
-        """ Convert nested list of inputs per session to padded tensor and step mask.
         Args:
-            inputs: per-input-variable dict of nested lists,
-                outer list is over sessions, inner list is over time steps in session
+            key: JAX random key.
+            shapes: Tuple of (num_sessions, num_trials, num_steps) arrays.
+            step_mask: array of shape (num_sessions, max_steps_per_session),
+            cfg: Configuration dictionary.
+            exp_i: Experiment index.
 
         Returns:
             inputs_tensors: dict of arrays,
@@ -145,31 +298,72 @@ class Experiment:
             step_mask: array of shape (num_sessions, max_steps_per_session),
                 1 for valid steps, 0 for padding
         """
-        # Create step mask
-        sample_input = inputs[list(inputs.keys())[0]]
-        session_lengths = jnp.array([len(session) for session in sample_input])
-        max_steps_per_session = jnp.max(session_lengths)
-        step_mask = (jnp.arange(max_steps_per_session)[None, :]
-                     < session_lengths[:, None]
-                     ).astype(jnp.int32)
+        num_sessions, num_trials, num_steps = shapes
 
+        num_sessions_ = num_sessions[exp_i]  # In this experiment
+        max_trials_ = num_trials[exp_i].max()  # Across sessions in this experiment
+
+        # Presplit keys for each session and trial
+        acdc_key, trial_key = jax.random.split(key)
+        acdc_rep_keys, acdc_first_keys = jax.random.split(acdc_key, 2 * num_sessions_
+                                                          ).reshape(2, num_sessions_, 2)
+        trial_keys = jax.random.split(trial_key, num_sessions_ * max_trials_
+                                      ).reshape(num_sessions_, max_trials_, 2)
+
+        inputs = {}
+        for session_i in range(num_sessions_):
+            num_trials_ = num_trials[exp_i, session_i]
+            # Generate 2ACDC task sequence with Poisson-distributed repeats
+            task_types = self.gen_2acdc((acdc_rep_keys[session_i],
+                                         acdc_first_keys[session_i]),
+                                         num_trials_)
+            for task_i, task_type in enumerate(task_types):
+                num_steps_ = num_steps[exp_i, session_i, task_i]
+                # Generate inputs for one trial
+                if cfg["input_type"] == 'random':
+                    trial_inputs = self.generate_random_trial_input(
+                        trial_keys[session_i, task_i], num_steps_, cfg)
+                elif cfg["input_type"] == 'task':
+                    trial_inputs = self.generate_task_trial_input(
+                        trial_keys[session_i, task_i], num_steps_, cfg, task_type)
+
+                # Append trial inputs to session inputs
+                for var in trial_inputs:
+                    (inputs.setdefault(var, [[] for _ in range(num_sessions_)]
+                                       )[session_i]
+                                       .extend(trial_inputs[var]))
+
+        return self.nested_input_lists_to_tensors(inputs,
+                                                  step_mask.shape[0],
+                                                  step_mask.shape[1])
+
+    def nested_input_lists_to_tensors(self, inputs, max_sessions, max_steps):
+        """ Convert nested list of inputs per session to padded tensor.
+        Args:
+            inputs: per-input-variable dict of nested lists,
+                outer list is over sessions, inner list is over time steps in session
+
+        Returns:
+            inputs_tensors: dict of arrays,
+                shape (max_sessions, max_steps_per_session_across_exps, *var_dim)
+        """
         # For each variable, convert nested list to padded tensor
         inputs_tensors = {}
         for var, var_input in inputs.items():
             # Create tensor and pad: (num_sessions, max_steps_per_session, var_dim)
-            inputs_tensor = jnp.zeros((step_mask.shape[0], step_mask.shape[1],
+            inputs_tensor = jnp.zeros((max_sessions, max_steps,
                                        *var_input[0][0].shape))
             for s, session in enumerate(var_input):
                 inputs_tensor = (inputs_tensor.at[s, :len(session)]
                                  .set(jnp.array(session)))
             inputs_tensors[var] = inputs_tensor
 
-        return inputs_tensors, step_mask
+        return inputs_tensors
 
-    def gen_2acdc(self, key, n, lambd=0.7, max_rep=3):
+    def gen_2acdc(self, keys, n, lambd=0.7, max_rep=3):
         """ Generate a 2AFC sequence with Poisson-distributed repeats. """
 
-        rep_key, first_key = jax.random.split(key)
+        rep_key, first_key = keys
 
         # Sample repeats (Poisson + 1, clipped to max_rep)
         reps = jax.random.poisson(rep_key, lambd, shape=(n,)).astype(jnp.int32) + 1
@@ -182,37 +376,27 @@ class Experiment:
         # Repeat trial types according to sampled repeats
         return jnp.repeat(types, reps)[:n]
 
-    def generate_random_trial_input(self, key):
+    def generate_random_trial_input(key, num_steps, cfg):
         """ Generate random input for one trial (Mehta et al., 2023).
 
         Returns:
             inputs: {'x' (num_steps, num_hidden_pre): array of presynaptic activity,
                      'rewarded_pos': (num_steps,) dummy to fit task input format}
         """
-        key, n_steps_key = jax.random.split(key)
-        # Configuration set specifically for random input regardless of time
-        num_steps = sample_truncated_normal(n_steps_key,
-                                            self.cfg["mean_steps_per_trial"],
-                                            self.cfg["sd_steps_per_trial"])
+        x = jax.random.normal(key, shape=(num_steps, cfg.num_hidden_pre))
+        x = x * cfg.presynaptic_firing_std + cfg.presynaptic_firing_mean
 
-        inputs = jnp.zeros((num_steps, self.cfg.num_hidden_pre))
-        for step in range(num_steps):
-            key, subkey = jax.random.split(key)
-            step_input = jax.random.normal(subkey, shape=(self.cfg.num_hidden_pre,))
-            step_input = (step_input * self.cfg.presynaptic_firing_std
-                          + self.cfg.presynaptic_firing_mean)
-            inputs = inputs.at[step].set(step_input)
-
-        return {'x': inputs,
+        return {'x': x,
                 'rewarded_pos': jnp.zeros((num_steps,))  # Dummy, not used
                 }
 
-    def generate_task_trial_input(self, key, trial_type):
+    def generate_task_trial_input(self, key, num_steps, cfg, trial_type):
         """ Generate structured task-based input for one trial (Sun et al., 2025).
 
         Args:
             key: JAX random key.
             trial_type: Integer indicating the type of trial (0 - near, 1 - far).
+            cfg: Configuration dictionary.
 
         Returns:
             inputs: {'t' (num_steps,): trial time in seconds,
@@ -221,26 +405,26 @@ class Experiment:
                      'cue' (num_steps,): visual cue type at each time step,
                      'rewarded_pos': (num_steps,) binary array of rewarded positions}
         """
-        trial_time_key, v_pos_key = jax.random.split(key)
-        trial_time = sample_truncated_normal(
-            trial_time_key,
-            mean=self.cfg.mean_trial_time,
-            std=self.cfg.std_trial_time)
+        # trial_time_key, v_pos_key = jax.random.split(key)
+        # trial_time = sample_truncated_normal(
+        #     trial_time_key,
+        #     mean=cfg.mean_trial_time,
+        #     std=cfg.std_trial_time)
 
         # Generate velocity and position inputs
-        t, v, pos = self.generate_velocity_and_position(v_pos_key, trial_time)
+        t, v, pos = self.generate_velocity_and_position(key, num_steps, cfg)
 
         # Generate visual cue sequence
         # [1,1,1,1,1,1,2,2,2,2,1,1,1,4,4,1,1,1,5,5,1,1,1,0,0,0]
         visual_cue_seq = [jnp.repeat(1, 6),
-                        jnp.repeat(2, 4) + trial_type,  # Indicator
-                        jnp.repeat(1, 3),
-                        jnp.repeat(4, 2),  # Reward near
-                        jnp.repeat(1, 3),
-                        jnp.repeat(5, 2),  # Reward far
-                        jnp.repeat(1, 3),
-                        jnp.repeat(0, 3),  # Teleportation
-                        ]
+                          jnp.repeat(2, 4) + trial_type,  # Indicator
+                          jnp.repeat(1, 3),
+                          jnp.repeat(4, 2),  # Reward near
+                          jnp.repeat(1, 3),
+                          jnp.repeat(5, 2),  # Reward far
+                          jnp.repeat(1, 3),
+                          jnp.repeat(0, 3),  # Teleportation
+                          ]
         visual_type_seq = jnp.concatenate(visual_cue_seq)
 
         # Compute segment index from continuous position (floor of x/10)
@@ -261,13 +445,13 @@ class Experiment:
                 'cue': cue_at_time,
                 'rewarded_pos': rewarded_position}
 
-    def generate_velocity_and_position(self, key, trial_time):
+    def generate_velocity_and_position(key, num_steps, cfg):
         """ Generate velocity and position time series for one trial. """
 
         # Derived parameters
-        num_steps = (trial_time - 2) / self.cfg.dt  # steps, minus 2s for teleportation
-        v_mean = self.cfg.trial_distance / num_steps  # cm/dt
-        v_window = int(self.cfg.velocity_smoothing_window / self.cfg.dt)  # steps
+        num_steps = num_steps - 2 / cfg.dt  # steps, minus 2s for teleportation
+        v_mean = cfg.trial_distance / num_steps  # cm/dt
+        v_window = int(cfg.velocity_smoothing_window / cfg.dt)  # steps
         num_steps = int(num_steps)
 
         # Generate raw velocity signal and smooth it
@@ -277,106 +461,25 @@ class Experiment:
         v_smooth = jnp.convolve(v, gaussian_filter, mode='same')
 
         # Rescale to desired mean and std
-        target_velocity_std = self.cfg.velocity_std * self.cfg.dt  # cm/s -> cm/dt
+        target_velocity_std = cfg.velocity_std * cfg.dt  # cm/s -> cm/dt
         observed_velocity_std = jnp.std(v_smooth)
         v_smooth = v_smooth * target_velocity_std / (observed_velocity_std + 1e-12)
         v_smooth = v_smooth + v_mean  # cm/dt
 
         # Integrate to get position, rescale to desired distance
         positions = jnp.cumsum(v_smooth)  # cm
-        scale = self.cfg.trial_distance / positions[-1]
+        scale = cfg.trial_distance / positions[-1]
         v_smooth = v_smooth * scale
         positions = jnp.cumsum(v_smooth)  # cm
 
         # Add 2s of zero velocity and teleport to start (position is circular)
-        position_at_teleport = jnp.ones(int(2/self.cfg.dt)) * self.cfg.trial_distance
-        v_smooth = jnp.concatenate([v_smooth, jnp.zeros(int(2/self.cfg.dt))])
+        position_at_teleport = jnp.ones(int(2/cfg.dt)) * cfg.trial_distance
+        v_smooth = jnp.concatenate([v_smooth, jnp.zeros(int(2/cfg.dt))])
         positions = jnp.concatenate([positions, position_at_teleport])
 
-        t = jnp.arange(0, trial_time, self.cfg.dt)
+        t = jnp.arange(0, num_steps * cfg.dt, cfg.dt)
 
         return t, v_smooth, positions
-
-    def generate_x(self, key, inputs, mode):
-        """ Generate presynaptic activity based on input.
-
-        Args:
-            key: JAX random key.
-            inputs: dict of input arrays.
-            mode: 'generation' or 'training', adds variability in generation mode
-
-        Returns:
-            x: (n_sessions, n_steps, num_hidden_pre) presynaptic activity
-        """
-        if self.cfg["input_type"] == 'random':
-            return inputs['x']  # Random input is already presynaptic activity
-        elif self.cfg["input_type"] == 'task':
-            # Positional presynaptic activity (n_sessions, n_steps, num_place_neurons)
-            x_pos, _place_field_centers = self.generate_x_pos(key, inputs['pos'], mode)
-            # Visual presynaptic activity (n_sessions, n_steps, num_visual_neurons)
-            x_visual = jax.nn.one_hot(inputs['cue'],
-                                      jnp.unique(inputs['cue']).shape[0])
-            x_visual = x_visual.at[:,:,1:].get()  # No visual input at teleportation
-            x_visual = x_visual.repeat(self.cfg.num_visual_neurons_per_type, axis=-1)
-            # x_velocity = None  # TODO implement velocity input
-            return jnp.concatenate([x_pos, x_visual], axis=-1)
-
-    def generate_x_pos(self, key, positions, mode):
-        """
-        Generate presynaptic firing rates based on position using place fields.
-
-        Args:
-            key: JAX random key.
-            positions: (n_sessions, n_steps) Array of positions at each time step in cm
-            mode: 'generation' or 'training', adds variability in generation mode
-
-        Returns:
-            rates: (n_sessions, n_steps, num_place_neurons)
-            place_field_centers: (num_place_neurons,)
-        """
-        # Arrays of place field centers for each neuron
-        place_field_centers = jnp.linspace(0, self.cfg.trial_distance,
-                                           self.cfg.num_place_neurons)
-        # Array of peak firing rates for each neuron
-        amplitudes = jnp.ones((self.cfg.num_place_neurons,)) \
-            * self.cfg.place_field_amplitude_mean
-        # Array of place field widths for each neuron
-        place_field_widths = jnp.ones((self.cfg.num_place_neurons,)) \
-            * self.cfg.place_field_width_mean
-
-        # Add latent variability to place field parameters for generation
-        if mode == 'generation':
-            centers_key, amp_key, width_key = jax.random.split(key, 3)
-            # Add some jitter to place field centers for generation
-            place_field_centers += jax.random.normal(
-                centers_key, (self.cfg.num_place_neurons,)
-                ) * self.cfg.place_field_center_jitter
-            # Add some jitter to amplitudes for generation
-            amplitudes += jax.random.normal(
-                amp_key, (self.cfg.num_place_neurons,)
-                ) * self.cfg.place_field_amplitude_std
-            amplitudes = jnp.clip(amplitudes,
-                                  a_min=0.0)  # avoid negative maxima
-            # Add some jitter to widths for generation
-            place_field_widths += jax.random.normal(
-                width_key, (self.cfg.num_place_neurons,)
-                ) * self.cfg.place_field_width_std
-            place_field_widths = jnp.clip(place_field_widths,
-                                          a_min=0.0)  # avoid negative widths
-
-        # Convert linear variables to circular
-        theta = 2 * jnp.pi * positions / self.cfg.trial_distance
-        mu = 2 * jnp.pi * place_field_centers / self.cfg.trial_distance
-        ang_sigma = 2 * jnp.pi * place_field_widths / self.cfg.trial_distance
-
-        # Compute firing rates using von Mises function
-        dtheta = theta[..., None] - mu[None, :]
-        kappa = 1.0 / (ang_sigma**2 + 1e-12)
-        vonMises = jnp.exp(kappa * (jnp.cos(dtheta) - 1.0))
-
-        rates = vonMises * amplitudes[None, None, :]
-
-        return rates, place_field_centers
 
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):
@@ -397,9 +500,6 @@ class Experiment:
             A binary mask of shape (n_pre, n_post).
         """
         col_key, mask_key, fill_col_key, fill_row_key = jax.random.split(key, 4)
-
-        if not self.cfg.recurrent:
-            input_sparsity = 1.0
 
         # Choose input postsynaptic neurons (input columns)
         n_input_post = max(1, int(round(input_sparsity * n_post)))
@@ -442,8 +542,9 @@ class Experiment:
             rec_sparsity [0, 1]: Fraction of nonzero weights in the recurrent layer,
                 all neurons are guaranteed to receive some input and some output:
                 0 - at least one input per neuron,
-                    not counting (allowed) autapses, but counting feedforward input,
+                    not counting (allowed) autapses, but counting feedforward inputs,
                 1 - all-to-all connectivity.
+            ff_mask: Feedforward mask (n_pre, n_post) to count feedforward inputs.
 
         Returns:
             A binary mask of shape (n_post, n_post).
