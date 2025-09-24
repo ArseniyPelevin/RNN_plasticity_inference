@@ -43,24 +43,24 @@ def initialize_weights(key, cfg,
     # Initialize feedforward weights
     if 'ff' in layers:
         weights['w_ff'] = initialize_layer_weights(ff_key,
-                                                cfg['num_hidden_pre'],
-                                                cfg['num_hidden_post'],
-                                                weights_mean['ff'],
-                                                weights_std['ff'])
+                                                   cfg['num_hidden_pre'],
+                                                   cfg['num_hidden_post'],
+                                                   weights_mean['ff'],
+                                                   weights_std['ff'])
         # weights['b_ff'] = jnp.zeros((cfg['num_hidden_post'],))
     if cfg['recurrent'] and 'rec' in layers:
         weights['w_rec'] = initialize_layer_weights(rec_key,
-                                                  cfg['num_hidden_post'],
-                                                  cfg['num_hidden_post'],
-                                                  weights_mean['rec'],
-                                                  weights_std['rec'])
+                                                    cfg['num_hidden_post'],
+                                                    cfg['num_hidden_post'],
+                                                    weights_mean['rec'],
+                                                    weights_std['rec'])
         # weights['b_rec'] = jnp.zeros((cfg['num_hidden_post'],))
     if 'out' in layers:
         weights['w_out'] = initialize_layer_weights(out_key,
-                                                cfg['num_hidden_post'],
-                                                cfg['num_outputs'],  # 1
-                                                weights_mean['out'],
-                                                weights_std['out'])
+                                                    cfg['num_hidden_post'],
+                                                    1,  # output
+                                                    weights_mean['out'],
+                                                    weights_std['out'])
         # weights['b_out'] = jnp.zeros((1,))
 
     return weights
@@ -248,7 +248,7 @@ def simulate_trajectory(
                 (b_ff, b_rec, b_out are not used for now)
         theta: Plasticity coefficients for the model.
         plasticity_func: Plasticity function to use.
-        exp_data (N_sessions, N_steps_per_session_max, N_hidden_pre):
+        exp_x (N_sessions, N_steps_per_session_max, N_hidden_pre):
             Presynaptic activity of one exp.
         exp_rewarded_pos (N_sessions, N_steps_per_session_max):
             Rewarded positions of one exp.
@@ -311,48 +311,68 @@ def simulate_trajectory(
                     rewarded_pos,
                     valid,
                     step_key)
-                    data: {inputs[, rewards, expected_rewards]}
-                    valid: mask for this step (0 or 1)
-                    step_key: Random key for PRNG.
 
             Returns:
                 weights: Updated weighteters after the step.
                 output_data: {y, output[, decision[, weights]]}
             """
             x, rewarded_pos, valid, step_key = step_variables
-            output_data = {}
-            y, output = network_forward(step_key,
-                                        weights,
-                                        ff_mask, rec_mask,
-                                        ff_scale, rec_scale,
-                                        x, cfg)
-            output_data['ys'] = y
-            output_data['outputs'] = output
 
-            decision = compute_decision(step_key, output)
-            if 'generation' in mode:
-                output_data['decisions'] = decision
+            def _do_step(w):
+                output_data = {}
+                y, output = network_forward(step_key,
+                                            w,
+                                            ff_mask, rec_mask,
+                                            ff_scale, rec_scale,
+                                            x, cfg)
+                output_data['ys'] = y
+                output_data['outputs'] = output
 
-            # Reward if lick at rewarded position
-            reward = decision * rewarded_pos  # TODO cfg.reward_scale
-            expected_reward = compute_expected_reward(reward, None)
+                decision = compute_decision(step_key, output)
+                if 'generation' in mode:
+                    output_data['decisions'] = decision
 
-            weights = jax.lax.cond(valid,
-                                  lambda p: update_weights(
-                                      x, y, weights, reward, expected_reward,
-                                      theta, plasticity_func, cfg),
-                                  lambda p: p,
-                                  weights)
+                # Reward if lick at rewarded position
+                reward = decision * rewarded_pos  # TODO cfg.reward_scale
+                expected_reward = compute_expected_reward(reward, None)
 
-            if 'test' in mode:
-                output_data['weights'] = {}
-                # Only return trajectories of plastic weights
-                if "ff" in cfg.plasticity_layers:
-                    output_data['weights']['w_ff'] = weights['w_ff']
-                if "rec" in cfg.plasticity_layers:
-                    output_data['weights']['w_rec'] = weights['w_rec']
+                # update weights only when valid (we are inside the valid branch)
+                w_updated = update_weights(
+                    x, y, w, reward, expected_reward,
+                    theta, plasticity_func, cfg)
 
-            return weights, output_data
+                if 'test' in mode:
+                    output_data['weights'] = {}
+                    # Only return trajectories of plastic weights (from updated weights)
+                    if "ff" in cfg.plasticity_layers:
+                        output_data['weights']['w_ff'] = w_updated['w_ff']
+                    if "rec" in cfg.plasticity_layers:
+                        output_data['weights']['w_rec'] = w_updated['w_rec']
+
+                return w_updated, output_data
+
+            def _skip_step(w):
+                # Nothing is done: return weights unchanged and neutral outputs
+                output_data = {}
+                # neutral y and output (shapes must match traced shapes)
+                output_data['ys'] = jnp.zeros(cfg.num_hidden_post)
+                output_data['outputs'] = jnp.array(0.0)
+
+                if 'generation' in mode:
+                    output_data['decisions'] = jnp.array(0.0)
+
+                if 'test' in mode:
+                    output_data['weights'] = {}
+                    # return current (unchanged) weights
+                    if "ff" in cfg.plasticity_layers:
+                        output_data['weights']['w_ff'] = w['w_ff']
+                    if "rec" in cfg.plasticity_layers:
+                        output_data['weights']['w_rec'] = w['w_rec']
+
+                return w, output_data
+
+            # Do full computation only when valid is True (real, not padded step)
+            return jax.lax.cond(valid, _do_step, _skip_step, weights)
 
         # Run inner scan over steps within one session
         weights_session, activity_trajec_session = jax.lax.scan(
