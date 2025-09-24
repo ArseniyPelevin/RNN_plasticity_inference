@@ -147,14 +147,15 @@ def truncated_sigmoid(x, epsilon=1e-6):
     )
     return jnp.clip(jax.nn.sigmoid(x), epsilon, 1 - epsilon)
 
-def sample_truncated_normal(key, mean, std):
-        """ Samples value from a normal distribution that is >= (mean - std). """
-        while True:  # Pick again if less than mu - std
-            key, subkey = jax.random.split(key)
-            value = std * jax.random.normal(subkey, ()) + mean
-            if value >= (mean - std):
-                return int(value)
-
+def sample_truncated_normal(key, mean, std, shape=1):
+    """ Samples values from a normal distribution that are >= (mean - std). """
+    samples = jax.random.normal(key, shape)
+    while not jnp.all(samples >= -1):
+        key, subkey = jax.random.split(key)
+        samples2 = jax.random.normal(subkey, shape)
+        samples = jnp.where(samples < -1, samples2, samples)
+    samples = samples * std + mean
+    return samples.round().astype(jnp.int32)
 
 def experiment_lists_to_tensors(nested_lists):
     """
