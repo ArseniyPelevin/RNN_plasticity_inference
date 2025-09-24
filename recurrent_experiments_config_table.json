@@ -1,0 +1,285 @@
+{
+    "1": {
+        "plasticity": "recurrent",
+        "N_in": 50,
+        "N_out": 50,
+        "\ninp_spar": 1,
+        "FF_spar": 0.2,
+        "rec_spar": 1,
+        "FF_scale": 1
+    },
+    "11": {
+        "plasticity": "recurrent",
+        "N_in": 50,
+        "N_out": 50,
+        "\ninp_spar": 0.2,
+        "FF_spar": 0.2,
+        "rec_spar": 1,
+        "FF_scale": 1
+    },
+    "16": {
+        "recurrent": false,
+        "plasticity": "feedforward",
+        "N_in": 10,
+        "N_out": 10,
+        "\ninp_spar": 1,
+        "FF_spar": 1,
+        "rec_spar": 1
+    },
+    "17": {
+        "recurrent": true,
+        "plasticity": "feedforward",
+        "N_in": 10,
+        "N_out": 10,
+        "\ninp_spar": 1,
+        "FF_spar": 1,
+        "rec_spar": 1
+    },
+    "18": {
+        "recurrent": true,
+        "plasticity": "feedforward+recurrent",
+        "N_in": 10,
+        "N_out": 10,
+        "\ninp_spar": 1,
+        "FF_spar": 1,
+        "rec_spar": 1
+    },
+    "19": {
+        "recurrent": true,
+        "plasticity": "recurrent",
+        "N_in": 10,
+        "N_out": 10,
+        "\ninp_spar": 1,
+        "FF_spar": 1,
+        "rec_spar": 1
+    },
+    "57": {
+        "recurrent": false,
+        "plasticity": "feedforward",
+        "N_in": 50,
+        "N_out": 50,
+        "\nFF_spar_gen": 1,
+        "FF_spar_train": 1,
+        "scale w by sqrt(N_in_i)": true
+    },
+    "58": {
+        "recurrent": false,
+        "plasticity": "feedforward",
+        "N_in": 50,
+        "N_out": 50,
+        "\nFF_spar_gen": 1,
+        "FF_spar_train": 1,
+        "scale w by sqrt(N_in_i)": false
+    },
+    "59": {
+        "recurrent": false,
+        "plasticity": "feedforward",
+        "N_in": 50,
+        "N_out": 50,
+        "\nFF_spar_gen": 1,
+        "FF_spar_train": 1,
+        "scale w by N_in_i": true
+    },
+    "60": {
+        "recurrent": true,
+        "plasticity": "ff",
+        "N_in": 50,
+        "N_out": 50
+    },
+    "61": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "N_in": 50,
+        "N_out": 50
+    },
+    "62": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "N_in": 50,
+        "N_out": 50,
+        "\ninp_spar_gen": 0.5,
+        "FF_spar_gen": 0.5,
+        "rec_spar_gen": 0.5,
+        "\ninp_spar_train": 1,
+        "FF_spar_train": 1,
+        "rec_spar_train": 1,
+        "init_spar_gen": "{'ff': 1, 'rec': 1}"
+    },
+    "172": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "init_w_mean_std": "see log csv"
+    },
+    "173": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 100,
+        "N_out": 100,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "init_w_mean_std": "see log csv"
+    },
+    "174": {
+        "recurrent": false,
+        "plasticity": "ff",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=0.1, rec=-0.2",
+        "init_w_std": "ff=0.2, rec=0.001"
+    },
+    "175": {
+        "recurrent": false,
+        "plasticity": "ff",
+        "train_w": "w_ff",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=0.1, rec=-0.2",
+        "init_w_std": "ff=0.2, rec=0.001"
+    },
+    "176": {
+        "recurrent": false,
+        "plasticity": "ff, rec",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=0.1, rec=-0.2",
+        "init_w_std": "ff=0.2, rec=0.001"
+    },
+    "177": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=0.1, rec=-0.4",
+        "init_w_std": "ff=1, rec=0.001"
+    },
+    "178": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1"
+    },
+    "182": {
+        "recurrent": false,
+        "plasticity": "ff",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{-1, 1}"
+    },
+    "183": {
+        "recurrent": false,
+        "plasticity": "ff",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{0, 1}"
+    },
+    "184": {
+        "recurrent": true,
+        "plasticity": "ff",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{0, 1}"
+    },
+    "185": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{0, 1}",
+        "n_epochs": 250
+    },
+    "186": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{0, 1}",
+        "n_epochs": 500
+    },
+    "187": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "none",
+        "\nN_in": 10,
+        "N_out": 10,
+        "init_spars": "ff: 1, rec: 1",
+        "\ninit_w_mean": "ff=0, rec=0",
+        "init_w_std": "ff=0.1, rec=0.1",
+        "\nx": "{0, 0.5}",
+        "n_epochs": 500
+    },
+    "188": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 50,
+        "N_out": 50,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=2, rec=-1",
+        "init_w_std": "ff=1, rec=1",
+        "\nx": "{0,1}",
+        "n_epochs": 250
+    },
+    "190": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 50,
+        "N_out": 50,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=2, rec=-1",
+        "init_w_std": "ff=1, rec=1",
+        "\nx": "{0,1}",
+        "n_epochs": 250,
+        "seed": 189,
+        "null_model": "random"
+    },
+    "191": {
+        "recurrent": true,
+        "plasticity": "ff, rec",
+        "train_w": "w_rec, w_ff",
+        "\nN_in": 50,
+        "N_out": 50,
+        "init_spars": "ff: 0.5, rec: 0.5",
+        "\ninit_w_mean": "ff=2, rec=-1",
+        "init_w_std": "ff=1, rec=1",
+        "\nx": "{0,1}",
+        "n_epochs": 250,
+        "seed": 189,
+        "null_model": "zeros"
+    }
+}
