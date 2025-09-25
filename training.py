@@ -21,21 +21,30 @@ def initialize_trainable_weights(key, cfg, num_experiments, n_restarts=1):
             per experiment. Default is 1 for training, can be >1 for evaluation.
 
     Returns:
-        init_trainable_weights (list): Per-restart list of per-layer dicts
-            of per-exp arrays of randomly initialized weights.
+        init_trainable_weights (dict): per-layer dict of arrays
+            of shape (n_restarts, num_experiments, ...)
     """
-    init_trainable_weights = [{layer: [] for layer in cfg.trainable_init_weights}
-                              for _ in range(n_restarts)]
+    # Presplit keys for each restart and experiment
+    keys = jax.random.split(key, n_restarts * num_experiments)
+    keys = keys.reshape((n_restarts, num_experiments, 2))
+
+    init_trainable_weights = {layer: [[] for _ in range(n_restarts)] 
+                              for layer in cfg.trainable_init_weights}
+    
     # Different initial weights for each restart of evaluation on test experiments
     for start in range(n_restarts):
-        for layer in cfg.trainable_init_weights:
-            layer_weights = []
-            # Different initial synaptic weights for each simulated experiment
-            for _exp in range(num_experiments):
-                key, subkey = jax.random.split(key)
-                layer_weights.append(model.initialize_weights(
-                    subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer])
-            init_trainable_weights[start][layer] = jnp.array(layer_weights)
+        # Different initial weights for each simulated experiment
+        for exp in range(num_experiments):
+            weights = model.initialize_weights(keys[start, exp], 
+                                               cfg, 
+                                               cfg.init_weights_std_training, 
+                                               layers=cfg.trainable_init_weights)
+            for layer, layer_val in weights.items():
+                init_trainable_weights[layer][start].append(layer_val)
+
+    # Convert lists to arrays
+    init_trainable_weights = {k: jnp.array(v)
+                              for k, v in init_trainable_weights.items()}
 
     return init_trainable_weights
 
@@ -45,8 +54,8 @@ def train(key, cfg, train_experiments, test_experiments):
     Args:
         key (jax.random.PRNGKey): Random key for initialization.
         cfg (dict): Configuration dictionary.
-        train_experiments (list): List of training experiments from class Experiment.
-        test_experiments (list): List of test experiments from class Experiment.
+        train_experiments (list): List of dicts of training experiments.
+        test_experiments (list): List of dicts of test experiments.
     """
     key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
 
@@ -55,12 +64,11 @@ def train(key, cfg, train_experiments, test_experiments):
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    # Initialize weights of all layers for each train and test experiment. Store them:
-    # fixed - as init_fixed_weights property of each experiment instance,
-    # trainable - as (per-restart list of) per-layer dicts of per-exp arrays
-    train_experiments, init_trainable_weights_train = initialize_trainable_weights(
+    # Initialize weights of trainable layers for each train and test experiment. 
+    # Store them as per-layer dict of arrays of shape (n_restarts, n_experiments, ...)
+    init_trainable_weights_train = initialize_trainable_weights(
         train_key, cfg, cfg.num_train_experiments)
-    test_experiments, init_trainable_weights_test = initialize_trainable_weights(
+    init_trainable_weights_test = initialize_trainable_weights(
         test_key, cfg, cfg.num_test_experiments, n_restarts=cfg.num_test_restarts
     )
 
