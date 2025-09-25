@@ -574,4 +574,21 @@ class Experiment:
 
         mask = mask.at[chosen_rows, zero_cols].set(1)
 
-        return mask
+    return mask
+
+def initialize_train_fixed_weights(key, cfg):
+    """ Initialize new fixed weight layers for simulation during training. """
+    all_layers = ['w_ff', 'w_out']
+    if cfg.recurrent:
+        all_layers.append('w_rec')
+
+    fixed_layers = [layer for layer in all_layers
+                    if layer not in cfg.trainable_init_weights]
+
+    init_fixed_weights = {}
+    for layer in fixed_layers:
+        key, subkey = jax.random.split(key)
+        init_fixed_weights[layer] = model.initialize_weights(
+            subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer]
+
+    return init_fixed_weights
