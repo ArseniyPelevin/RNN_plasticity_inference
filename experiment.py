@@ -203,7 +203,7 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         exp['feedforward_mask_training']
     )
 
-    # num_hidden_pre -> num_hidden_post plasticity layer
+    # Initialize weights of _all_ layers for _generation_ of this experiment
     exp['init_weights'] = model.initialize_weights(
         weights_key,
         cfg,
@@ -211,7 +211,14 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         cfg.init_weights_mean_generation
         )
 
-    exp['init_fixed_weights'] = initialize_train_fixed_weights(fixed_weights_key, cfg)
+    exp['init_fixed_weights'] = model.initialize_weights(
+        fixed_weights_key,
+        cfg,
+        cfg.init_weights_std_fixed,
+        cfg.init_weights_mean_fixed,
+        [layer for layer in ['w_ff', 'w_rec', 'w_out'] 
+         if layer not in cfg.trainable_init_weights]
+    )
 
     # Apply functional sparsity to plastic weights initialization during generation
     func_sparse_keys = jax.random.split(func_sparse_key, len(cfg.plasticity_layers))
@@ -608,20 +615,3 @@ def generate_recurrent_mask(key, n_post, rec_sparsity, ff_mask):
     mask = mask.at[chosen_rows, zero_cols].set(1)
 
     return mask
-
-def initialize_train_fixed_weights(key, cfg):
-    """ Initialize new fixed weight layers for simulation during training. """
-    all_layers = ['w_ff', 'w_out']
-    if cfg.recurrent:
-        all_layers.append('w_rec')
-
-    fixed_layers = [layer for layer in all_layers
-                    if layer not in cfg.trainable_init_weights]
-
-    init_fixed_weights = {}
-    for layer in fixed_layers:
-        key, subkey = jax.random.split(key)
-        init_fixed_weights[layer] = model.initialize_weights(
-            subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer]
-
-    return init_fixed_weights
