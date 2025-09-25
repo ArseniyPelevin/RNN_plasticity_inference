@@ -459,7 +459,6 @@ def generate_x(key, inputs, cfg, mode):
         num_visual_types = 6  # Including teleportation
         x_visual = jax.nn.one_hot(inputs['cue'],
                                   num_visual_types)
-        x_visual = x_visual.at[:,:,1:].get()  # No visual input at teleportation
         x_visual = x_visual.repeat(cfg.num_visual_neurons_per_type, axis=-1)
         # x_velocity = None  # TODO implement velocity input
         return jnp.concatenate([x_pos, x_visual], axis=-1)
