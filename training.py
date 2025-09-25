@@ -58,10 +58,10 @@ def train(key, cfg, train_experiments, test_experiments):
     # Initialize weights of all layers for each train and test experiment. Store them:
     # fixed - as init_fixed_weights property of each experiment instance,
     # trainable - as (per-restart list of) per-layer dicts of per-exp arrays
-    train_experiments, init_trainable_weights_train = initialize_simulation_weights(
-        train_key, cfg, train_experiments)
-    test_experiments, init_trainable_weights_test = initialize_simulation_weights(
-        test_key, cfg, test_experiments, n_restarts=cfg.num_test_restarts
+    train_experiments, init_trainable_weights_train = initialize_trainable_weights(
+        train_key, cfg, cfg.num_train_experiments)
+    test_experiments, init_trainable_weights_test = initialize_trainable_weights(
+        test_key, cfg, cfg.num_test_experiments, n_restarts=cfg.num_test_restarts
     )
 
     params = {'theta': init_theta,
@@ -93,22 +93,22 @@ def train(key, cfg, train_experiments, test_experiments):
             key, subkey = jax.random.split(key)
             (_loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
                 subkey,  # Pass subkey this time, because loss will not return key
-                exp.init_fixed_weights, # per-experiment arrays of fixed layers
-                exp.feedforward_mask_training,
-                exp.recurrent_mask_training,
+                exp['init_fixed_weights'], # per-experiment arrays of fixed layers
+                exp['feedforward_mask_training'],
+                exp['recurrent_mask_training'],
                 params['theta'],  # Current plasticity coeffs, updated on each iteration
                 params['weights'],  # Current initial weights, updated on each iteration
                 plasticity_func,  # Static within losses
-                exp.data,
-                exp.rewarded_pos,
-                exp.step_mask,
-                exp.exp_i,
+                exp['data'],
+                exp['rewarded_pos'],
+                exp['step_mask'],
+                exp['exp_i'],
                 cfg,  # Static within losses
                 mode=('training' if not cfg._return_weights_trajec
                       else 'evaluation')  # Return trajectories in aux for debugging
             )
             # For debugging: return activation trajectory of each experiment
-            _activation_trajs[epoch][exp.exp_i] = aux['trajectories']
+            _activation_trajs[epoch][exp['exp_i']] = aux['trajectories']
 
             grads = {'theta': theta_grads, 'weights': weights_grads}
 
