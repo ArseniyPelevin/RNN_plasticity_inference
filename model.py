@@ -143,7 +143,6 @@ def update_weights(
 
     Calculates full weight matrix regardless of sparsity mask(s).
     Args:
-        #!!! Function redefined from initial to update only one layer!
         x (array): x (presynaptic activations)  # TODO rename into x
         y (array): y (postsynaptic activations)
         weights (dict): {w_ff, w_rec, w_out}
@@ -208,10 +207,16 @@ def update_weights(
     # reward_term = reward
 
     new_weights = {}
-    new_weights['w_ff'] = update_layer_weights(
-        x, y, old_weights['w_ff'], reward_term,
-        theta, cfg.synapse_learning_rate['ff']  # theta['ff'] TODO
-    )
+    # Update freedforward weights if plastic, else copy old
+    if "ff" in cfg.plasticity_layers:
+        new_weights['w_ff'] = update_layer_weights(
+            x, y, old_weights['w_ff'], reward_term,
+            theta, cfg.synapse_learning_rate['ff']  # theta['ff'] TODO
+        )
+    else:
+        new_weights['w_ff'] = old_weights['w_ff']
+
+    # Update recurrent weights if plastic, else copy old or skip if no recurrent
     if "rec" in cfg.plasticity_layers:
         new_weights['w_rec'] = update_layer_weights(
             y, y, old_weights['w_rec'], reward_term,
@@ -220,6 +225,7 @@ def update_weights(
     elif cfg.recurrent:
         new_weights['w_rec'] = old_weights['w_rec']
 
+    # Always copy old output weights (never plastic)
     new_weights['w_out'] = old_weights['w_out']
 
     return new_weights
@@ -336,7 +342,6 @@ def simulate_trajectory(
                 reward = decision * rewarded_pos  # TODO cfg.reward_scale
                 expected_reward = compute_expected_reward(reward, None)
 
-                # update weights only when valid (we are inside the valid branch)
                 w_updated = update_weights(
                     x, y, w, reward, expected_reward,
                     theta, plasticity_func, cfg)
