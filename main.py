@@ -3,9 +3,9 @@ import time
 import experiment
 import jax
 import numpy as np
+import omegaconf
 import synapse
 import training
-from omegaconf import OmegaConf
 
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
@@ -25,20 +25,20 @@ config = {
 
     # Below commented are real values as per CA1 recording article. Be modest for now
     # "mean_num_sessions": 9,  # Number of sessions/days per experiment
-    # "sd_num_sessions": 3,  # Standard deviation of sessions/days per experiment
+    # "std_num_sessions": 3,  # Standard deviation of sessions/days per experiment
     # "mean_trials_per_session": 124,  # Number of trials/runs in each session/day
-    # "sd_trials_per_session": 43,  # Standard deviation of trials in each session/day
+    # "std_trials_per_session": 43,  # Standard deviation of trials in each session/day
     # "mean_trial_time": 29,  # s, including 2s teleportation
     # "std_trial_time": 10,  # s
 
     "mean_num_sessions": 1,  # Number of sessions/days per experiment/trajectory/animal
-    "sd_num_sessions": 0,  # Standard deviation of sessions/days per animal
+    "std_num_sessions": 0,  # Standard deviation of sessions/days per animal
     "mean_trials_per_session": 1,  # Number of trials/runs in each session/day
-    "sd_trials_per_session": 0,  # Standard deviation of trials in each session/day
+    "std_trials_per_session": 0,  # Standard deviation of trials in each session/day
 
     # Overwritten as mean_trial_time/dt if input_type is 'task'
     "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial/run
-    "sd_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
+    "std_steps_per_trial": 0,  # Standard deviation of steps in each trial/run
 
     # For input_type 'task':
     "dt": 1,  # s, time step of simulation
@@ -142,7 +142,7 @@ config = {
 }
 
 def create_config():
-    cfg = OmegaConf.create(config)
+    cfg = omegaconf.OmegaConf.create(config)
     cfg = validate_config(cfg)
 
     return cfg
@@ -186,7 +186,14 @@ def validate_config(cfg):
                               # + cfg.num_velocity_neurons)  # TODO
 
         cfg.mean_steps_per_trial = int(cfg.mean_trial_time / cfg.dt)
-        cfg.sd_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
+        cfg.std_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
+
+    for param in config:
+        if 'sparsity' in param or 'scale' in param or 'std' in param:
+            if type(cfg[param]) is omegaconf.dictconfig.DictConfig:
+                cfg[param] = {k: float(v) for k, v in cfg[param].items()}
+            else:
+                cfg[param] = float(cfg[param])
 
     return cfg
 
