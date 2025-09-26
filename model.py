@@ -320,11 +320,11 @@ def simulate_trajectory(
                 weights: Updated weighteters after the step.
                 output_data: {y, output[, decision[, weights]]}
             """
-            x, rewarded_pos, valid, step_key = step_variables
+            x, rewarded_pos, valid, *(forward_key, decision_key) = step_variables
 
             def _do_step(w):
                 output_data = {}
-                y, output = network_forward(step_key,
+                y, output = network_forward(forward_key,
                                             w,
                                             ff_mask, rec_mask,
                                             ff_scale, rec_scale,
@@ -332,7 +332,7 @@ def simulate_trajectory(
                 output_data['ys'] = y
                 output_data['outputs'] = output
 
-                decision = compute_decision(step_key, output)
+                decision = compute_decision(decision_key, output)
                 if 'generation' in mode:
                     output_data['decisions'] = decision
 
@@ -386,9 +386,8 @@ def simulate_trajectory(
     # Pre-split keys for each session and step
     n_sessions = step_mask.shape[0]
     n_steps = step_mask.shape[1]
-    total_keys = int(n_sessions * n_steps)
-    flat_keys = jax.random.split(key, total_keys + 1)[1:]
-    exp_keys = flat_keys.reshape((n_sessions, n_steps, flat_keys.shape[-1]))
+    flat_keys = jax.random.split(key, n_sessions * n_steps * 2)  # Two keys per step
+    exp_keys = flat_keys.reshape((n_sessions, n_steps, 2, 2))
 
     # Scale ff weights: by constant scale and by number of inputs to each neuron
     n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
