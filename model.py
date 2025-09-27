@@ -317,6 +317,21 @@ def simulate_trajectory(
             ]
         }: Trajectories of activations over the course of the experiment.
     """
+    # Pre-split keys for each session and step
+    n_sessions = step_mask.shape[0]
+    n_steps = step_mask.shape[1]
+    flat_keys = jax.random.split(key, n_sessions * n_steps * 2)  # Two keys per step
+    exp_keys = flat_keys.reshape((n_sessions, n_steps, 2, 2))
+
+    # Scale ff weights: by constant scale and by number of inputs to each neuron
+    n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+    n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
+    ff_scale = cfg.feedforward_input_scale / jnp.sqrt(n_ff_inputs)[None, :]
+
+    # Scale rec weights: by constant scale and by number of inputs to each neuron
+    n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
+    n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
+    rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
 
     def simulate_session(weights, session_variables):
         """ Simulate trajectory of weights and activations within one session.
@@ -358,11 +373,11 @@ def simulate_trajectory(
                 weights: Updated weighteters after the step.
                 output_data: {y, output[, decision[, weights]]}
             """
-            x, rewarded_pos, valid, *(forward_key, decision_key) = step_variables
+            x, rewarded_pos, valid, keys = step_variables
 
             def _do_step(w):
                 output_data = {}
-                y, output = network_forward(forward_key,
+                y, output = network_forward(keys[0],
                                             w,
                                             ff_mask, rec_mask,
                                             ff_scale, rec_scale,
@@ -370,7 +385,7 @@ def simulate_trajectory(
                 output_data['ys'] = y
                 output_data['outputs'] = output
 
-                decision = compute_decision(decision_key, output)
+                decision = compute_decision(keys[1], output)
                 if 'generation' in mode:
                     output_data['decisions'] = decision
 
@@ -416,28 +431,9 @@ def simulate_trajectory(
             return jax.lax.cond(valid, _do_step, _skip_step, weights)
 
         # Run inner scan over steps within one session
-        weights_session, activity_trajec_session = jax.lax.scan(
-            simulate_step, weights, session_variables)
+        return jax.lax.scan(simulate_step, weights, session_variables)
 
-        return weights_session, activity_trajec_session
-
-    # Pre-split keys for each session and step
-    n_sessions = step_mask.shape[0]
-    n_steps = step_mask.shape[1]
-    flat_keys = jax.random.split(key, n_sessions * n_steps * 2)  # Two keys per step
-    exp_keys = flat_keys.reshape((n_sessions, n_steps, 2, 2))
-
-    # Scale ff weights: by constant scale and by number of inputs to each neuron
-    n_ff_inputs = ff_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-    n_ff_inputs = jnp.where(n_ff_inputs == 0, 1, n_ff_inputs) # avoid /0
-    ff_scale = cfg.feedforward_input_scale / jnp.sqrt(n_ff_inputs)[None, :]
-
-    # Scale rec weights: by constant scale and by number of inputs to each neuron
-    n_rec_inputs = rec_mask.sum(axis=0) # N_inputs per postsynaptic neuron
-    n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
-    rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
-
-    # Run outer scan over sessions
+    # Run outer scan over sessions within one experiment
     _weights_exp, activity_trajec_exp = jax.lax.scan(
         simulate_session,
         init_weights,
