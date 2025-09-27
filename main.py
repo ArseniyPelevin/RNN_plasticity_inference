@@ -4,8 +4,10 @@ import experiment
 import jax
 import numpy as np
 import omegaconf
+import pandas as pd
 import synapse
 import training
+import utils
 
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
@@ -17,7 +19,7 @@ config = {
     "use_experimental_data": False,
     "input_type": 'random',  # 'random' (Mehta et al., 2023) / 'task' (Sun et al., 2025)
     "fit_data": ["neural"],  # ["behavioral", "neural"]
-    "trainable_init_weights": [],  # ['w_ff'], ['w_rec'], ['w_ff', 'w_rec'], []
+    "trainable_init_weights": [],  # ['w_ff', 'w_rec', 'w_out']
 
 # Experiment design
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
@@ -218,18 +220,36 @@ def run_experiment(cfg, seed=None):
     key = jax.random.PRNGKey(seed)
 
     # Pass subkeys, so that adding more experiments doesn't affect earlier ones
-    train_exp_key, test_exp_key, train_key, eval_key = jax.random.split(key, 4)
+    train_exp_key, test_exp_key, train_key = jax.random.split(key, 3)
 
-    experiments = generate_data(train_exp_key, cfg, mode='train')
+    train_experiments = generate_data(train_exp_key, cfg, mode='train')
     test_experiments = generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
     expdata, _activation_trajs, _losses_and_r2s = (
-        training.train(train_key, cfg, experiments, test_experiments))
+        training.train(train_key, cfg, train_experiments, test_experiments))
     train_time = time.time() - time_start
+    print(f"\nTraining time: {train_time:.1f} seconds")
 
-    training.save_results(cfg, expdata, train_time)
-    return _activation_trajs, _losses_and_r2s
+    save_results(cfg, expdata, train_time)
+
+    return expdata, _activation_trajs, _losses_and_r2s
+
+def save_results(cfg, expdata, train_time):
+    """Save training logs and parameters."""
+    df = pd.DataFrame.from_dict(expdata)
+    df["train_time"] = train_time
+
+    # Add configuration parameters to DataFrame
+    for cfg_key, cfg_value in cfg.items():
+        if isinstance(cfg_value, (float | int | str)):
+            df[cfg_key] = cfg_value
+        elif isinstance(cfg_value, omegaconf.dictconfig.DictConfig):
+            df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
+        elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
+            df[cfg_key] = ', '.join(str(v) for v in cfg_value)
+
+    _logdata_path = utils.save_logs(cfg, df)
 
 if __name__ == "__main__":
     cfg = create_config()

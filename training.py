@@ -97,18 +97,3 @@ def train(key, cfg, train_experiments, test_experiments):
 
     return expdata, _activation_trajs, _losses_and_r2s
 
-def save_results(cfg, expdata, train_time):
-    """Save training logs and parameters."""
-    df = pd.DataFrame.from_dict(expdata)
-    df["train_time"] = train_time
-
-    # Add configuration parameters to DataFrame
-    for cfg_key, cfg_value in cfg.items():
-        if isinstance(cfg_value, (float | int | str)):
-            df[cfg_key] = cfg_value
-        elif isinstance(cfg_value, omegaconf.dictconfig.DictConfig):
-            df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
-        elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
-            df[cfg_key] = ', '.join(str(v) for v in cfg_value)
-
-    _logdata_path = utils.save_logs(cfg, df)
