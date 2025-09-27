@@ -10,44 +10,6 @@ import synapse
 import utils
 
 
-def initialize_trainable_weights(key, cfg, num_experiments, n_restarts=1):
-    """ Initialize new initial weights of trainable layers for each experiment.
-
-    Args:
-        key (jax.random.PRNGKey): Random key for initialization.
-        cfg (dict): Configuration dictionary.
-        num_experiments (int): Number of experiments to initialize weights for.
-        n_restarts (int): Number of random trainable weights initializations
-            per experiment. Default is 1 for training, can be >1 for evaluation.
-
-    Returns:
-        init_trainable_weights (dict): per-layer dict of arrays
-            of shape (n_restarts, num_experiments, ...)
-    """
-    # Presplit keys for each restart and experiment
-    keys = jax.random.split(key, n_restarts * num_experiments)
-    keys = keys.reshape((n_restarts, num_experiments, 2))
-
-    init_trainable_weights = {layer: [[] for _ in range(n_restarts)] 
-                              for layer in cfg.trainable_init_weights}
-    
-    # Different initial weights for each restart of evaluation on test experiments
-    for start in range(n_restarts):
-        # Different initial weights for each simulated experiment
-        for exp in range(num_experiments):
-            weights = model.initialize_weights(keys[start, exp], 
-                                               cfg, 
-                                               cfg.init_weights_std_training, 
-                                               layers=cfg.trainable_init_weights)
-            for layer, layer_val in weights.items():
-                init_trainable_weights[layer][start].append(layer_val)
-
-    # Convert lists to arrays
-    init_trainable_weights = {k: jnp.array(v)
-                              for k, v in init_trainable_weights.items()}
-
-    return init_trainable_weights
-
 def train(key, cfg, train_experiments, test_experiments):
     """ Initialize values and functions, start training loop.
 

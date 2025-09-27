@@ -63,6 +63,44 @@ def initialize_weights(key, cfg,
 
     return weights
 
+def initialize_trainable_weights(key, cfg, num_experiments, n_restarts=1):
+    """ Initialize new initial weights of trainable layers for each experiment.
+
+    Args:
+        key (jax.random.PRNGKey): Random key for initialization.
+        cfg (dict): Configuration dictionary.
+        num_experiments (int): Number of experiments to initialize weights for.
+        n_restarts (int): Number of random trainable weights initializations
+            per experiment. Default is 1 for training, can be >1 for evaluation.
+
+    Returns:
+        init_trainable_weights (list): per-restart list of per-layer dict of arrays
+            of shape (num_experiments, ...)
+    """
+    # Presplit keys for each restart and experiment
+    keys = jax.random.split(key, n_restarts * num_experiments)
+    keys = keys.reshape((n_restarts, num_experiments, 2))
+
+    init_trainable_weights = [{layer: [] for layer in cfg.trainable_init_weights}
+                              for _ in range(n_restarts)]
+
+    # Different initial weights for each restart of evaluation on test experiments
+    for start in range(n_restarts):
+        # Different initial weights for each simulated experiment
+        for exp in range(num_experiments):
+            weights = initialize_weights(keys[start, exp],
+                                         cfg,
+                                         cfg.init_weights_std_training,
+                                         layers=cfg.trainable_init_weights)
+            for layer, layer_val in weights.items():
+                init_trainable_weights[start][layer].append(layer_val)
+
+        # Convert lists to arrays
+        for layer, layer_val in init_trainable_weights[start].items():
+            init_trainable_weights[start][layer] = jnp.array(layer_val)
+
+    return init_trainable_weights
+
 @partial(jax.jit, static_argnames=("cfg"))
 def network_forward(key, weights,
                     ff_mask, rec_mask,
