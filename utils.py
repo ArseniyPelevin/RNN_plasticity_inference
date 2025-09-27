@@ -225,8 +225,8 @@ def print_and_log_learned_params(cfg, expdata, theta):
     """
 
     if cfg.plasticity_model == "volterra":
-        coeff_mask = np.array(cfg.coeff_mask)
-        theta = np.multiply(theta, coeff_mask)
+        coeff_mask = jnp.array(cfg.coeff_mask)
+        theta = jnp.multiply(theta, coeff_mask)
         for i in range(3):
             for j in range(3):
                 for k in range(3):
@@ -237,8 +237,8 @@ def print_and_log_learned_params(cfg, expdata, theta):
                         )
 
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
-        top_indices = np.argsort(
-            np.abs(theta[ind_i, ind_j, ind_k, ind_l].flatten())
+        top_indices = jnp.argsort(
+            jnp.abs(theta[ind_i, ind_j, ind_k, ind_l].ravel())
         )[-5:]
 
         print("Top learned plasticity terms:")
