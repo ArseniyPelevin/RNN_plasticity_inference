@@ -61,33 +61,33 @@ def neural_mse_loss(
 @partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
 def loss(
     key,
-    init_fixed_weights,
-    ff_mask,
-    rec_mask,
     theta,  # Current plasticity coeffs, updated on each iteration
     weights,  # Current initial weights estimate, updated on each iteration
     plasticity_func,  # Static within losses
-    experimental_data,
-    rewarded_pos,
-    step_mask,
-    exp_i,  # Index of the current experiment to extract initial weights from params
+    exp,
     cfg,  # Static within losses
     mode  # 'training' or 'evaluation'
 ):
     """
-    Computes the total loss for the model.
+    Computes the total loss for the model on one experiment trajectory.
 
     Args:
         key (int): Seed for the random number generator.
-        init_fixed_weights (dict): Dictionary of initial weights for fixed layers.
-        ff_mask (array): Feedforward sparsity mask.
-        rec_mask (array): Recurrent sparsity mask.
         theta (array): Current plasticity coeffs, updated on each iteration.
-        weights (dict): Current initial weights estimate for each trainable layer.
+        weights (dict): Current initial weights estimate for each trainable layer,
+            arrays of shape (N_exp, layer_shape...).
         plasticity_func (function): Plasticity function.
-        experimental_data (dict): {"inputs", "xs", "ys", "outputs", "decisions"}.
-        step_mask (N_sessions, N_steps): Mask to distinguish valid and padding steps.
-        exp_i (int): Index of current experiment to extract init_weights from params.
+        exp (dict): Dictionary of variables for one experiment containing:
+            'data': dict with keys:
+                - 'x_train': Training inputs
+                - 'ys': Experimental outputs
+                - 'outputs': Model outputs
+                - 'decisions': Binary decisions
+            'step_mask': Mask to distinguish valid and padding values
+            'init_fixed_weights': dict of arrays of fixed initial weights
+            'feedforward_mask_training': Feedforward connectivity mask
+            'recurrent_mask_training': Recurrent connectivity mask
+            'exp_i': Index of the experiment in the batch
         cfg (object): Configuration object containing the model settings.
         mode (str): "training" or "evaluation" - decides returning trajectories.
 
@@ -102,9 +102,9 @@ def loss(
     """
 
     # Combine fixed and trainable initial weights for the current experiment
-    init_trainable_weights = {layer: layer_weights[exp_i]
+    init_trainable_weights = {layer: layer_weights[exp['exp_i']]
                               for layer, layer_weights in weights.items()}
-    init_weights = {**init_fixed_weights, **init_trainable_weights}
+    init_weights = {**exp['init_fixed_weights'], **init_trainable_weights}
 
     # Apply mask to plasticity coefficients to enforce constraints
     if cfg.plasticity_model == "volterra": # Allow 'if' in jitted func: cfg is static
@@ -137,13 +137,13 @@ def loss(
     simulated_data = model.simulate_trajectory(
         key,
         init_weights,
-        ff_mask,
-        rec_mask,
+        exp['feedforward_mask_training'],
+        exp['recurrent_mask_training'],
         theta,  # Our current plasticity coefficients estimate
         plasticity_func,
-        experimental_data['x_train'],
-        rewarded_pos,
-        step_mask,
+        exp['data']['x_train'],
+        exp['rewarded_pos'],
+        exp['step_mask'],
         cfg,
         mode=('simulation' if mode=='training'  # Only return activation trajectories
               else 'generation_test')  # Return both activation and weight trajectories
@@ -153,9 +153,9 @@ def loss(
     if "neural" in cfg.fit_data:
         neural_loss = neural_mse_loss(
             # subkey,
-            experimental_data['ys'],
+            exp['data']['ys'],
             simulated_data['ys'],
-            step_mask,
+            exp['step_mask'],
             # cfg.neural_recording_sparsity,
             # cfg.measurement_noise_scale,
         )
@@ -165,8 +165,8 @@ def loss(
     if "behavioral" in cfg.fit_data:
         behavioral_loss = behavioral_ce_loss(
             simulated_data['outputs'],
-            experimental_data['decisions'],
-            step_mask
+            exp['data']['decisions'],
+            exp['step_mask']
             )
     else:
         behavioral_loss = 0.0

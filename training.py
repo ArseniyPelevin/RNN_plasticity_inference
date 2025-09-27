@@ -69,10 +69,7 @@ def train(key, cfg, train_experiments, test_experiments):
                 params['theta'],  # Current plasticity coeffs, updated on each iteration
                 params['weights'],  # Current initial weights, updated on each iteration
                 plasticity_func,  # Static within losses
-                exp['data'],
-                exp['rewarded_pos'],
-                exp['step_mask'],
-                exp['exp_i'],
+                exp,
                 cfg,  # Static within losses
                 mode=('training' if not cfg._return_weights_trajec
                       else 'evaluation')  # Return trajectories in aux for debugging

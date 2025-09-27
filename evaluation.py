@@ -164,20 +164,13 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
         for exp in test_experiments:
             key, subkey = jax.random.split(key)
             (_loss, _aux), w_grads = loss_value_and_grad(
-                subkey,  # Pass subkey this time, because loss will not return key
-                exp.init_fixed_weights, # per-experiment arrays of fixed layers
-                exp.feedforward_mask_training,
-                exp.recurrent_mask_training,
-                learned_theta,  # Learned plasticity coefficients by this eval epoch
-                init_weights,  # Current initial weights, to be optimized
-                plasticity_func,  # Static within losses
-                exp.data,
-                exp.rewarded_pos,
-                exp.step_mask,
-                exp.exp_i,
-                cfg,  # Static within losses
-                mode=('training' if not cfg._return_weights_trajec
-                      else 'evaluation')  # Return trajectories in aux for debugging
+                key,
+                learned_theta,
+                init_weights,
+                plasticity_func,
+                exp,
+                cfg,
+                mode=('training' if not cfg._return_weights_trajec else 'evaluation')
             )
 
             updates, opt_state = optimizer.update(w_grads, opt_state, init_weights)
@@ -204,12 +197,8 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
 
             theta,
             init_trainable_weights,
-
             plasticity_func,  # Static within losses
-            exp.data,
-            exp.rewarded_pos,
-            exp.step_mask,
-            exp.exp_i,  # Internal index of the experiment
+            exp,
             cfg,  # Static within losses
             mode='evaluation'
         )
