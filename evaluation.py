@@ -203,28 +203,37 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
             mode='evaluation'
         )
 
-        losses_total[exp_i] = loss
-        if loss_only:
-            continue
+        step_mask = exp['step_mask'].ravel().astype(bool)
 
-        losses_neural[exp_i] = aux['neural']
-        losses_behavioral[exp_i] = aux['behavioral']
-
-        step_mask = exp.step_mask.ravel().astype(bool)
-
+        # Compute R2 on neural activity
+        r2_neural = jnp.array(jnp.nan)
         if 'neural' in cfg.fit_data:  # TODO? Don't use for training, but evaluate
-            r2_neural = evaluate_r2_score_activations(
+            exp_activity = exp['data']['ys']
+            model_activity = aux['trajectories']['ys']
+            exp_activity = exp_activity.reshape(
+                int(np.prod(exp_activity.shape[:2])), -1)
+            model_activity = model_activity.reshape(
+                int(np.prod(model_activity.shape[:2])), -1)
+            r2_neural = evaluate_r2_score(
                 step_mask,
-                exp.data['ys'],
-                aux['trajectories']['ys'])
-            r2s_neural[exp_i] = r2_neural
+                exp_activity,
+                model_activity)
 
+        # Compute R2 on weights only if we have weight trajectories (simulated data)
+        r2_weights = jnp.array(jnp.nan)
         if not cfg.use_experimental_data:
-            r2_weights = evaluate_r2_score_weights(
+            exp_weights = exp['weights_trajec']
+            model_weights = aux['trajectories']['weights']
+            exp_weights = jnp.concatenate([layer.reshape(
+                int(np.prod(layer.shape[:2])), -1)
+                for layer in exp_weights.values()], axis=1)
+            model_weights = jnp.concatenate([layer.reshape(
+                int(np.prod(layer.shape[:2])), -1)
+                for layer in model_weights.values()], axis=1)
+            r2_weights = evaluate_r2_score(
                 step_mask,
-                exp.weights_trajec,
-                aux['trajectories']['weights'],
-                cfg
+                exp_weights,
+                model_weights
             )
             r2s_weights[exp_i] = r2_weights
 
@@ -235,76 +244,28 @@ def evaluate_loss(key, cfg, experiments, plasticity_func,
             'r2_w': r2s_weights
             }
 
-def evaluate_r2_score_activations(step_mask,
-                                  exp_activations,
-                                  model_activations
-                                  ):
+def evaluate_r2_score(step_mask,
+                      exp_values,
+                      model_values
+                      ):
     """
-    Functionality: Evaluates the R2 score for activity.
+    Evaluates the R2 score of trajectories of neural activity or weights.
     Args:
-        step_mask (N_sessions, N_steps_per_session_max),
-        exp_activations (N_sessions, N_steps_per_session_max, N_neurons or 1),
-        model_activations (N_sessions, N_steps_per_session_max, N_neurons or 1)
+        step_mask (N_sessions, N_steps_per_session_max), dtype=float,
+        exp_values (N_sessions*N_steps_per_session_max, ...),
+        model_values (N_sessions*N_steps_per_session_max, ...)
 
     Returns:
-        R2 score for activity, variance-weighted
+        R2 score (float)
     """
-
     # (N_sessions, N_steps_per_session_max, ...) -> (N_steps_per_experiment, ...)
-    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
-    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
+    mask = jnp.ravel(step_mask)[:, None]
 
-    # Choose valid steps
-    exp_activations = exp_activations[step_mask]
-    model_activations = model_activations[step_mask]
+    mean_exp = jnp.sum(exp_values * mask, axis=0) / jnp.sum(mask)
 
-    # Convert to numpy for sklearn
-    exp_activations = np.asarray(jax.device_get(exp_activations))
-    model_activations = np.asarray(jax.device_get(model_activations))
+    ss_res = jnp.sum(((exp_values - model_values) ** 2) * mask)
+    ss_tot = jnp.sum(((exp_values - mean_exp) ** 2) * mask)
 
-    return sklearn.metrics.r2_score(exp_activations,
-                                    model_activations,
-                                    multioutput='variance_weighted')
-
-def evaluate_r2_score_weights(step_mask,
-                              exp_weight_traj,
-                              model_weight_traj,
-                              cfg
-                              ):
-    """
-    Functionality: Evaluates the R2 score for weights.
-    Args:
-        step_mask (N_sessions, N_steps_per_session_max),
-        exp_weight_traj {  # Only if not cfg.use_experimental_data and only plastic
-            'w_ff': (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),
-            'w_rec': (N_sessions, N_steps_per_session_max, N_hidden_post, N_hidden_post
-            ),
-        model_weight_traj,
-        cfg
-
-    Returns:
-        R2 scores for weights, variance-weighted
-    """
-    # (N_sessions, N_steps_per_session_max, N_pre, N_post) ->
-    # (N_steps_per_experiment, N_pre * N_post) for each layer
-    exp_layers = [v.reshape(-1, int(np.prod(v.shape[2:])))
-                 for v in exp_weight_traj.values()]
-    model_layers = [v.reshape(-1, int(np.prod(v.shape[2:])))
-                   for v in model_weight_traj.values()]
-
-    # Concatenate all plastic layers into arrays of shape
-    # (N_steps_per_experiment, sum(N_pre * N_post))
-    exp_weight_trajec = jnp.concatenate(exp_layers, axis=1)
-    model_weight_trajec = jnp.concatenate(model_layers, axis=1)
-
-    # Choose valid steps
-    exp_weight_trajec = exp_weight_trajec[step_mask]
-    model_weight_trajec = model_weight_trajec[step_mask]
-
-    # Convert to numpy for sklearn
-    exp_weight_trajec = np.asarray(jax.device_get(exp_weight_trajec))
-    model_weight_trajec = np.asarray(jax.device_get(model_weight_trajec))
-
-    return sklearn.metrics.r2_score(exp_weight_trajec,
-                                    model_weight_trajec,
-                                    multioutput='variance_weighted')
+    return jnp.where(ss_tot > 0.0,
+                     1.0 - (ss_res / ss_tot),
+                     0.0)
