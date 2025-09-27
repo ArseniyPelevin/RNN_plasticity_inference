@@ -20,6 +20,8 @@ import os
 
 import jax
 import jax.numpy as jnp
+
+# jax.config.update('jax_log_compiles', True)
 import main
 import matplotlib.pyplot as plt
 import numpy as np
@@ -426,104 +428,18 @@ cfg = main.create_config()
 # with open("feedforward_experiments_config_table.json", "r") as f:
 #     feedforward_experiments_config_table = json.load(f)
 
-recurrent_experiments_config_table = {
-     1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
-         "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
-         },
-     11: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
-          "\ninp_spar": 0.2, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
-          },
-     16: {'recurrent': False, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     17: {'recurrent': True, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     18: {'recurrent': True, 'plasticity': "feedforward+recurrent",
-          "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     19: {'recurrent': True, 'plasticity': "recurrent", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     57: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": True
-          },
-     58: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": False
-          },
-     59: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by N_in_i": True
-          },
-     60: {'recurrent': True, 'plasticity': "ff", "N_in": 50, "N_out": 50},
-     61: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50},
-     62: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50,
-          "\ninp_spar_gen": 0.5, "FF_spar_gen": 0.5, "rec_spar_gen": 0.5,
-          "\ninp_spar_train": 1, "FF_spar_train": 1, "rec_spar_train": 1,
-          "init_spar_gen": "{'ff': 1, 'rec': 1}",
-          },
-     172: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           'init_w_mean_std': 'see log csv'},
-     173: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 100, "N_out": 100, 'init_spars': 'ff: 0.5, rec: 0.5',
-           'init_w_mean_std': 'see log csv'},
-     174: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     175: {'recurrent': False, 'plasticity': "ff", 'train_w': "w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     176: {'recurrent': False, 'plasticity': "ff, rec", 'train_w': "none",
-          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     177: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=0.1, rec=-0.4', 'init_w_std': 'ff=1, rec=0.001'},
-     178: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1'},
-     182: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{-1, 1}'},
-     183: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}'},
-     184: {'recurrent': True, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}'},
-     185: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}', 'n_epochs': 250,},
-     186: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}', 'n_epochs': 500,},
-     187: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 0.5}', 'n_epochs': 500,},
-     188: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 50, "N_out": 50, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=2, rec=-1', 'init_w_std': 'ff=1, rec=1',
-           '\nx': '{0,1}', 'n_epochs': 250},
-      190: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 50, "N_out": 50, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=2, rec=-1', 'init_w_std': 'ff=1, rec=1',
-           '\nx': '{0,1}', 'n_epochs': 250, 'seed': 189, "null_model": "random"},
-      191: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 50, "N_out": 50, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=2, rec=-1', 'init_w_std': 'ff=1, rec=1',
-           '\nx': '{0,1}', 'n_epochs': 250, 'seed': 189, "null_model": "zeros"},
+behavioral_experiments_config_table = {
+     # 1: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+     #       "\nN_in": 50, "N_out": 50, 'init_spars': 'ff: 0.5, rec: 0.5',
+     #       '\ninit_w_mean': 'ff=2, rec=-1', 'init_w_std': 'ff=1, rec=1',
+     #       '\nx': '{0,1}', 'n_epochs': 250, 'seed': 189, "null_model": "zeros"},
+     3: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': False,},
+     4: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': True,},
 }
 
 cfg = main.create_config()
 
-cfg.num_exp_train = 10
+cfg.num_exp_train = 25
 cfg.num_exp_test = 5
 cfg.num_test_restarts = 5
 
@@ -541,50 +457,66 @@ cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
 
-cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
-cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
-cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
-cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
-# cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
-# cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
-# cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
-# cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
+# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
+# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
+cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
+cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
+cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 1
-cfg.num_hidden_pre = 19
-cfg.num_hidden_post = 49
-cfg.mean_steps_per_trial = 13
-cfg.sd_steps_per_trial = 0
-cfg.mean_trials_per_session = 5
+cfg.expid = 6
+cfg.num_hidden_pre = 50
+cfg.num_hidden_post = 50
+
 cfg.mean_num_sessions = 1
+cfg.std_num_sessions = 0
+cfg.mean_trials_per_session = 1
+cfg.std_trials_per_session = 0
+cfg.mean_steps_per_trial = 50
+cfg.std_steps_per_trial = 0
+# cfg.mean_trial_time = 29
+# cfg.std_trial_time = 7
+# cfg.dt = 0.1
 
 cfg.num_epochs = 250
-cfg.input_type = 'task'
+cfg.input_type = 'random'
 
 cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
 
-_activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+expdata, _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
 
-
-fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
+fig = plot_coeff_trajectories(cfg.expid, behavioral_experiments_config_table,
                               use_all_81=False)
 fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
+# Plot example input
 import experiment
 
-inputs = experiment.generate_inputs(cfg, key=jax.random.PRNGKey(0), trial_type=0)
+cfg.mean_num_sessions = 3  # Number of sessions/days per experiment/trajectory/animal
+cfg.std_num_sessions = 0  # Standard deviation of sessions/days per animal
+cfg.mean_trials_per_session = 3  # Number of trials/runs in each session/day
+cfg.std_trials_per_session = 0
+cfg.mean_steps_per_trial = 50  # Mean number of time steps in each trial/run
+cfg.std_steps_per_trial = 0  # Standard deviation of time steps in each trial/run
 
-t, v, pos, cue_at_time, rewarded_pos = inputs.values()
+shapes, step_mask = experiment.define_experiments_shapes(jax.random.PRNGKey(0), 1, cfg)
+inputs = experiment.generate_inputs(jax.random.PRNGKey(0),
+                                 shapes, step_mask[0],
+                                 cfg, exp_i=0)
+
+t, v, pos, cue_at_time, rewarded_pos = [v[0] for v in inputs.values()]
 fig, ax = plt.subplots(figsize=(10,4))
-ax.plot(t, cue_at_time*50, label='Visual cue', linewidth=2)
-ax.plot(t, pos, label='Position (cm)', linewidth=2)
+ax.plot(cue_at_time*50, label='Visual cue', linewidth=2)
+ax.plot(pos, label='Position (cm)', linewidth=2)
 # ax.plot(t, segment_at_time*10, label='10 cm segment', linewidth=2)
-ax.plot(t, v*100+3, label='Velocity x 10 (cm/s)',
+ax.plot(v*10+3, label='Velocity x 10 (cm/s)',
         linewidth=2, linestyle='--')
-ax.plot(t, rewarded_pos*10, label='Rewarded position',
+ax.plot(rewarded_pos*10, label='Rewarded position',
         linewidth=2, linestyle=':', color='green')
 ax.legend()
 ax.set_xlabel('Time (s)')
