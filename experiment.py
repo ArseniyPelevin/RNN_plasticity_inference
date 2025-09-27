@@ -11,18 +11,24 @@ from utils import sample_truncated_normal
 def generate_experiments(key, cfg,
                          generation_theta, generation_func,
                          mode="train"):
-    """ Generate all experiments/trajectories as instances of class Experiment.
+    """ Generate all experiments/trajectories.
+
+    Args:
+        key (jax.random.PRNGKey): Random key for generating random numbers.
+        cfg (dict): Configuration dictionary.
+        generation_theta: 4D tensor of plasticity coefficients.
+        generation_func: Plasticity function used for generation.
+        mode: "train" or "test", decides if weight trajectories are returned.
 
     Returns:
-        experiments (list): List of dictionaries with attributes of class Experiment.
+        experiments (dict): Dictionary of arrays
+            of shape (N_exp, ... ) for each variable of generated experiments.
     """
 
     if mode == "train":
         num_experiments = cfg.num_exp_train
     elif mode == "test":
         num_experiments = cfg.num_exp_test
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
     print(f"\nGenerating {num_experiments} {mode} trajectories")
 
     # Presplit keys for each experiment
@@ -45,7 +51,7 @@ def generate_experiments(key, cfg,
         print(f"Generated {mode} experiment {exp_i} with {shapes[0][exp_i]} sessions")
 
     # Aggregate into stacked arrays
-    data_keys = ['x_train', 'ys', 'outputs', 'decisions']
+    data_keys = list(experiments_list[0]['data'].keys())
     data = {k: jnp.array([e['data'][k] for e in experiments_list]) for k in data_keys}
 
     init_fixed_keys = list(experiments_list[0]['init_fixed_weights'].keys())
@@ -73,16 +79,17 @@ def generate_experiments(key, cfg,
     if 'weights_trajec' in experiments_list[0]:
         experiments['weights_trajec'] = weights_trajec
 
-    for k, v in experiments['data'].items():
-        print(f" data['{k}'] shape: {v.shape}")
-    for k, v in experiments['init_fixed_weights'].items():
-        print(f" init_fixed_weights['{k}'] shape: {v.shape}")
-    if 'weights_trajec' in experiments:
-        for k, v in experiments['weights_trajec'].items():
-            print(f" weights_trajec['{k}'] shape: {v.shape}")
-    for k, v in experiments.items():
-        if k != 'data' and k != 'init_fixed_weights' and k != 'weights_trajec':
-            print(f"{k} shape: {v.shape}")
+    # # Debugging: print shapes of all arrays in experiments
+    # for k, v in experiments['data'].items():
+    #     print(f" data['{k}'] shape: {v.shape}")
+    # for k, v in experiments['init_fixed_weights'].items():
+    #     print(f" init_fixed_weights['{k}'] shape: {v.shape}")
+    # if 'weights_trajec' in experiments:
+    #     for k, v in experiments['weights_trajec'].items():
+    #         print(f" weights_trajec['{k}'] shape: {v.shape}")
+    # for k, v in experiments.items():
+    #     if k != 'data' and k != 'init_fixed_weights' and k != 'weights_trajec':
+    #         print(f"{k} shape: {v.shape}")
 
     return experiments
 
@@ -153,8 +160,8 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         cfg: Configuration dictionary.
         shapes: Tuple of (num_sessions, num_trials, num_steps) arrays,
         generation_theta: 4D tensor of plasticity coefficients.
-        generation_func: Function to compute plasticity.
-        mode: "train" or "test".
+        generation_func: Plasticity function used for generation.
+        mode: "train" or "test", decides if weight trajectories are returned.
     """
     exp = {}
     exp['data'] = {}
@@ -203,7 +210,7 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         exp['feedforward_mask_training']
     )
 
-    # Initialize weights of _all_ layers for _generation_ of this experiment
+    # Initialize weights of all layers for generation of this experiment
     exp['init_weights'] = model.initialize_weights(
         weights_key,
         cfg,
@@ -211,13 +218,13 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         cfg.init_weights_mean_generation
         )
 
+    # Initialize weights of fixed (non-trainable) layers for training of this experiment
     exp['init_fixed_weights'] = model.initialize_weights(
         fixed_weights_key,
         cfg,
-        cfg.init_weights_std_fixed,
-        cfg.init_weights_mean_fixed,
-        [layer for layer in ['w_ff', 'w_rec', 'w_out'] 
-         if layer not in cfg.trainable_init_weights]
+        cfg.init_weights_std_training,
+        layers = [layer for layer in ['w_ff', 'w_rec', 'w_out']
+                  if layer not in cfg.trainable_init_weights]
     )
 
     # Apply functional sparsity to plastic weights initialization during generation
@@ -304,6 +311,8 @@ def nested_input_lists_to_tensors(inputs, max_sessions, max_steps):
     Args:
         inputs: per-input-variable dict of nested lists,
             outer list is over sessions, inner list is over time steps in session
+        max_sessions: Maximum number of sessions across all experiments.
+        max_steps: Maximum number of steps per session across all experiments.
 
     Returns:
         inputs_tensors: dict of arrays,
@@ -323,7 +332,7 @@ def nested_input_lists_to_tensors(inputs, max_sessions, max_steps):
     return inputs_tensors
 
 def gen_2acdc(keys, n, lambd=0.7, max_rep=3):
-    """ Generate a 2AFC sequence with Poisson-distributed repeats. """
+    """ Generate a 2AFC sequence of length n with Poisson-distributed repeats. """
 
     rep_key, first_key = keys
 
@@ -357,8 +366,9 @@ def generate_task_trial_input(key, num_steps, cfg, trial_type):
 
     Args:
         key: JAX random key.
-        trial_type: Integer indicating the type of trial (0 - near, 1 - far).
+        num_steps: Number of time steps in the trial.
         cfg: Configuration dictionary.
+        trial_type: Integer indicating the type of trial (0 - near, 1 - far).
 
     Returns:
         inputs: {'t' (num_steps,): trial time in seconds,
@@ -367,11 +377,6 @@ def generate_task_trial_input(key, num_steps, cfg, trial_type):
                  'cue' (num_steps,): visual cue type at each time step,
                  'rewarded_pos': (num_steps,) binary array of rewarded positions}
     """
-    # trial_time_key, v_pos_key = jax.random.split(key)
-    # trial_time = sample_truncated_normal(
-    #     trial_time_key,
-    #     mean=cfg.mean_trial_time,
-    #     std=cfg.std_trial_time)
 
     # Generate velocity and position inputs
     t, v, pos = generate_velocity_and_position(key, num_steps, cfg)
