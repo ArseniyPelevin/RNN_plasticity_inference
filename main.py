@@ -134,6 +134,7 @@ config = {
     "regularization_scale_weights": 0,
 
 # Logging
+    "do_evaluation": True,
     "log_expdata": True,
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
@@ -191,11 +192,15 @@ def validate_config(cfg):
         cfg.std_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
 
     for param in config:
-        if 'sparsity' in param or 'scale' in param or 'std' in param:
-            if type(cfg[param]) is omegaconf.dictconfig.DictConfig:
-                cfg[param] = {k: float(v) for k, v in cfg[param].items()}
+        if "sparsity" in param or "scale" in param or "std" in param:
+            val = cfg[param]
+            if type(val) is omegaconf.dictconfig.DictConfig:
+                # convert only int leaves
+                cfg[param] = {k: (float(v) if type(v) is int else v)  # may be str
+                              for k, v in val.items()}
             else:
-                cfg[param] = float(cfg[param])
+                if type(val) is int:
+                    cfg[param] = float(val)
 
     return cfg
 
@@ -249,7 +254,8 @@ def save_results(cfg, expdata, train_time):
         elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
             df[cfg_key] = ', '.join(str(v) for v in cfg_value)
 
-    _logdata_path = utils.save_logs(cfg, df)
+    if cfg.log_expdata:
+        _logdata_path = utils.save_logs(cfg, df)
 
 if __name__ == "__main__":
     cfg = create_config()

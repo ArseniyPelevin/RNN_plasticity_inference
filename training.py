@@ -115,6 +115,8 @@ def train(key, cfg, train_experiments, test_experiments):
             print(f"Train Loss: {train_loss_median:.5f}")
             expdata.setdefault("train_loss_median", []).append(train_loss_median)
 
+            if not cfg.do_evaluation:
+                continue  # Skip evaluation on test set
             key, eval_key = jax.random.split(key)
             expdata, _losses_and_r2 = evaluation.evaluate(
                 eval_key, cfg, params['theta'], plasticity_func, init_theta,
@@ -124,4 +126,3 @@ def train(key, cfg, train_experiments, test_experiments):
 
     # Return of train()
     return expdata, _activation_trajs, _losses_and_r2s
-
