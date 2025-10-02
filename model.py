@@ -27,7 +27,7 @@ def initialize_weights(key, cfg,
     """
     def initialize_layer_weights(key, num_pre, num_post, mean, std):
         if std == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
-            std = 1 / jnp.sqrt(num_pre + num_post)
+            std = 1 / jnp.sqrt(num_pre)  # If used at all - does not account for mask
 
         return jax.random.normal(key, shape=(num_pre, num_post)) * std + mean
 
@@ -111,6 +111,7 @@ def network_forward(key, weights,
     # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
     x += input_noise * cfg.presynaptic_noise_std
+    x = jnp.clip(x, min=0)  # Make input positive
 
     # Feedforward layer: x -- w_ff --> y
 
@@ -127,26 +128,32 @@ def network_forward(key, weights,
         y += y @ w_rec  # + b
 
     # Apply nonlinearity
-    y = jax.nn.sigmoid(y)
+    if cfg.input_type == 'task':
+        y = jax.nn.sigmoid(y-1)  # Task inputs are 1-centered
+    elif cfg.input_type == 'random':
+        y = jax.nn.sigmoid(y)  # Random inputs are 0-centered
 
     # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
     output = (y @ weights['w_out']).squeeze()  # + b_out
 
-    return y, output
+    return x, y, output
 
-def compute_decision(key, output):
+def compute_decision(key, output, min_lick_p):
     """ Make binary decision based on output (probability of decision).
     To lick or not to lick at this step.
 
     Args:
         key: JAX random key.
-        output (1,): Average of postsynaptic activity - probability of decision.
+        output (1,): Pre-sigmoid logit (float) for decision probability.
+        min_lick_p (float): Minimum probability of licking to encourage exploration.
 
     Returns:
         decision (float): Binary decision (0 or 1).
     """
 
-    return jax.random.bernoulli(key, jax.nn.sigmoid(output)).astype(float)
+    return jax.random.bernoulli(key, jnp.maximum(min_lick_p,  # To encourage exploration
+                                             jax.nn.sigmoid(output))
+                                ).astype(float)  # Bernoulli returns bool
 
 def compute_reward(key, decision):
     """ Compute reward based on binary decision.
@@ -170,7 +177,7 @@ def compute_expected_reward(reward, old_expected_reward):
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_weights(
     x, y, old_weights,
-    reward, expected_reward,
+    reward_term,
     theta, plasticity_func,
     cfg
 ):
@@ -182,8 +189,7 @@ def update_weights(
         x (array): x (presynaptic activations)  # TODO rename into x
         y (array): y (postsynaptic activations)
         weights (dict): {w_ff, w_rec, w_out}
-        reward (float): Reward at this timestep. TODO Not implemented
-        expected_reward (float): Expected reward at this timestep.
+        reward_term (float): Reward expectation error, only if licked (d=1).
         theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         cfg (dict): Configuration dictionary.
@@ -236,11 +242,6 @@ def update_weights(
             "y size must match w_rec shape"
         assert old_weights['w_rec'].shape[1] == y.shape[0], \
             "y size must match w_rec shape"
-
-    # using expected reward or just the reward:
-    # 0 if expected_reward == reward
-    reward_term = reward - expected_reward
-    # reward_term = reward
 
     new_weights = {}
     # Update freedforward weights if plastic, else copy old
@@ -371,39 +372,56 @@ def simulate_trajectory(
 
             Returns:
                 weights: Updated weighteters after the step.
-                output_data: {y, output[, decision[, weights]]}
+                output_data: {y, - (N_hidden_post,) in (0, 1)
+                              output[, - (1,) pre-sigmoid logit (float)
+                              decision[, - (1,) binary decision {0, 1}, if generation
+                              weights]] - (dict of plastic layers), if test
+                              }
             """
-            x, rewarded_pos, valid, keys = step_variables
+            x_input, rewarded_pos, valid, keys = step_variables
 
             def _do_step(w):
                 output_data = {}
-                y, output = network_forward(keys[0],
-                                            w,
-                                            ff_mask, rec_mask,
-                                            ff_scale, rec_scale,
-                                            x, cfg)
+                x, y, output = network_forward(keys[0],
+                                               w,
+                                               ff_mask, rec_mask,
+                                               ff_scale, rec_scale,
+                                               x_input,  # Clean input without noise
+                                               cfg)
                 output_data['ys'] = y
                 output_data['outputs'] = output
 
-                decision = compute_decision(keys[1], output)
-                if 'generation' in mode:
+                decision = compute_decision(keys[1], output, cfg.min_lick_probability)
+                if ('generation' in mode  # For generation/evaluation/debugging
+                    or "reinforcement" in cfg.fit_data  # For reinforcement learning
+                    ):
                     output_data['decisions'] = decision
 
                 # Reward if lick at rewarded position
                 reward = decision * rewarded_pos  # TODO cfg.reward_scale
-                expected_reward = compute_expected_reward(reward, None)
+                # expected_reward = compute_expected_reward(reward, 0)  # TODO?
+                # Treat lick probability as expected reward
+                expected_reward = jax.nn.sigmoid(output)
+                # Reward expectation error, only if licked
+                reward_term = (reward - expected_reward) * decision
 
                 w_updated = update_weights(
-                    x, y, w, reward, expected_reward,
+                    x, y, w, reward_term,
                     theta, plasticity_func, cfg)
 
                 if 'test' in mode:
-                    output_data['weights'] = {}
+                    output_data['xs'] = x  # For debugging
+                    output_data['weights'] = {}  # For evaluation/debugging
                     # Only return trajectories of plastic weights (from updated weights)
                     if "ff" in cfg.plasticity_layers:
                         output_data['weights']['w_ff'] = w_updated['w_ff']
                     if "rec" in cfg.plasticity_layers:
                         output_data['weights']['w_rec'] = w_updated['w_rec']
+
+                if ('test' in mode  # For evaluation/debugging
+                    or 'reinforcement' in cfg.fit_data  # For reinforcement learning
+                    ):
+                    output_data['rewards'] = reward
 
                 return w_updated, output_data
 
@@ -414,16 +432,20 @@ def simulate_trajectory(
                 output_data['ys'] = jnp.zeros(cfg.num_hidden_post)
                 output_data['outputs'] = jnp.array(0.0)
 
-                if 'generation' in mode:
+                if 'generation' in mode or "reinforcement" in cfg.fit_data:
                     output_data['decisions'] = jnp.array(0.0)
 
                 if 'test' in mode:
+                    output_data['xs'] = jnp.zeros(cfg.num_hidden_pre)  # For debugging
                     output_data['weights'] = {}
                     # return current (unchanged) weights
                     if "ff" in cfg.plasticity_layers:
                         output_data['weights']['w_ff'] = w['w_ff']
                     if "rec" in cfg.plasticity_layers:
                         output_data['weights']['w_rec'] = w['w_rec']
+
+                if 'test' in mode or 'reinforcement' in cfg.fit_data:
+                    output_data['rewards'] = jnp.array(0.0)
 
                 return w, output_data
 

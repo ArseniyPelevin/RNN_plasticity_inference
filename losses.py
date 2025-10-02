@@ -171,9 +171,19 @@ def loss(
     else:
         behavioral_loss = 0.0
 
-    loss = reg_theta + reg_w + neural_loss + behavioral_loss
+    if "reinforcement" in cfg.fit_data:
+        R = jnp.sum(simulated_data['rewards'])
+        D = jnp.sum(simulated_data['decisions'])
+        reward_loss = - (R - cfg.lick_cost * D)
+    else:
+        reward_loss = 0.0
+
+    loss = reg_theta + reg_w + neural_loss + behavioral_loss + reward_loss
     aux = {'trajectories': simulated_data if mode=='evaluation' else None,
            'neural': neural_loss,
            'behavioral': behavioral_loss}
+    if "reinforcement" in cfg.fit_data:
+        aux['total_reward'] = R
+        aux['total_licks'] = D
 
     return loss, aux

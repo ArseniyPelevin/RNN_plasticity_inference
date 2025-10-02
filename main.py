@@ -8,11 +8,12 @@ import pandas as pd
 import synapse
 import training
 import utils
+import json
 
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
-coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
+# coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
     "expid": 17, # For saving results and seeding random
@@ -52,9 +53,9 @@ config = {
 
 # Network architecture
     # For input_type 'task':
-    "num_place_neurons": 20,
-    "num_visual_neurons_per_type": 10,
-    "num_velocity_neurons": 10,  # TODO how is it supposed to work?
+    "num_place_neurons": 10,
+    "num_visual_neurons_per_type": 5,
+    "num_velocity_neurons": 1,
     # For input_type 'random':
     "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
@@ -84,8 +85,8 @@ config = {
     "place_field_amplitude_std": 0.1,
     "place_field_center_jitter": 1.0,  # cm
 
-    "presynaptic_firing_mean": 0,  # TODO rename into x
-    "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
+    "presynaptic_firing_mean": 0,  # Mean firing rate of presynaptic neurons TODO x
+    "presynaptic_firing_std": 1,  # Standard deviation of random input TODO x
     "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
 
     "feedforward_input_scale": 1,  # Scale of feedforward weights
@@ -103,6 +104,7 @@ config = {
 
     "reward_scale": 0,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
+    "min_lick_probability": 0.05,  # To encourage exploration
 
     "synapse_learning_rate": {'ff': 1, 'rec': 1},
 
@@ -133,15 +135,21 @@ config = {
     "regularization_type_weights": "none",  # "l1", "l2", "none"
     "regularization_scale_weights": 0,
 
+    "lick_cost": 0.1,  # Cost of each lick in reward-based tasks
+
 # Logging
     "do_evaluation": True,
+    "log_config": True,
+    "log_generated_experiments": False,
+    "log_trajectories": True,
     "log_expdata": True,
+    "log_final_params": True,
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
     "fig_dir": "../../../../05_figures/",
 
-    "_return_weights_trajec": False,  # For debugging
+    "log_trajectories": False,  # For debugging
 }
 
 def create_config():
@@ -179,14 +187,15 @@ def validate_config(cfg):
     if type(cfg.fit_data) is str:
         cfg.fit_data = [cfg.fit_data]
     # Validate fit_data contains 'behavioral' or 'neural'
-    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
+    # if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
+    #     raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
 
     if cfg.input_type == 'task':
-        num_visual_types = 5  # Teleportation is not encoded, it is lack of input
+        num_visual_types = 6  # Teleportation IS encoded
         cfg.num_hidden_pre = (cfg.num_place_neurons
-                              + num_visual_types * cfg.num_visual_neurons_per_type)
-                              # + cfg.num_velocity_neurons)  # TODO
+                              + num_visual_types * cfg.num_visual_neurons_per_type
+                              + cfg.num_velocity_neurons
+                              )
 
         cfg.mean_steps_per_trial = int(cfg.mean_trial_time / cfg.dt)
         cfg.std_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
@@ -231,17 +240,25 @@ def run_experiment(cfg, seed=None):
     test_experiments = generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    expdata, _activation_trajs, _losses_and_r2s = (
+    params, expdata, _activation_trajs, _losses_and_r2s = (
         training.train(train_key, cfg, train_experiments, test_experiments))
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
-    save_results(cfg, expdata, train_time)
+    save_results(cfg, params, expdata, train_time, _activation_trajs)
 
-    return expdata, _activation_trajs, _losses_and_r2s
+    return params, expdata, _activation_trajs, _losses_and_r2s
 
-def save_results(cfg, expdata, train_time):
+def save_results(cfg, params, expdata, train_time, activation_trajs):
     """Save training logs and parameters."""
+
+    # Save final parameters
+    if cfg.log_final_params:
+        export_dict = {'params': params,
+                       'trajectories': {str(e): tr for e, tr in enumerate(activation_trajs)}}
+        utils.save_nested_hdf5(export_dict, 
+                               cfg.log_dir + f"exp_{cfg.expid}_final_params.h5")
+
     df = pd.DataFrame.from_dict(expdata)
     df["train_time"] = train_time
 
@@ -254,6 +271,7 @@ def save_results(cfg, expdata, train_time):
         elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
             df[cfg_key] = ', '.join(str(v) for v in cfg_value)
 
+    # Save expdata as .csv
     if cfg.log_expdata:
         _logdata_path = utils.save_logs(cfg, df)
 

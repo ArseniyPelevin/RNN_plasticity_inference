@@ -9,6 +9,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
+import h5py
 
 import jax
 import jax.numpy as jnp
@@ -282,11 +283,11 @@ def save_logs(cfg, df):
         Path: The path where the logs were saved.
     """
     
-    local_random = random.Random()
-    local_random.seed(os.urandom(10))
-    sleep_duration = local_random.uniform(1, 5)
-    time.sleep(sleep_duration)
-    print(f"Slept for {sleep_duration:.2f} seconds.")
+    # local_random = random.Random()
+    # local_random.seed(os.urandom(10))
+    # sleep_duration = local_random.uniform(1, 5)
+    # time.sleep(sleep_duration)
+    # print(f"Slept for {sleep_duration:.2f} seconds.")
 
     logdata_path = Path(cfg.log_dir)
     if cfg.log_expdata:
@@ -298,7 +299,7 @@ def save_logs(cfg, df):
         lock_file = csv_file.with_suffix(".lock")
         while lock_file.exists():
             print(f"Waiting for lock on {csv_file}...")
-            time.sleep(random.uniform(1, 5))
+            # time.sleep(random.uniform(1, 5))
 
         try:
             lock_file.touch()
@@ -308,6 +309,33 @@ def save_logs(cfg, df):
             lock_file.unlink()
 
     return logdata_path
+
+def save_nested_hdf5(obj, fname):
+    """Save a nested dict of arrays to HDF5, preserving the tree."""
+    with h5py.File(fname, "w") as f:
+        def _recursively_write(group, d):
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    subgroup = group.create_group(k)
+                    _recursively_write(subgroup, v)
+                else:
+                    arr = np.array(jax.device_get(v))
+                    group.create_dataset(k, data=arr, compression="gzip", compression_opts=4)
+        _recursively_write(f, obj)
+
+def load_nested_hdf5(fname):
+    """Load HDF5 into nested dict (datasets -> numpy arrays)."""
+    def _recursively_read(h):
+        out = {}
+        for k in h:
+            item = h[k]
+            if isinstance(item, h5py.Group):
+                out[k] = _recursively_read(item)
+            else:
+                out[k] = item[()]  # read dataset into numpy array
+        return out
+    with h5py.File(fname, "r") as f:
+        return _recursively_read(f)
 
 
 def validate_config(cfg: Any) -> Any:

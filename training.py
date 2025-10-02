@@ -72,8 +72,8 @@ def train(key, cfg, train_experiments, test_experiments):
                 plasticity_func,  # Static within losses
                 exp,
                 cfg,  # Static within losses
-                mode=('training' if not cfg._return_weights_trajec
-                      else 'evaluation')  # Return trajectories in aux for debugging
+                mode=('training' if not cfg.log_trajectories
+                      else 'evaluation')  # Return trajectories in aux
             )
 
             grads = {'theta': theta_grads, 'weights': weights_grads}
@@ -87,6 +87,9 @@ def train(key, cfg, train_experiments, test_experiments):
                 'neural': aux['neural'],
                 'behavioral': aux['behavioral']
             }
+            if 'reinforcement' in cfg.fit_data:
+                all_losses['total_reward'] = aux['total_reward']
+                all_losses['total_licks'] = aux['total_licks']
 
             return (params, opt_state), (all_losses, _activation_trajs)
 
@@ -125,4 +128,4 @@ def train(key, cfg, train_experiments, test_experiments):
             _losses_and_r2s[epoch] = _losses_and_r2
 
     # Return of train()
-    return expdata, _activation_trajs, _losses_and_r2s
+    return params, expdata, _activation_trajs, _losses_and_r2s  #, exps_losses
