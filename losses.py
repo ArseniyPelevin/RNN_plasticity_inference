@@ -57,6 +57,30 @@ def neural_mse_loss(
     mse_loss = jnp.sum(se) / norm
     return mse_loss
 
+def reinforce_loss(outputs, decisions, rewards, step_mask, lick_cost):
+    """ Computes the REINFORCE loss of one experiment trajectory.
+
+    Args:
+        outputs (array): (N_sessions, N_steps,) Array of logits (output before sigmoid).
+        decisions (array): (N_sessions, N_steps,) Array of binary decisions.
+        rewards (array): (N_sessions, N_steps,) Array of rewards at each step.
+        step_mask (array): (N_sessions, N_steps,) Mask of valid and padding values.
+        lick_cost (float): Cost of each decision.
+
+    Returns:
+        loss (float): REINFORCE loss.
+        R (float): Total reward.
+        D (float): Total number of decisions.
+    """
+    # Compute log Bernoulli probabilities of the decisions made
+    # log(p_t(d_t=1)) = d_t * log(p_t) + (1-d_t) * log(1-p_t) =
+    # = d_t * logit - log(1+exp(logit))
+    logpi = decisions * outputs - jax.nn.softplus(outputs)
+    logpi_sum = jnp.sum(logpi * step_mask)
+    R = jnp.sum(rewards * step_mask)
+    D = jnp.sum(decisions * step_mask)
+    S = R - lick_cost * D
+    return -logpi_sum * S, R, D
 
 @partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
 def loss(
@@ -171,7 +195,18 @@ def loss(
     else:
         behavioral_loss = 0.0
 
-    loss = reg_theta + reg_w + neural_loss + behavioral_loss
+    if "reinforcement" in cfg.fit_data:
+        reinforcement_loss, R, D = reinforce_loss(
+            simulated_data['outputs'],
+            simulated_data['decisions'],
+            simulated_data['rewards'],
+            exp['step_mask'],
+            cfg.lick_cost
+        )
+    else:
+        reinforcement_loss, R, D = 0.0, 0.0, 0.0
+
+    loss = reg_theta + reg_w + neural_loss + behavioral_loss + reinforcement_loss
     aux = {'trajectories': simulated_data if mode=='evaluation' else None,
            'neural': neural_loss,
            'behavioral': behavioral_loss}
