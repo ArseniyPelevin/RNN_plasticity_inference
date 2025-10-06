@@ -20,6 +20,8 @@ import os
 
 import jax
 import jax.numpy as jnp
+
+# jax.config.update('jax_log_compiles', True)
 import main
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,8 +30,9 @@ import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-
 # +
+
+
 def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     """
     Plot a single experiment's loss (top) and coefficient trajectories (bottom).
@@ -52,26 +55,49 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     df = pd.read_csv(fpath)
 
     # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
-    if 'train_loss_median' in df.columns:  # Use train_loss_median as marker of new eval
-        fig, axs = plt.subplots(3, 1, figsize=(10, 8),
-                                gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
-                                layout='tight')
-        top_ax, eval_ax, coeff_ax = axs
+    has_eval = 'train_loss_median' in df.columns
+
+    # For 27-mode we keep existing layout; for 81-mode we will recreate below with 3 coeff subplots
+    if not use_all_81:
+        if has_eval:
+            fig, axs = plt.subplots(3, 1, figsize=(10, 8),
+                                    gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
+                                    layout='tight')
+            top_ax, eval_ax, coeff_ax = axs
+        else:
+            fig, axs = plt.subplots(2, 1, figsize=(12, 7))
+            top_ax, coeff_ax = axs
+            eval_ax = None
     else:
-        fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-        top_ax, coeff_ax = axs
-        eval_ax = None
+        # placeholder; we'll create the desired layout (loss + optional eval + 3 coeff subplots)
+        top_ax = eval_ax = coeff_ax = None
 
     # --- Top: loss subplot (backwards-compatible) ---
     x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
 
+    # If we didn't yet create axes (use_all_81 True), create them now properly
+    if use_all_81:
+        if has_eval:
+            fig, axs = plt.subplots(5, 1, figsize=(12, 13),
+                                    gridspec_kw={'height_ratios': [1, 1, 2, 2, 2]}, sharex=True)
+            top_ax, eval_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
+            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
+        else:
+            fig, axs = plt.subplots(4, 1, figsize=(12, 13),
+                                    gridspec_kw={'height_ratios': [1, 2, 2, 2]}, sharex=True)
+            top_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
+            eval_ax = None
+            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
+    else:
+        # we already have coeff_ax for 27-mode
+        coeff_axes = [coeff_ax]
+
+    # plot loss on top_ax
     if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss_median'],
-                    color='blue', label='train_loss_median')
-        top_ax.plot(x_epochs, df['test_loss_median'],
-                    color='red', label='test_loss_median')
+        top_ax.plot(x_epochs, df['train_loss_median'], color='blue', label='train_loss_median')
+        top_ax.plot(x_epochs, df['test_loss_median'], color='red', label='test_loss_median')
     elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
-                                         'test_loss_mean','test_loss_std']):
+                                           'test_loss_mean','test_loss_std']):
         top_ax.plot(x_epochs, df['train_loss_mean'], color='blue', label='train_loss')
         top_ax.fill_between(x_epochs,
                             df['train_loss_mean'] - df['train_loss_std'],
@@ -138,18 +164,16 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
 
     # Fallback: if nothing found
     if not data_cols:
-        coeff_ax.text(0.5, 0.5, "No coefficient columns found in CSV",
-                      ha='center', va='center')
+        coeff_axes[0].text(0.5, 0.5, "No coefficient columns found in CSV",
+                            ha='center', va='center')
         plt.show()
         return
 
-    # group by w-exponent (third digit of suffix) for coloring / styling
-    groups = {}
+    # parse suffixes
     parsed = {}
     for c in data_cols:
         suffix = str(c).split('_')[-1]
         a, b, w, r = map(int, list(suffix))
-        groups.setdefault(w, []).append(c)
         parsed[c] = (a, b, w, r)
 
     # deterministic ordering key
@@ -158,16 +182,37 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
         return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
                 else (0, 0, 0, 0))
 
-    # assign colors within each w-group
+    # assign colors grouped like the 27-mode so r=0 colors match the old plot
+    # build ordered list of base (a,b,w) keys in deterministic order
+    base_keys = []
+    seen = set()
+    for c in sorted(data_cols, key=col_key):
+        a,b,w,r = parsed[c]
+        key3 = (a,b,w)
+        if key3 not in seen:
+            seen.add(key3)
+            base_keys.append(key3)
+
+    # assign colors per base_key but grouped by w (to mimic 27-mode coloring)
     color_map = {}
-    for _wexp, cols in groups.items():
-        cols_sorted = sorted(cols, key=col_key)
-        n = len(cols_sorted)
+    for w_val in sorted({k[2] for k in base_keys}):
+        group_keys = [k for k in base_keys if k[2] == w_val]
+        n = len(group_keys)
         cmap = plt.get_cmap('Set1')
-        colors = [cmap(0.5)] if n == 1 else [cmap(t)
-                                             for t in np.linspace(0, 1, n)]
-        for col, colcolor in zip(cols_sorted, colors, strict=False):
-            color_map[col] = colcolor
+        if n <= 1:
+            colors = [cmap(0.5)]
+        else:
+            colors = [cmap(t) for t in np.linspace(0, 1, n)]
+        for key3, colcolor in zip(group_keys, colors, strict=False):
+            # assign this color to every column that matches the (a,b,w) base key
+            for cc in data_cols:
+                if parsed[cc][:3] == key3:
+                    color_map[cc] = colcolor
+
+    # fallback: ensure every column has a color
+    for c in data_cols:
+        if c not in color_map:
+            color_map[c] = plt.get_cmap('tab10')(0)
 
     # pretty labels (now include r as well)
     def pretty_label(col):
@@ -187,186 +232,214 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
 
     x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
-    ax = coeff_ax
-
-    # jitter in axis units: small horizontal offset for R groups
-    jitter = 1.0
     x_vals = np.asarray(x)
 
-    # plot lines + markers according to R
-    for c in sorted(data_cols, key=col_key):
-        a, b, wexp, rexp = parsed[c]
-        lw = 3 if c in highlight else 2
-        ls = linestyle_map.get(wexp, '-')
-        color = color_map.get(c, 'k')
-        # shift both line and markers by rexp * jitter (in axis units)
-        x_plot = x_vals + (rexp * jitter)
-        ax.plot(x_plot, df[c], label=label_map.get(c, c),
-                linewidth=lw, linestyle=ls, color=color)
-        # overlay markers for R=1 and R=2 (same shift)
-        if rexp == 1:
-            ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                    markerfacecolor=color, markeredgecolor=color)
-        elif rexp == 2:
-            ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                    markerfacecolor='none', markeredgecolor=color)
-
-    # title with parameters if available
-    basename = os.path.basename(fpath)
-    exp_num = exp_id
-    if exp_num is not None and exp_num in params_table:
-        p = params_table[exp_num]
-        param_str = ', '.join(f'{key}={value}' for key, value in p.items())
-        ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
-    else:
-        ax.set_title(basename, fontsize=12)
-
-    ax.grid(True)
-    ax.set_xlabel('epoch')
-
-    # build legend handles for each R block separately
-    # (preserve same base 27 order)
-    # create ordered list of 27 unique (a,b,w) combos
-    base_keys = []
-    seen = set()
-    for c in sorted(data_cols, key=col_key):
-        a,b,w,r = parsed[c]
-        key3 = (a,b,w)
-        if key3 not in seen:
-            seen.add(key3)
-            base_keys.append(key3)
-
-    # helper to make a proxy handle (include marker for R1/R2)
-    def proxy_handle(col, rexp):
-        a, b, wexp, _ = parsed[col]
-        color = color_map.get(col, 'k')
-        ls = linestyle_map.get(wexp, '-')
-        lw = 3 if col in highlight else 2
-        if rexp == 0:
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls)
-        if rexp == 1:
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                          marker='o', markerfacecolor=color, markersize=6)
-        return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                      marker='o', markerfacecolor='none', markersize=6)
-
-    # now build handles/labels per R
-    handles_by_r = {0: [], 1: [], 2: []}
-    labels_by_r = {0: [], 1: [], 2: []}
-    for rexp in (0,1,2):
-        for key3 in base_keys:
-            # find column with this (a,b,w) and r=rexp
-            target = next((cc for cc in data_cols
-                           if parsed[cc][:3] == key3
-                           and parsed[cc][3] == rexp), None)
-            if target is None:
-                h = Line2D([0],[0], color='none')
-                lbl = ''
-            else:
-                h = proxy_handle(target, rexp)
-                lbl = label_map.get(target, target)
-            handles_by_r[rexp].append(h)
-            labels_by_r[rexp].append(lbl)
-
+    # --- Special handling for use_all_81: three subplots, same y-limits, no markers, no jitter ---
     if use_all_81:
-        # --- Build legend with columns = XY combos (9 columns)
-        # and rows = (w,r) combos (9 rows)
-        # Desired per-column order for a given (x,y):
-        # (w,r) = (0,0),(1,0),(2,0),(0,1),(1,1),(2,1),(0,2),(1,2),(2,2)
-        xy_keys = []
-        seen_xy = set()
+        # compute global y limits across all data columns
+        all_vals = np.hstack([df[c].values for c in data_cols])
+        ymin, ymax = np.min(all_vals), np.max(all_vals)
+        pad = max(1e-8, 0.05 * (ymax - ymin)) if ymax > ymin else 0.1
+        y_lim = (ymin - pad, ymax + pad)
+
+        # build ordered 27 base keys (a,b,w) preserving original order used in 27-mode
+        base_keys = []
+        seen = set()
         for c in sorted(data_cols, key=col_key):
-            a, b, w, r = parsed[c]
-            key_ab = (a, b)
-            if key_ab not in seen_xy:
-                seen_xy.add(key_ab)
-                xy_keys.append(key_ab)
+            a,b,w,r = parsed[c]
+            key3 = (a,b,w)
+            if key3 not in seen:
+                seen.add(key3)
+                base_keys.append(key3)
 
-        # if we don't have exactly 9 xy keys,
-        # fall back to prior base_keys grouping
-        if len(xy_keys) != 9:
-            # fallback: group by (a,b,w) order
-            # and derive 9 XY keys by selecting unique (a,b)
-            xy_keys = []
-            seen_xy = set()
+        # plot each r in its own axis
+        # allocate extra vertical space so per-axis legends can sit between subplots
+        fig.subplots_adjust(hspace=0.7)
+        for rexp, ax in enumerate(coeff_axes):
             for c in sorted(data_cols, key=col_key):
-                a, b, w, r = parsed[c]
-                key_ab = (a, b)
-                if key_ab not in seen_xy:
-                    seen_xy.add(key_ab)
-                    xy_keys.append(key_ab)
-            # trim or pad to 9 if needed
-            xy_keys = (xy_keys + [xy_keys[-1]]*9)[:9]
+                a,b,w,r = parsed[c]
+                if r != rexp:
+                    continue
+                ls = linestyle_map.get(w, '-')
+                lw = 3 if c in highlight else 2
+                color = color_map.get(c, 'k')
+                # no jitter, no markers
+                ax.plot(x_vals, df[c].values, label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
+            ax.set_ylim(y_lim)
+            ax.grid(True)
+            ax.set_ylabel('')
 
-        # build display-order arrays (row-major layout: rows=9, cols=9)
-        ncol = 9
-        nrows = 9
-        total = ncol * nrows
-        display_handles = [None] * total
-        display_labels = [None] * total
+            # build legend for this axis with 27 base entries (no markers)
+            legend_handles = []
+            legend_labels = []
+            for key3 in base_keys:
+                # find column with r==rexp that matches key3; if not found, pick representative with r==0 for label/color
+                target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == rexp), None)
+                if target is None:
+                    # fall back to any (a,b,w) representative (prefer r=0 to keep color consistent)
+                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == 0), None)
+                if target is None:
+                    # ultimate fallback, pick any matching (a,b,w)
+                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3), None)
+                if target is None:
+                    legend_handles.append(Line2D([0],[0], color='none'))
+                    legend_labels.append('')
+                else:
+                    # line-only proxy (no marker)
+                    color = color_map.get(target, 'k')
+                    ls = linestyle_map.get(parsed[target][2], '-')
+                    lw = 3 if target in highlight else 2
+                    legend_handles.append(Line2D([0],[0], color=color, lw=lw, linestyle=ls))
+                    legend_labels.append(pretty_label(target))
 
-        # desired (w,r) sequence per column
-        wr_seq = [(0,0),(1,0),(2,0),(0,1),(1,1),(2,1),(0,2),(1,2),(2,2)]
+            # place legend beneath this coefficient subplot
+            ax.legend(legend_handles, legend_labels, loc='lower center', bbox_to_anchor=(0.5, -0.65),
+                      ncol=9, fontsize=9, frameon=False)
 
-        for col_idx, (a, b) in enumerate(xy_keys):
-            for row_idx, (wexp, rexp) in enumerate(wr_seq):
-                display_index = row_idx * ncol + col_idx  # row-major position
-                # find the column that matches (a,b,wexp,rexp)
+        # set title on the middle coeff axis (or topmost coeff axis)
+        basename = os.path.basename(fpath)
+        exp_num = exp_id
+        if exp_num is not None and exp_num in params_table:
+            p = params_table[exp_num]
+            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
+            coeff_axes[0].set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+        else:
+            coeff_axes[0].set_title(basename, fontsize=12)
+
+    else:
+        # --- existing 27-parameter plotting logic (unchanged) ---
+        # group by w-exponent (third digit of suffix) for coloring / styling
+        groups = {}
+        parsed = {}
+        for c in data_cols:
+            suffix = str(c).split('_')[-1]
+            a, b, w, r = map(int, list(suffix))
+            groups.setdefault(w, []).append(c)
+            parsed[c] = (a, b, w, r)
+
+        # deterministic ordering key
+        def col_key(col):
+            s = str(col).split('_')[-1]
+            return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
+                    else (0, 0, 0, 0))
+
+        # assign colors within each w-group
+        color_map = {}
+        for _wexp, cols in groups.items():
+            cols_sorted = sorted(cols, key=col_key)
+            n = len(cols_sorted)
+            cmap = plt.get_cmap('Set1')
+            colors = [cmap(0.5)] if n == 1 else [cmap(t)
+                                                 for t in np.linspace(0, 1, n)]
+            for col, colcolor in zip(cols_sorted, colors, strict=False):
+                color_map[col] = colcolor
+
+        # pretty labels (now include r as well)
+        def pretty_label(col):
+            suffix = str(col).split('_')[-1]
+            a, b, c_, d = map(int, list(suffix))
+            parts = []
+            for exp, var in ((a, 'x'), (b, 'y'), (c_, 'w'), (d, 'r')):
+                if exp == 0:
+                    continue
+                if exp == 1:
+                    parts.append(var)
+                else:
+                    parts.append(f"{var}^{{{exp}}}")
+            return f"${''.join(parts)}$" if parts else col
+
+        label_map = {c: pretty_label(c) for c in data_cols}
+        linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
+
+        x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
+        ax = coeff_axes[0]
+
+        # jitter in axis units: small horizontal offset for R groups
+        jitter = 1.0
+        x_vals = np.asarray(x)
+
+        # plot lines + markers according to R (original behavior)
+        for c in sorted(data_cols, key=col_key):
+            a, b, wexp, rexp = parsed[c]
+            lw = 3 if c in highlight else 2
+            ls = linestyle_map.get(wexp, '-')
+            color = color_map.get(c, 'k')
+            # shift both line and markers by rexp * jitter (in axis units)
+            x_plot = x_vals + (rexp * jitter)
+            ax.plot(x_plot, df[c], label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
+            # overlay markers for R=1 and R=2 (same shift)
+            if rexp == 1:
+                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
+                        markerfacecolor=color, markeredgecolor=color)
+            elif rexp == 2:
+                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
+                        markerfacecolor='none', markeredgecolor=color)
+
+        # title with parameters if available
+        basename = os.path.basename(fpath)
+        exp_num = exp_id
+        if exp_num is not None and exp_num in params_table:
+            p = params_table[exp_num]
+            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
+            ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+        else:
+            ax.set_title(basename, fontsize=12)
+
+        ax.grid(True)
+        ax.set_xlabel('epoch')
+
+        # build legend handles for each R block separately
+        # (preserve same base 27 order)
+        # create ordered list of 27 unique (a,b,w) combos
+        base_keys = []
+        seen = set()
+        for c in sorted(data_cols, key=col_key):
+            a,b,w,r = parsed[c]
+            key3 = (a,b,w)
+            if key3 not in seen:
+                seen.add(key3)
+                base_keys.append(key3)
+
+        # helper to make a proxy handle (include marker for R1/R2)
+        def proxy_handle(col, rexp):
+            a, b, wexp, _ = parsed[col]
+            color = color_map.get(col, 'k')
+            ls = linestyle_map.get(wexp, '-')
+            lw = 3 if col in highlight else 2
+            if rexp == 0:
+                return Line2D([0], [0], color=color, lw=lw, linestyle=ls)
+            if rexp == 1:
+                return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
+                              marker='o', markerfacecolor=color, markersize=6)
+            return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
+                          marker='o', markerfacecolor='none', markersize=6)
+
+        # now build handles/labels per R
+        handles_by_r = {0: [], 1: [], 2: []}
+        labels_by_r = {0: [], 1: [], 2: []}
+        for rexp in (0,1,2):
+            for key3 in base_keys:
+                # find column with this (a,b,w) and r=rexp
                 target = next((cc for cc in data_cols
-                               if parsed[cc][:2] == (a, b)
-                               and parsed[cc][2] == wexp
+                               if parsed[cc][:3] == key3
                                and parsed[cc][3] == rexp), None)
                 if target is None:
-                    display_handles[display_index] = Line2D(
-                        [0], [0], color='none')
-                    display_labels[display_index] = ''
+                    h = Line2D([0],[0], color='none')
+                    lbl = ''
                 else:
-                    display_handles[display_index] = proxy_handle(target, rexp)
-                    display_labels[display_index] = label_map.get(target, target)
+                    h = proxy_handle(target, rexp)
+                    lbl = label_map.get(target, target)
+                handles_by_r[rexp].append(h)
+                labels_by_r[rexp].append(lbl)
 
-        # Matplotlib fills legend entries column-major;
-        # reorder so the final displayed grid (row-major)
-        # matches our display_handles list.
-        reordered_handles = [None] * total
-        reordered_labels = [None] * total
-        for i in range(total):
-            row = i % nrows
-            col = i // nrows
-            display_index = row * ncol + col
-            reordered_handles[i] = display_handles[display_index]
-            reordered_labels[i] = display_labels[display_index]
-
-        # expand bottom space to fit legend and avoid overlap
-        fig.subplots_adjust(bottom=0.46, hspace=0.70, top=0.88)
-
-        # place single legend below the figure (centered) with ncol columns
-        fig.legend(reordered_handles, reordered_labels,
-                   loc='lower center',
-                   bbox_to_anchor=(0.5, -0.02),
-                   bbox_transform=fig.transFigure,
-                   ncol=ncol,
-                   fontsize=10,
-                   frameon=False,
-                   handlelength=2.0,
-                   markerscale=1.0,
-                   labelspacing=0.4,
-                   columnspacing=1.0,
-                   handletextpad=0.5,
-                   handleheight=1.0,
-                   borderaxespad=0.5)
-
-    else:
-        # older 27-parameter mode: keep legend tight and close to axes (no huge blank)
-        # build handles in the original 27-order (base_keys with r=0)
+        # older 27-parameter legend (unchanged)
         legend_handles = []
         legend_labels = []
         for key3 in base_keys:
-            # prefer r==0 column
             target = next((cc for cc in data_cols
                            if parsed[cc][:3] == key3
                            and parsed[cc][3] == 0), None)
             if target is None:
-                # fallback to any representative
                 target = next((cc for cc in data_cols
                                if parsed[cc][:3] == key3), None)
             if target is None:
@@ -405,15 +478,16 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     else:
         tick_positions = x_vals
 
-    coeff_ax.set_xticks(tick_positions)
-    coeff_ax.set_xticklabels([str(int(v)) if float(v).is_integer() else str(v)
-                              for v in tick_positions])
+    # set xticks on the bottom-most axis
+    coeff_axes[-1].set_xticks(tick_positions)
+    coeff_axes[-1].set_xticklabels([str(int(v)) if float(v).is_integer() else str(v)
+                                     for v in tick_positions])
 
     plt.show()
 
     return fig
 
-cfg = main.create_config()
+
 
 # +
 # Set parameters and run experiment
@@ -426,133 +500,246 @@ cfg = main.create_config()
 # with open("feedforward_experiments_config_table.json", "r") as f:
 #     feedforward_experiments_config_table = json.load(f)
 
-recurrent_experiments_config_table = {
-     1: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
-         "\ninp_spar": 1, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
-         },
-     11: {'plasticity': "recurrent", "N_in": 50, "N_out": 50,
-          "\ninp_spar": 0.2, "FF_spar": 0.2, "rec_spar": 1, "FF_scale": 1,
-          },
-     16: {'recurrent': False, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     17: {'recurrent': True, 'plasticity': "feedforward", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     18: {'recurrent': True, 'plasticity': "feedforward+recurrent",
-          "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     19: {'recurrent': True, 'plasticity': "recurrent", "N_in": 10, "N_out": 10,
-          "\ninp_spar": 1, "FF_spar": 1, "rec_spar": 1,
-          },
-     57: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": True
-          },
-     58: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by sqrt(N_in_i)": False
-          },
-     59: {'recurrent': False, 'plasticity': "feedforward", "N_in": 50, "N_out": 50,
-          "\nFF_spar_gen": 1, "FF_spar_train": 1, "scale w by N_in_i": True
-          },
-     60: {'recurrent': True, 'plasticity': "ff", "N_in": 50, "N_out": 50},
-     61: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50},
-     62: {'recurrent': True, 'plasticity': "ff, rec", "N_in": 50, "N_out": 50,
-          "\ninp_spar_gen": 0.5, "FF_spar_gen": 0.5, "rec_spar_gen": 0.5,
-          "\ninp_spar_train": 1, "FF_spar_train": 1, "rec_spar_train": 1,
-          "init_spar_gen": "{'ff': 1, 'rec': 1}",
-          },
-     172: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           'init_w_mean_std': 'see log csv'},
-     173: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 100, "N_out": 100, 'init_spars': 'ff: 0.5, rec: 0.5',
-           'init_w_mean_std': 'see log csv'},
-     174: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     175: {'recurrent': False, 'plasticity': "ff", 'train_w': "w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     176: {'recurrent': False, 'plasticity': "ff, rec", 'train_w': "none",
-          "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-          '\ninit_w_mean': 'ff=0.1, rec=-0.2', 'init_w_std': 'ff=0.2, rec=0.001'},
-     177: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 0.5, rec: 0.5',
-           '\ninit_w_mean': 'ff=0.1, rec=-0.4', 'init_w_std': 'ff=1, rec=0.001'},
-     178: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1'},
-     182: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{-1, 1}'},
-     183: {'recurrent': False, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}'},
-     184: {'recurrent': True, 'plasticity': "ff", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}'},
-     185: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}', 'n_epochs': 250,},
-     186: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "none",
-           "\nN_in": 10, "N_out": 10, 'init_spars': 'ff: 1, rec: 1',
-           '\ninit_w_mean': 'ff=0, rec=0', 'init_w_std': 'ff=0.1, rec=0.1',
-           '\nx': '{0, 1}', 'n_epochs': 500,},
+behavioral_experiments_config_table = {
+     # 1: {'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
+     #       "\nN_in": 50, "N_out": 50, 'init_spars': 'ff: 0.5, rec: 0.5',
+     #       '\ninit_w_mean': 'ff=2, rec=-1', 'init_w_std': 'ff=1, rec=1',
+     #       '\nx': '{0,1}', 'n_epochs': 250, 'seed': 189, "null_model": "zeros"},
+     3: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': False,},
+     4: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': True,},
+     7: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nBad seed': "don't use"},
+     8: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': True, 'init_weights_std': 'ff=0.1, rec=0.1'},
+     9: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=0.1, rec=0.1'},
+    10: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=Kaiming, rec=Kaiming'},
+    11: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': True, 'rule': '$x^{2}y-yw$',},
+    12: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid"},
+    13: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 0.5, 'rule': '$xy-y^{2}w$', "activation": "sigmoid"},
+    14: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)"},
+    15: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)"},
+    16: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.05,},
+    17: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    18: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    19: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y)",
+         "x_noise": 0.1,},
+    20: {"input_type": 'task', 'plasticity': "ff, rec", "inp_spars_gen": 0.3, "inp_spars_train": 1, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    21: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    22: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xr-w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    24: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.01},
+    25: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.05,
+         '\ntrials_per_sess': 20,},
 }
 
 cfg = main.create_config()
 
+cfg.num_exp_train = 25
 cfg.num_exp_test = 5
 cfg.num_test_restarts = 5
 
-cfg.fit_data = 'neural'
+cfg.fit_data = 'reinforcement'
 
 cfg.recurrent = True
-cfg.trainable_init_weights = []#"w_rec", "w_ff"]
+cfg.trainable_init_weights = ["w_rec", "w_ff", "w_out"]
 cfg.plasticity_layers = ["ff", "rec"]
-cfg.postsynaptic_input_sparsity_generation = 1
-cfg.postsynaptic_input_sparsity_training = 1
+cfg.postsynaptic_input_sparsity_generation = 0.3
+cfg.postsynaptic_input_sparsity_training = 0.3
 cfg.feedforward_sparsity_generation = 1
 cfg.feedforward_sparsity_training = 1
 cfg.recurrent_sparsity_generation = 1
 cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
+cfg.presynaptic_noise_std = 0.1
 
-cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
+# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
 # cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
-# cfg.init_weights_std_generation = {'ff': 0.01, 'rec': 1, 'out': 0}
+# cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
 # cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
+cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
 cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
 cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 186
-cfg.num_hidden_pre = 10
-cfg.num_hidden_post = 10
-cfg.mean_steps_per_trial = 50
-cfg.sd_steps_per_trial = 0
-cfg.mean_trials_per_session = 1
+cfg.expid = 26
+cfg.num_hidden_pre = 50
+cfg.num_hidden_post = 30
+
 cfg.mean_num_sessions = 1
+cfg.std_num_sessions = 0
+cfg.mean_trials_per_session = 20
+cfg.std_trials_per_session = 0
+# cfg.mean_steps_per_trial = 50
+# cfg.std_steps_per_trial = 0
+cfg.mean_trial_time = 29
+cfg.std_trial_time = 0
+cfg.dt = 1
+cfg.feedforward_input_scale = 1
 
-cfg.num_epochs = 500
+cfg.num_epochs = 250
+cfg.learning_rate = 3e-2
+cfg.lick_cost = 1/13
+cfg.input_type = 'task'
+cfg.do_evaluation = True
+cfg.log_expdata = True
+cfg.log_trajectories = True
 
-cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
+cfg.generation_plasticity = "1X1Y1W0R1+0.31X1Y1W0R0-0.3X0Y2W1R0"  # Oja's
 
-_activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+params, expdata, _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
 
-
-fig = plot_coeff_trajectories(cfg.expid, recurrent_experiments_config_table,
-                              use_all_81=False)
-fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+fig = plot_coeff_trajectories(cfg.expid, behavioral_experiments_config_table,
+                              use_all_81=True)
+fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
+# +
+print(_activation_trajs[0].keys())
+print(_activation_trajs[0]['xs'].shape)  # (num_steps, num_neurons_in)
+print(_activation_trajs[0]['outputs'].shape)  # (num_steps, num_neurons_out)
+print(_activation_trajs[0]['rewards'].shape)  # (num_steps, num_neurons_out)
+
+def plot_step_weights_heatmap(epoch, step, ax_i):
+    wff = _activation_trajs[epoch]['weights']['w_ff'][0, 0]
+    wrec = _activation_trajs[epoch]['weights']['w_rec'][0, 0]
+
+    wff_ax = ax[ax_i, 0].imshow(wff[step], aspect='auto', cmap='viridis', interpolation='none')
+    plt.colorbar(wff_ax, ax=ax[ax_i, 0])
+    ax[ax_i, 0].set_title('Feedforward weights, epoch %d, step %d' % (epoch, step))
+    ax[ax_i, 0].set_xlabel('Y neurons')
+    ax[ax_i, 0].set_ylabel('X neurons')
+
+    wrec_ax = ax[ax_i, 1].imshow(wrec[step], aspect='auto', cmap='viridis', interpolation='none')
+    plt.colorbar(wrec_ax, ax=ax[ax_i, 1])
+    ax[ax_i, 1].set_title('Recurrent weights, epoch %d, step %d' % (epoch, step))
+    ax[ax_i, 1].set_xlabel('Y neurons')
+    ax[ax_i, 1].set_ylabel('Y neurons')
+
+def plot_epoch_weights_traces(epoch, ax_i):
+    wff = _activation_trajs[epoch]['weights']['w_ff'][exp, sess]
+    wrec = _activation_trajs[epoch]['weights']['w_rec'][exp, sess]
+    output = _activation_trajs[epoch]['outputs'][exp, sess]
+    d = _activation_trajs[epoch]['decisions'][exp, sess]
+    r = _activation_trajs[epoch]['rewards'][exp, sess]
+
+    traces_ff = wff.reshape(wff.shape[0], -1).T
+    # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_ff.shape[0]))
+    colors_pl = plt.get_cmap('cool')(np.linspace(0, 1, cfg.num_place_neurons * wff.shape[-1]))
+    colors_vis = plt.get_cmap('autumn')(np.linspace(0, 1, (wff.shape[-2]-cfg.num_place_neurons-1) * wff.shape[-1]))
+    colors_v = plt.get_cmap("Greens")(np.linspace(0, 1, cfg.num_velocity_neurons * wff.shape[-1]))  # single green for last group
+    colors = np.concatenate([colors_pl, colors_vis, colors_v])
+    # repeat each presyn color for all posts so it matches traces_ff rows
+    # colors_traces = np.repeat(colors_pre, wff.shape[-1], axis=0)
+    for trace, color in zip(traces_ff, colors, strict=False):
+        ax[ax_i, 0].plot(trace, color=color, alpha=0.1)
+    ax[ax_i, 0].plot(output, color='gray', linewidth=2, label='output', alpha=0.5)
+    idx = np.flatnonzero(np.asarray(d) == 1)
+    ax[ax_i, 0].scatter(idx, np.where(np.asarray(r)[idx] == 1, 1, 0), s=10, c='k', zorder=10)
+
+
+    ax[ax_i, 0].set_title('Feedforward weights traces, epoch %d' % epoch)
+    ax[ax_i, 0].set_xlabel('Steps')
+
+    traces_rec = wrec.reshape(wrec.shape[0], -1).T
+    colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_rec.shape[0]))
+    for trace, color in zip(traces_rec, colors, strict=False):
+        ax[ax_i, 1].plot(trace, color=color, alpha=0.1)
+    ax[ax_i, 1].set_title('Recurrent weights traces, epoch %d' % epoch)
+    ax[ax_i, 1].set_xlabel('Steps')
+
+epoch = 250
+fig, ax = plt.subplots(5, 2, figsize=(10, 12), layout='tight')
+
+exp, sess = 0, 0
+xs = _activation_trajs[epoch]['xs'][exp, sess].T
+ys = _activation_trajs[epoch]['ys'][exp, sess].T
+# n_steps = xs.shape[1]
+n_steps = 150
+
+xs_ax = ax[0, 0].imshow(xs, aspect='auto',
+                      cmap='viridis', interpolation='none', origin='lower')
+ax[0, 0].set_title('X, epoch %d' % epoch)
+# fig.colorbar(xs_ax, ax=ax[0, 0], fraction=0.046, pad=0.04)
+divider = make_axes_locatable(ax[0, 0])
+cax = divider.append_axes("right", size="1.5%", pad=0.03)
+fig.colorbar(xs_ax, cax=cax)
+ax[0, 0].set_ylabel('Neurons')
+ax[0, 0].set_xlabel('Steps')
+
+ys_ax = ax[0, 1].imshow(ys, aspect='auto',
+                      cmap='viridis', interpolation='none', origin='lower')
+ax[0, 1].set_title('Y, epoch %d' % epoch)
+# fig.colorbar(ys_ax, ax=ax[0, 1], fraction=0.04, pad=0.01, location=)
+divider = make_axes_locatable(ax[0, 1])
+cax = divider.append_axes("right", size="1.5%", pad=0.03)
+fig.colorbar(ys_ax, cax=cax)
+ax[0, 1].set_ylabel('Neurons')
+ax[0, 1].set_xlabel('Steps')
+
+for irow in range(ax.shape[0]):
+    for jcol in range(ax.shape[1]):
+        ax[irow, jcol].set_xlim(-0.5, n_steps - 0.5)
+
+plot_epoch_weights_traces(epoch=0, ax_i=1)
+plot_epoch_weights_traces(epoch=50, ax_i=2)
+plot_epoch_weights_traces(epoch=200, ax_i=3)
+plot_epoch_weights_traces(epoch=250, ax_i=4)
+plt.show()
+fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid}_weights_traces.png",
+            dpi=300, bbox_inches="tight")
+
+# +
+# Plot example input
+import experiment
+
+cfg.mean_num_sessions = 3  # Number of sessions/days per experiment/trajectory/animal
+cfg.std_num_sessions = 0  # Standard deviation of sessions/days per animal
+cfg.mean_trials_per_session = 3  # Number of trials/runs in each session/day
+cfg.std_trials_per_session = 0
+cfg.mean_steps_per_trial = 50  # Mean number of time steps in each trial/run
+cfg.std_steps_per_trial = 0  # Standard deviation of time steps in each trial/run
+
+shapes, step_mask = experiment.define_experiments_shapes(jax.random.PRNGKey(0), 1, cfg)
+inputs = experiment.generate_inputs(jax.random.PRNGKey(0),
+                                 shapes, step_mask[0],
+                                 cfg, exp_i=0)
+
+t, v, pos, cue_at_time, rewarded_pos = [v[0] for v in inputs.values()]
+fig, ax = plt.subplots(figsize=(10,4))
+ax.plot(cue_at_time*50, label='Visual cue', linewidth=2)
+ax.plot(pos, label='Position (cm)', linewidth=2)
+# ax.plot(t, segment_at_time*10, label='10 cm segment', linewidth=2)
+ax.plot(v*10+3, label='Velocity x 10 (cm/s)',
+        linewidth=2, linestyle='--')
+ax.plot(rewarded_pos*10, label='Rewarded position',
+        linewidth=2, linestyle=':', color='green')
+ax.legend()
+ax.set_xlabel('Time (s)')
+ax.set_ylabel('Distance (cm)')
+ax.set_title('2AFC Task Structure with Visual Cues and Rewards\nNear trial')
+plt.show()
+
 # +
 # Explore different n_steps
 cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}

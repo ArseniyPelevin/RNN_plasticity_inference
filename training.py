@@ -1,105 +1,14 @@
+from functools import partial
+
 import evaluation
-import experiment
 import jax
 import jax.numpy as jnp
 import losses
 import model
-import omegaconf
 import optax
-import pandas as pd
 import synapse
 import utils
 
-
-def generate_experiments(key, cfg,
-                         generation_theta, generation_func,
-                         mode="train"):
-    """ Generate all experiments/trajectories as instances of class Experiment. """
-
-    if mode == "train":
-        num_experiments = cfg.num_exp_train
-    elif mode == "test":
-        num_experiments = cfg.num_exp_test
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-    print(f"\nGenerating {num_experiments} {mode} trajectories")
-
-    # Presplit keys for each experiment
-    experiment_keys = jax.random.split(key, num_experiments)
-
-    experiments = []
-    for exp_i in range(num_experiments):
-        exp = experiment.Experiment(experiment_keys[exp_i],
-                                    exp_i, cfg,
-                                    generation_theta, generation_func,
-                                    mode)
-        experiments.append(exp)
-        print(f"Generated {mode} experiment {exp_i}",
-              f"with {exp.step_mask.shape[0]} sessions")
-
-    return experiments
-
-def generate_data(key, cfg, mode="train"):
-    # Generate model activity
-    plasticity_key, experiments_key = jax.random.split(key, 2)
-    #TODO add branching for experimental data
-    generation_theta, generation_func = synapse.init_plasticity(
-        plasticity_key, cfg, mode="generation_model"
-    )
-    experiments = generate_experiments(
-        experiments_key, cfg, generation_theta, generation_func, mode,
-    )
-
-    return experiments
-
-def initialize_simulation_weights(key, cfg, experiments, n_restarts=1):
-    """ Initialize new initial weights of all layers for each experiment.
-    Store fixed - as init_fixed_weights property of each experiment instance,
-    trainable - as per-restart list of per-layer dicts of per-exp arrays.
-
-    Args:
-        key (jax.random.PRNGKey): Random key for initialization.
-        cfg (dict): Configuration dictionary.
-        experiments (list): List of experiments from class Experiment.
-        n_restarts (int): Number of random trainable weights initializations
-            per experiment. Default is 1 for training, can be >1 for evaluation.
-
-    Returns:
-        experiments (list): Updated experiments with init_fixed_weights property.
-        init_trainable_weights (list): Per-restart list of per-layer dicts
-            of per-exp arrays of randomly initialized weights.
-    """
-    all_layers = ['w_ff', 'w_out']
-    if cfg.recurrent:
-        all_layers.append('w_rec')
-
-    fixed_layers = [layer for layer in all_layers
-                    if layer not in cfg.trainable_init_weights]
-    trainable_layers = cfg.trainable_init_weights
-
-    # Initialize trainable weights
-    init_trainable_weights = [{layer: [] for layer in trainable_layers}
-                              for _ in range(n_restarts)]
-    # Different initial weights for each restart of evaluation on test experiments
-    for start in range(n_restarts):
-        for layer in trainable_layers:
-            layer_weights = []
-            # Different initial synaptic weights for each simulated experiment
-            for _exp in range(len(experiments)):
-                key, subkey = jax.random.split(key)
-                layer_weights.append(model.initialize_weights(
-                    subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer])
-            init_trainable_weights[start][layer] = jnp.array(layer_weights)
-
-    # Initialize fixed weights
-    for exp in experiments:
-        exp.init_fixed_weights = {}
-        for layer in fixed_layers:
-            key, subkey = jax.random.split(key)
-            exp.init_fixed_weights[layer] = model.initialize_weights(
-                subkey, cfg, cfg.init_weights_std_training, layers=layer)[layer]
-
-    return experiments, init_trainable_weights
 
 def train(key, cfg, train_experiments, test_experiments):
     """ Initialize values and functions, start training loop.
@@ -107,31 +16,37 @@ def train(key, cfg, train_experiments, test_experiments):
     Args:
         key (jax.random.PRNGKey): Random key for initialization.
         cfg (dict): Configuration dictionary.
-        train_experiments (list): List of training experiments from class Experiment.
-        test_experiments (list): List of test experiments from class Experiment.
+        train_experiments (dict): Dictionary of arrays
+            of shape (N_exp, ... ) for each variable of training experiments.
+        test_experiments (dict): Dictionary of arrays
+            of shape (N_exp, ... ) for each variable of test experiments.
     """
-    key, init_plasticity_key, train_key, test_key = jax.random.split(key, 4)
+    num_epochs = cfg["num_epochs"] + 1  # +1 so that we have 250th epoch
+    num_exp = cfg.num_exp_train
+    (init_plasticity_key,
+     train_w_key,
+     test_w_key,
+     *train_keys) = jax.random.split(key, 3 + num_epochs * num_exp)
+    train_keys = jnp.array(train_keys).reshape((num_epochs, num_exp, 2))
 
     # Initialize plasticity coefficients for training
     init_theta, plasticity_func = synapse.init_plasticity(
         init_plasticity_key, cfg, mode="plasticity_model"
     )
 
-    # Initialize weights of all layers for each train and test experiment. Store them:
-    # fixed - as init_fixed_weights property of each experiment instance,
-    # trainable - as (per-restart list of) per-layer dicts of per-exp arrays
-    train_experiments, init_trainable_weights_train = initialize_simulation_weights(
-        train_key, cfg, train_experiments)
-    test_experiments, init_trainable_weights_test = initialize_simulation_weights(
-        test_key, cfg, test_experiments, n_restarts=cfg.num_test_restarts
-    )
+    # Initialize weights of trainable layers for each train and test experiment.
+    # Store them as per-layer dict of arrays of shape (n_restarts, n_experiments, ...)
+    init_trainable_weights_train = model.initialize_trainable_weights(
+        train_w_key, cfg, cfg.num_exp_train)
+    init_trainable_weights_test = model.initialize_trainable_weights(
+        test_w_key, cfg, cfg.num_exp_test, n_restarts=cfg.num_test_restarts)
 
     params = {'theta': init_theta,
               'weights': init_trainable_weights_train[0]}  # n_restarts=1 for training
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
     # parameters at argnums (theta and init_weights) - !Check argnums!
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(5, 6), has_aux=True)
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(1, 2), has_aux=True)
 
     # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
     # Apply gradient clipping as in the article
@@ -139,71 +54,86 @@ def train(key, cfg, train_experiments, test_experiments):
         optax.clip_by_global_norm(cfg["max_grad_norm"]),
         optax.adam(learning_rate=cfg["learning_rate"]),
     )
-
     opt_state = optimizer.init(params)
 
-    # Save and return deviances and R2s for each test sample at each evaluation epoch
-    _losses_and_r2s = {}
+    expdata = {}  # Per-metric dict of per-evaluation-epoch lists
+    _losses_and_r2s = {}  # Per-evaluation-epoch losses and r2 values (debugging only)
+    _activation_trajs = {}  # Per-evaluation-epoch trajectories (debugging only)
 
-    # Return simulation trajectory - for debugging purposes only,
-    # set cfg._return_weights_trajectory=True
-    _activation_trajs = [[None for _ in range(len(train_experiments))]
-                        for _ in range(cfg["num_epochs"] + 1)]
-    expdata = {}
-    for epoch in range(cfg["num_epochs"] + 1):  # +1 so that we have 250th epoch
-        for exp in train_experiments:
-            key, subkey = jax.random.split(key)
-            (_loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
-                subkey,  # Pass subkey this time, because loss will not return key
-                exp.input_weights,
-                exp.init_fixed_weights, # per-experiment arrays of fixed layers
-                exp.feedforward_mask_training,
-                exp.recurrent_mask_training,
+    @partial(jax.jit, static_argnames=('cfg'))
+    def run_epoch(epoch_keys, cfg, params, opt_state, train_experiments):
+        def run_exps(carry, exp_and_key):
+            params, opt_state = carry
+            exp, key = exp_and_key
+            (loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
+                key,  # Pass subkey this time, because loss will not return key
                 params['theta'],  # Current plasticity coeffs, updated on each iteration
                 params['weights'],  # Current initial weights, updated on each iteration
                 plasticity_func,  # Static within losses
-                exp.data,
-                exp.step_mask,
-                exp.exp_i,
+                exp,
                 cfg,  # Static within losses
-                mode=('training' if not cfg._return_weights_trajec
-                      else 'evaluation')  # Return trajectories in aux for debugging
+                mode=('training' if not cfg.log_trajectories
+                      else 'evaluation')  # Return trajectories in aux
             )
-            # For debugging: return activation trajectory of each experiment
-            _activation_trajs[epoch][exp.exp_i] = aux['trajectories']
 
             grads = {'theta': theta_grads, 'weights': weights_grads}
-
             updates, opt_state = optimizer.update(grads, opt_state, params)
             params = optax.apply_updates(params, updates)
+
+            # For debugging: return trajectories of activations and weights
+            _activation_trajs = aux['trajectories']
+            all_losses = {
+                'total': loss,
+                'neural': aux['neural'],
+                'behavioral': aux['behavioral']
+            }
+            if 'reinforcement' in cfg.fit_data:
+                all_losses['total_reward'] = aux['total_reward']
+                all_losses['total_licks'] = aux['total_licks']
+
+            return (params, opt_state), (all_losses, _activation_trajs)
+
+        (params, opt_state), (exps_losses, _activation_trajs) = jax.lax.scan(
+            run_exps, (params, opt_state), (train_experiments, epoch_keys))
+
+        # Return of jitted run_epoch()
+        return params, opt_state, exps_losses, _activation_trajs
+
+    for epoch in range(num_epochs):
+        epoch_keys = train_keys[epoch]
+        params, opt_state, exps_losses, _activation_trajs_epoch = run_epoch(
+            epoch_keys, cfg, params, opt_state, train_experiments)
 
         if epoch % cfg.log_interval == 0:
             print(f"\nEpoch {epoch}")
             expdata.setdefault("epoch", []).append(epoch)
+
+            _activation_trajs[epoch] = _activation_trajs_epoch  # Store for debugging
+
+            # Print and log learned plasticity parameters
             expdata = utils.print_and_log_learned_params(cfg, expdata, params['theta'])
 
+            # Print and log train loss
+            train_loss_median = jnp.median(exps_losses['total'])
+            print(f"Train Loss: {train_loss_median:.5f}")
+            expdata.setdefault("train_loss_median", []).append(train_loss_median)
+
+            if 'reinforcement' in cfg.fit_data:
+                train_rewards = jnp.median(exps_losses['total_reward'])
+                train_licks = jnp.median(exps_losses['total_licks'])
+                print(f"Train Rewards: {train_rewards:.1f}")
+                print(f"Train Licks: {train_licks:.1f}")
+                expdata.setdefault("train_rewards", []).append(train_rewards)
+                expdata.setdefault("train_licks", []).append(train_licks)
+
+            if not cfg.do_evaluation:
+                continue  # Skip evaluation on test set
             key, eval_key = jax.random.split(key)
-            expdata, losses_and_r2 = evaluation.evaluate(
-                eval_key, cfg, params['theta'], plasticity_func,
-                train_experiments, params['weights'],
+            expdata, _losses_and_r2 = evaluation.evaluate(
+                eval_key, cfg, params['theta'], plasticity_func, init_theta,
                 test_experiments, init_trainable_weights_test,
                 expdata)
-            _losses_and_r2s[epoch] = losses_and_r2
+            _losses_and_r2s[epoch] = _losses_and_r2
 
-    return expdata, _activation_trajs, _losses_and_r2s
-
-def save_results(cfg, expdata, train_time):
-    """Save training logs and parameters."""
-    df = pd.DataFrame.from_dict(expdata)
-    df["train_time"] = train_time
-
-    # Add configuration parameters to DataFrame
-    for cfg_key, cfg_value in cfg.items():
-        if isinstance(cfg_value, (float | int | str)):
-            df[cfg_key] = cfg_value
-        elif isinstance(cfg_value, omegaconf.dictconfig.DictConfig):
-            df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
-        elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
-            df[cfg_key] = ', '.join(str(v) for v in cfg_value)
-
-    _logdata_path = utils.save_logs(cfg, df)
+    # Return of train()
+    return params, expdata, _activation_trajs, _losses_and_r2s  #, exps_losses

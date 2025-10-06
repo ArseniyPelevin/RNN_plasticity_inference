@@ -9,6 +9,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
+import h5py
 
 import jax
 import jax.numpy as jnp
@@ -147,14 +148,15 @@ def truncated_sigmoid(x, epsilon=1e-6):
     )
     return jnp.clip(jax.nn.sigmoid(x), epsilon, 1 - epsilon)
 
-def sample_truncated_normal(key, mean, std):
-        """ Samples value from a normal distribution that is >= (mean - std). """
-        while True:  # Pick again if less than mu - std
-            key, subkey = jax.random.split(key)
-            value = std * jax.random.normal(subkey, ()) + mean
-            if value >= (mean - std):
-                return int(value)
-
+def sample_truncated_normal(key, mean, std, shape=1):
+    """ Samples values from a normal distribution that are >= (mean - std). """
+    samples = jax.random.normal(key, shape)
+    while not jnp.all(samples >= -1):
+        key, subkey = jax.random.split(key)
+        samples2 = jax.random.normal(subkey, shape)
+        samples = jnp.where(samples < -1, samples2, samples)
+    samples = samples * std + mean
+    return samples.round().astype(jnp.int32)
 
 def experiment_lists_to_tensors(nested_lists):
     """
@@ -224,8 +226,8 @@ def print_and_log_learned_params(cfg, expdata, theta):
     """
 
     if cfg.plasticity_model == "volterra":
-        coeff_mask = np.array(cfg.coeff_mask)
-        theta = np.multiply(theta, coeff_mask)
+        coeff_mask = jnp.array(cfg.coeff_mask)
+        theta = jnp.multiply(theta, coeff_mask)
         for i in range(3):
             for j in range(3):
                 for k in range(3):
@@ -236,8 +238,8 @@ def print_and_log_learned_params(cfg, expdata, theta):
                         )
 
         ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
-        top_indices = np.argsort(
-            np.abs(theta[ind_i, ind_j, ind_k, ind_l].flatten())
+        top_indices = jnp.argsort(
+            jnp.abs(theta[ind_i, ind_j, ind_k, ind_l].ravel())
         )[-5:]
 
         print("Top learned plasticity terms:")
@@ -281,11 +283,11 @@ def save_logs(cfg, df):
         Path: The path where the logs were saved.
     """
     
-    local_random = random.Random()
-    local_random.seed(os.urandom(10))
-    sleep_duration = local_random.uniform(1, 5)
-    time.sleep(sleep_duration)
-    print(f"Slept for {sleep_duration:.2f} seconds.")
+    # local_random = random.Random()
+    # local_random.seed(os.urandom(10))
+    # sleep_duration = local_random.uniform(1, 5)
+    # time.sleep(sleep_duration)
+    # print(f"Slept for {sleep_duration:.2f} seconds.")
 
     logdata_path = Path(cfg.log_dir)
     if cfg.log_expdata:
@@ -297,7 +299,7 @@ def save_logs(cfg, df):
         lock_file = csv_file.with_suffix(".lock")
         while lock_file.exists():
             print(f"Waiting for lock on {csv_file}...")
-            time.sleep(random.uniform(1, 5))
+            # time.sleep(random.uniform(1, 5))
 
         try:
             lock_file.touch()
@@ -307,6 +309,33 @@ def save_logs(cfg, df):
             lock_file.unlink()
 
     return logdata_path
+
+def save_nested_hdf5(obj, fname):
+    """Save a nested dict of arrays to HDF5, preserving the tree."""
+    with h5py.File(fname, "w") as f:
+        def _recursively_write(group, d):
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    subgroup = group.create_group(k)
+                    _recursively_write(subgroup, v)
+                else:
+                    arr = np.array(jax.device_get(v))
+                    group.create_dataset(k, data=arr, compression="gzip", compression_opts=4)
+        _recursively_write(f, obj)
+
+def load_nested_hdf5(fname):
+    """Load HDF5 into nested dict (datasets -> numpy arrays)."""
+    def _recursively_read(h):
+        out = {}
+        for k in h:
+            item = h[k]
+            if isinstance(item, h5py.Group):
+                out[k] = _recursively_read(item)
+            else:
+                out[k] = item[()]  # read dataset into numpy array
+        return out
+    with h5py.File(fname, "r") as f:
+        return _recursively_read(f)
 
 
 def validate_config(cfg: Any) -> Any:

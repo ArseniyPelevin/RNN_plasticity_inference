@@ -5,37 +5,53 @@ import jax.numpy as jnp
 import losses
 import numpy as np
 import optax
-import sklearn.metrics
-import synapse
 
 
-def evaluate(key, cfg, theta, plasticity_func,
-             train_experiments, init_trainable_weights_train,
-             test_experiments, init_trainable_weights_test,
-             expdata):
+def evaluate(key, cfg, theta, plasticity_func, init_theta,
+             test_experiments, init_trainable_weights_test, expdata):
+    """ Compute evaluation metrics.
 
-    train_loss_key, losses_r2_key = jax.random.split(key, 2)
+    Args:
+        key (jax.random.PRNGKey): Random key for simulation.
+        cfg (dict): Configuration dictionary.
+        theta (jax.numpy.ndarray): Learned plasticity coefficients.
+        plasticity_func (function): Plasticity function.
+        init_theta (jax.numpy.ndarray): Initial random plasticity coefficients.
+        test_experiments (dict): Dictionary of arrays
+            of shape (N_exp, ... ) for each variable of test experiments.
+        init_trainable_weights_test: Random initial trainable weights
+            for test experiments.  Per-restart list of per-layer dicts
+            of per-exp arrays of randomly initialized weights.
 
-    # Evaluate train loss
-    losses_and_r2_train = evaluate_loss(train_loss_key,
-                                        cfg,
-                                        train_experiments,
-                                        plasticity_func,
-                                        theta,
-                                        init_trainable_weights_train,
-                                        loss_only=True
-                                        )
-    train_loss_median = jnp.median(losses_and_r2_train['loss'])
+    Returns:
+        expdata (dict): Updated expdata dictionary with evaluation metrics.
+        losses_and_r2 (dict): Dictionary with losses and R2 scores
+            for each experiment in each model variant.
+    """
 
     # Compute neural MSE loss and behavioral BCE loss.
     # Compute R2 scores for neural activity and weights.
-    losses_and_r2 = compute_losses_and_r2(losses_r2_key, cfg,
-                                          test_experiments, plasticity_func,
-                                          theta, init_trainable_weights_test)
+    losses_and_r2 = compute_models_losses_and_r2(key, cfg, test_experiments,
+                                                 plasticity_func, init_theta, theta,
+                                                 init_trainable_weights_test)
     losses_and_r2_N = losses_and_r2.pop('N')  # Null model for reference
 
-    # Extract test loss from dictionary
+    # Log test loss
     test_loss_median = jnp.median(losses_and_r2['F']['loss'])
+    print(f"Test Loss: {test_loss_median:.5f}")
+    expdata.setdefault("test_loss_median", []).append(test_loss_median)
+
+    # Evaluate and log reinforcement metrics: total rewards and total licks
+    if "reinforcement" in cfg.fit_data:
+        for model in losses_and_r2:
+            rewards = jnp.median(losses_and_r2[model]['Rewards'])
+            licks = jnp.median(losses_and_r2[model]['Licks'])
+            print(f"{model} - Rewards: {rewards:.1f}, Licks: {licks:.1f}")
+            expdata.setdefault(f'Rewards_{model}', []).append(rewards)
+            expdata.setdefault(f'Licks_{model}', []).append(licks)
+
+        # Other metrics are meaningless for reinforcement learning
+        return expdata, losses_and_r2
 
     # Evaluate percent deviance explained
     eps = 1e-12
@@ -56,11 +72,6 @@ def evaluate(key, cfg, theta, plasticity_func,
         for traj in trajs
     }
 
-    # Print and log results
-    print(f"Train Loss: {train_loss_median:.5f}")
-    print(f"Test Loss: {test_loss_median:.5f}")
-    expdata.setdefault("train_loss_median", []).append(train_loss_median)
-    expdata.setdefault("test_loss_median", []).append(test_loss_median)
     # Log PDE
     for key, value in PDE.items():
         print(f"{key}: {value:.5f}")
@@ -74,11 +85,11 @@ def evaluate(key, cfg, theta, plasticity_func,
             expdata.setdefault(key, []).append(R2[key])
         print(r2_print_str)
 
-
     return expdata, losses_and_r2
 
-def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
-                          theta, init_trainable_weights_test):
+def compute_models_losses_and_r2(key, cfg, test_experiments,
+                                 plasticity_func, init_theta, theta,
+                                 init_trainable_weights_test):
     """ Compute losses and R2 scores for different model variants:
     Full model (F): learned plasticity and learned weights,
     Theta model (T): learned plasticity and random weights,
@@ -88,16 +99,18 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
     Args:
         key (jax.random.PRNGKey): Random key for generating random numbers.
         cfg (dict): Configuration dictionary.
-        test_experiments (list): List of test experiments from class Experiment.
+        test_experiments (dict): Dictionary of arrays
+            of shape (N_exp, ... ) for each variable of test experiments.
         plasticity_func (function): Plasticity function.
         theta (jax.numpy.ndarray): Learned plasticity coefficients.
         init_trainable_weights_test: Random initial trainable weights
             for test experiments.  Per-restart list of per-layer dicts
             of per-exp arrays of randomly initialized weights.
 
-        Returns: dict: Dictionary with losses and R2 scores for each model variant.
+    Returns: dict: Dictionary with losses and R2 scores for each model variant.
     """
-    zero_theta, _ = synapse.init_plasticity_volterra(key=None, init="zeros", scale=None)
+    # zero_theta, _ = synapse.init_plasticity_volterra(key=None,
+    #                                                  init="zeros", scale=None)
 
     losses_and_r2 = {}
 
@@ -106,33 +119,34 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
     # Use the same set of initial weights in each evaluation epoch.
     for start in range(cfg.num_test_restarts):
         key, weights_key, loss_key = jax.random.split(key, 3)
-        # Learn initial weights for test experiments
         if len(cfg.trainable_init_weights) > 0:
+            # Learn initial weights for test experiments
             learned_init_weights = learn_initial_weights(
                 weights_key, cfg, theta, plasticity_func,
                 test_experiments, init_trainable_weights_test[start])
         else:
+            # Use random initial weights for test experiments
             learned_init_weights = init_trainable_weights_test[start]
 
-        compute_loss_r2 = partial(evaluate_loss,
+        compute_loss_r2 = partial(compute_loss_and_r2,
                                   loss_key, cfg, test_experiments, plasticity_func)
 
         # Compute loss of full model with learned plasticity and learned weights
-        losses_and_r2.setdefault("F", []).append(compute_loss_r2(theta,
-                                                  learned_init_weights))
+        losses_and_r2.setdefault("F", []).append(
+            compute_loss_r2(theta, learned_init_weights))
 
         if cfg.trainable_init_weights:
             # Compute loss of theta model with learned plasticity and random weights
-            losses_and_r2.setdefault("T", []).append(compute_loss_r2(theta,
-                                                    init_trainable_weights_test[start]))
+            losses_and_r2.setdefault("T", []).append(
+                compute_loss_r2(theta, init_trainable_weights_test[start]))
 
             # Compute loss of weights model with zero plasticity and learned weights
-            losses_and_r2.setdefault("W", []).append(compute_loss_r2(zero_theta,
-                                                    learned_init_weights))
+            losses_and_r2.setdefault("W", []).append(
+                compute_loss_r2(init_theta, learned_init_weights))
 
         # Compute loss of null model with zero plasticity and random weights
-        losses_and_r2.setdefault("N", []).append(compute_loss_r2(zero_theta,
-                                                  init_trainable_weights_test[start]))
+        losses_and_r2.setdefault("N", []).append(
+            compute_loss_r2(init_theta, init_trainable_weights_test[start]))
 
     # Convert lists of dicts to dict of arrays
     for model in losses_and_r2:
@@ -145,12 +159,33 @@ def compute_losses_and_r2(key, cfg, test_experiments, plasticity_func,
 
     return losses_and_r2
 
+@partial(jax.jit, static_argnames=['cfg', 'plasticity_func'])
 def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
                           test_experiments,
                           init_weights):
+    """ Learn initial weights of trainable layers for test experiments given theta.
+    Args:
+        key (jax.random.PRNGKey): Random key for generating random numbers.
+        cfg: Configuration dictionary.
+        learned_theta (jax.numpy.ndarray): Learned plasticity coefficients.
+        plasticity_func (function): Plasticity function.
+        test_experiments (dict): Variables in arrays
+            of shape (N_exp, N_sess, N_steps, ...) for one start.
+        init_weights (dict): Random initial trainable weights
+            for test experiments. Per-layer dicts of per-exp arrays
+            of randomly initialized weights for one restart.
+
+    Returns:
+        init_weights (dict): Learned initial trainable weights
+            for test experiments. Per-layer dicts of per-exp arrays
+            of learned weights for one restart.
+    """
+    # Presplit keys for each epoch and experiment
+    test_keys = jax.random.split(key, cfg.num_epochs_weights * cfg.num_exp_test)
+    test_keys = test_keys.reshape(cfg.num_epochs_weights, cfg.num_exp_test, 2)
 
     # Compute gradients of loss wrt initial weights only
-    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=6, has_aux=True)
+    loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=2, has_aux=True)
 
     # Apply gradient clipping
     optimizer = optax.chain(
@@ -160,163 +195,146 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
 
     opt_state = optimizer.init(init_weights)
 
-    for _epoch in range(cfg["num_epochs_weights"]):
-        for exp in test_experiments:
-            key, subkey = jax.random.split(key)
+    @partial(jax.jit, static_argnames=['plasticity_func', 'cfg'])
+    def run_epoch(epoch_keys, init_weights, opt_state, learned_theta, plasticity_func,
+                  test_experiments, cfg):
+        def run_exps(carry, exp_and_key):
+            init_weights, opt_state = carry
+            exp, key = exp_and_key
             (_loss, _aux), w_grads = loss_value_and_grad(
-                subkey,  # Pass subkey this time, because loss will not return key
-                exp.input_weights,
-                exp.init_fixed_weights, # per-experiment arrays of fixed layers
-                exp.feedforward_mask_training,
-                exp.recurrent_mask_training,
-                learned_theta,  # Learned plasticity coefficients by this eval epoch
-                init_weights,  # Current initial weights, to be optimized
-                plasticity_func,  # Static within losses
-                exp.data,
-                exp.step_mask,
-                exp.exp_i,
-                cfg,  # Static within losses
-                mode=('training' if not cfg._return_weights_trajec
-                      else 'evaluation')  # Return trajectories in aux for debugging
+                key,
+                learned_theta,
+                init_weights,
+                plasticity_func,
+                exp,
+                cfg,
+                mode=('training' if not cfg.log_trajectories else 'evaluation')
             )
-
             updates, opt_state = optimizer.update(w_grads, opt_state, init_weights)
             init_weights = optax.apply_updates(init_weights, updates)
+            return (init_weights, opt_state), None
+
+        (init_weights, opt_state), _ = jax.lax.scan(
+            run_exps, (init_weights, opt_state), (test_experiments, epoch_keys))
+
+        return init_weights, opt_state
+
+    for epoch in range(cfg.num_epochs_weights):
+        init_weights, opt_state = run_epoch(test_keys[epoch], init_weights, opt_state,
+                                            learned_theta, plasticity_func,
+                                            test_experiments, cfg)
 
     return init_weights
 
-def evaluate_loss(key, cfg, experiments, plasticity_func,
-                  theta, init_trainable_weights, loss_only=False):
+@partial(jax.jit, static_argnames=['cfg', 'plasticity_func'])
+def compute_loss_and_r2(key, cfg, experiments, plasticity_func, theta,
+                        init_trainable_weights):
+    """ Compute loss and R2 scores for one model variant on all test experiments.
 
-    (losses_total,
-     losses_neural,
-     losses_behavioral,
-     r2s_neural,
-     r2s_weights) = (np.zeros(len(experiments)) for _ in range(5))
+    Args:
+        key (jax.random.PRNGKey): Random key for simulation.
+        cfg: Configuration dictionary.
+        experiments (dict): Variables in arrays
+            of shape (N_exp, N_sess, N_steps, ...) for one start.
+        plasticity_func (function): Plasticity function.
+        theta (jax.numpy.ndarray): Plasticity coefficients.
+        init_trainable_weights (dict): Initial synaptic weights in trainable layers.
 
-    for exp_i, exp in enumerate(experiments):
-        key, subkey = jax.random.split(key)
+    Returns:
+        dict: Dictionary of per-experiment arrays:
+            total loss, neural loss, behavioral loss,
+            R2 score for neural activity and R2 score for weights (if simulated data).
+    """
+
+    keys = jax.random.split(key, cfg.num_exp_test)
+
+    # Compute loss and R2 score for each experiment in a scan
+    def run_exps(_, exp_and_key):
+        exp, key = exp_and_key
+
+        # Compute test loss and R2 score
         loss, aux = losses.loss(
-            subkey,  # Pass subkey this time, because loss will not return key
-            exp.input_weights,
-            exp.init_fixed_weights, # per-experiment arrays of fixed layers
-            exp.feedforward_mask_training,
-            exp.recurrent_mask_training,
-
+            key,
             theta,
             init_trainable_weights,
-
             plasticity_func,  # Static within losses
-            exp.data,
-            exp.step_mask,
-            exp.exp_i,  # Internal index of the experiment
+            exp,
             cfg,  # Static within losses
             mode='evaluation'
         )
 
-        losses_total[exp_i] = loss
-        if loss_only:
-            continue
+        step_mask = exp['step_mask'].ravel().astype(bool)
 
-        losses_neural[exp_i] = aux['neural']
-        losses_behavioral[exp_i] = aux['behavioral']
-
-        step_mask = exp.step_mask.ravel().astype(bool)
-
+        # Compute R2 on neural activity
+        r2_neural = jnp.array(jnp.nan)
         if 'neural' in cfg.fit_data:  # TODO? Don't use for training, but evaluate
-            r2_neural = evaluate_r2_score_activations(
+            exp_activity = exp['data']['ys']
+            model_activity = aux['trajectories']['ys']
+            exp_activity = exp_activity.reshape(
+                int(np.prod(exp_activity.shape[:2])), -1)
+            model_activity = model_activity.reshape(
+                int(np.prod(model_activity.shape[:2])), -1)
+            r2_neural = evaluate_r2_score(
                 step_mask,
-                exp.data['ys'],
-                aux['trajectories']['ys'])
-            r2s_neural[exp_i] = r2_neural
+                exp_activity,
+                model_activity)
 
-        if not cfg.use_experimental_data:
-            r2_weights = evaluate_r2_score_weights(
+        # Compute R2 on weights only if we have weight trajectories (simulated data)
+        r2_weights = jnp.array(jnp.nan)
+        if not cfg.use_experimental_data and 'reinforcement' not in cfg.fit_data:
+            exp_weights = exp['weights_trajec']
+            model_weights = aux['trajectories']['weights']
+            exp_weights = jnp.concatenate([layer.reshape(
+                int(np.prod(layer.shape[:2])), -1)
+                for layer in exp_weights.values()], axis=1)
+            model_weights = jnp.concatenate([layer.reshape(
+                int(np.prod(layer.shape[:2])), -1)
+                for layer in model_weights.values()], axis=1)
+            r2_weights = evaluate_r2_score(
                 step_mask,
-                exp.weights_trajec,
-                aux['trajectories']['weights'],
-                cfg
+                exp_weights,
+                model_weights
             )
-            r2s_weights[exp_i] = r2_weights
+
+        return None, (loss, aux['neural'], aux['behavioral'],
+                      aux['total_reward'], aux['total_licks'],
+                      r2_neural, r2_weights)
+
+    _, (losses_total, losses_neural, losses_behavioral,
+        total_rewards, total_licks,
+        r2s_neural, r2s_weights) = jax.lax.scan(run_exps, None, (experiments, keys))
 
     return {'loss': losses_total,
             'MSE': losses_neural,
             'BCE': losses_behavioral,
+            'Rewards': total_rewards,
+            'Licks': total_licks,
             'r2_y': r2s_neural,
             'r2_w': r2s_weights
             }
 
-def evaluate_r2_score_activations(step_mask,
-                                  exp_activations,
-                                  model_activations
-                                  ):
+def evaluate_r2_score(step_mask,
+                      exp_values,
+                      model_values
+                      ):
     """
-    Functionality: Evaluates the R2 score for activity.
+    Evaluates the R2 score of trajectories of neural activity or weights.
     Args:
-        step_mask (N_sessions, N_steps_per_session_max),
-        exp_activations (N_sessions, N_steps_per_session_max, N_neurons or 1),
-        model_activations (N_sessions, N_steps_per_session_max, N_neurons or 1)
+        step_mask (N_sessions, N_steps_per_session_max), dtype=float,
+        exp_values (N_sessions*N_steps_per_session_max, ...),
+        model_values (N_sessions*N_steps_per_session_max, ...)
 
     Returns:
-        R2 score for activity, variance-weighted
+        R2 score (float)
     """
-
     # (N_sessions, N_steps_per_session_max, ...) -> (N_steps_per_experiment, ...)
-    exp_activations = exp_activations.reshape(-1, *exp_activations.shape[2:])
-    model_activations = model_activations.reshape(-1, *model_activations.shape[2:])
+    mask = jnp.ravel(step_mask)[:, None]
 
-    # Choose valid steps
-    exp_activations = exp_activations[step_mask]
-    model_activations = model_activations[step_mask]
+    mean_exp = jnp.sum(exp_values * mask, axis=0) / jnp.sum(mask)
 
-    # Convert to numpy for sklearn
-    exp_activations = np.asarray(jax.device_get(exp_activations))
-    model_activations = np.asarray(jax.device_get(model_activations))
+    ss_res = jnp.sum(((exp_values - model_values) ** 2) * mask)
+    ss_tot = jnp.sum(((exp_values - mean_exp) ** 2) * mask)
 
-    return sklearn.metrics.r2_score(exp_activations,
-                                    model_activations,
-                                    multioutput='variance_weighted')
-
-def evaluate_r2_score_weights(step_mask,
-                              exp_weight_traj,
-                              model_weight_traj,
-                              cfg
-                              ):
-    """
-    Functionality: Evaluates the R2 score for weights.
-    Args:
-        step_mask (N_sessions, N_steps_per_session_max),
-        exp_weight_traj {  # Only if not cfg.use_experimental_data and only plastic
-            'w_ff': (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post),
-            'w_rec': (N_sessions, N_steps_per_session_max, N_hidden_post, N_hidden_post
-            ),
-        model_weight_traj,
-        cfg
-
-    Returns:
-        R2 scores for weights, variance-weighted
-    """
-    exp_weight_trajec = jnp.vstack(  # All plastic weight trajectories
-        list(exp_weight_traj.values()))
-    model_weight_trajec = jnp.vstack(
-        list(model_weight_traj.values()))  # TODO b?
-
-    # (N_sessions, N_steps_per_session_max, N_hidden_pre, N_hidden_post) ->
-    # (N_steps_per_experiment, N_hidden_pre * N_hidden_post)
-    exp_weight_trajec = exp_weight_trajec.reshape(
-        -1, np.prod(exp_weight_trajec.shape[2:]))
-    model_weight_trajec = model_weight_trajec.reshape(
-        -1, np.prod(model_weight_trajec.shape[2:]))
-
-    # Choose valid steps
-    step_mask = jnp.repeat(step_mask, len(cfg.plasticity_layers))
-    exp_weight_trajec = exp_weight_trajec[step_mask]
-    model_weight_trajec = model_weight_trajec[step_mask]
-
-    # Convert to numpy for sklearn
-    exp_weight_trajec = np.asarray(jax.device_get(exp_weight_trajec))
-    model_weight_trajec = np.asarray(jax.device_get(model_weight_trajec))
-
-    return sklearn.metrics.r2_score(exp_weight_trajec,
-                                    model_weight_trajec,
-                                    multioutput='variance_weighted')
+    return jnp.where(ss_tot > 0.0,
+                     1.0 - (ss_res / ss_tot),
+                     0.0)
