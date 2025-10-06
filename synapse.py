@@ -1,6 +1,7 @@
-"""Module handling plasticity, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
+"""Module handling plasticity.
+Copied originally from https://github.com/yashsmehta/MetaLearnPlasticity.
+Modified for our needs"""
 
-import inspect
 import re
 
 import jax
@@ -35,8 +36,9 @@ def volterra_plasticity_function(X, Y, W, R, coeff):
 
 def volterra_synapse_tensor(x, y, w, r):
     """
-    Functionality: Computes the Volterra synapse tensor for given inputs.
-    Inputs: x, y, w, r (floats): Inputs to the Volterra synapse tensor.
+    Computes the Volterra synapse tensor for given inputs.
+    Args:
+        x, y, w, r (floats): Inputs to the Volterra synapse tensor.
     Returns: A 3x3x3x3 tensor representing the Volterra synapse tensor.
     """
     synapse_tensor = jnp.array(
@@ -52,9 +54,10 @@ def volterra_synapse_tensor(x, y, w, r):
 
 def volterra_plasticity_function_old(x, y, w, r, volterra_coefficients):
     """
-    Functionality: Computes the Volterra plasticity function for given inputs and coefficients.
-    Inputs: x, y, w, r (floats): Inputs to the Volterra plasticity function.
-            volterra_coefficients (array): Coefficients for the Volterra plasticity function.
+    Computes the Volterra plasticity function for given inputs and coefficients.
+    Args:
+        x, y, w, r (floats): Inputs to the Volterra plasticity function.
+        volterra_coefficients (array): Coefficients for Volterra plasticity function.
     Returns: The result of the Volterra plasticity function.
     """
     synapse_tensor = volterra_synapse_tensor(x, y, w, r)
@@ -64,9 +67,10 @@ def volterra_plasticity_function_old(x, y, w, r, volterra_coefficients):
 
 def mlp_forward_pass(mlp_params, inputs):
     """
-    Functionality: Performs a forward pass through a multi-layer perceptron (MLP).
-    Inputs: mlp_params (list): List of tuples (weights, biases) for each layer.
-            inputs (array): Input data.
+    Performs a forward pass through a multi-layer perceptron (MLP).
+    Args:
+        mlp_params (list): List of tuples (weights, biases) for each layer.
+        inputs (array): Input data.
     Returns: The logits output of the MLP.
     """
     activation = inputs
@@ -80,9 +84,10 @@ def mlp_forward_pass(mlp_params, inputs):
 
 def mlp_plasticity_function(x, y, w, r, mlp_params):
     """
-    Functionality: Computes the MLP plasticity function for given inputs and MLP parameters.
-    Inputs: x, y, z (floats): Inputs to the MLP plasticity function.
-            mlp_params (list): MLP parameters.
+    Computes the MLP plasticity function for given inputs and MLP parameters.
+    Args:
+        x, y, w, r (floats): Inputs to the MLP plasticity function.
+        mlp_params (list): MLP parameters.
     Returns: The result of the MLP plasticity function.
     """
     inputs = jnp.array([x, y, w, r])
@@ -100,8 +105,9 @@ def init_random(key, scale):
 
 def split_init_string(s):
     """
-    Functionality: Splits an initialization string into a list of matches.
-    Inputs: s (str): Initialization string.
+    Splits an initialization string into a list of matches.
+    Args:
+        s (str): Initialization string.
     Returns: A list of matches.
     """
     return [
@@ -112,9 +118,10 @@ def split_init_string(s):
 
 def extract_numbers(s):
     """
-    Functionality: Extracts numbers from string initialization: X1R0W1
+    Extracts numbers from string initialization: X1R0W1
     for the plasticity coefficients
-    Inputs: s (str): String to extract numbers from.
+    Args:
+        s (str): String to extract numbers from.
     Returns: A tuple of extracted numbers.
     """
     x = int(re.search(r"X(\d+)", s).group(1))
@@ -129,9 +136,12 @@ def extract_numbers(s):
 
 def init_generation_volterra(init):
     """
-    Functionality: Initializes the parameters for the Volterra generation model.
-    Inputs: init (str): Initialization string.
-    Returns: A tuple containing the initialized parameters and the Volterra plasticity function.
+    Initializes the parameters for the Volterra generation model.
+    Args:
+        init (str): Initialization string.
+    Returns:
+        parameters (ndarray): Initialized Volterra parameters
+        volterra_plasticity_function
     """
     parameters = np.zeros((3, 3, 3, 3))
     inits = split_init_string(init)
@@ -151,9 +161,8 @@ def init_plasticity_volterra(key, init, scale):
         init (str): Initialization method, either "zeros" or "random".
 
     Returns:
-        tuple: A tuple containing:
-            - jax.numpy.ndarray: Initialized parameters.
-            - function: The Volterra plasticity function.
+        parameters (ndarray): Initialized Volterra parameters
+        volterra_plasticity_function
     """
     init_functions = {
         "zeros": init_zeros,
@@ -170,13 +179,12 @@ def init_plasticity_mlp(key, layer_sizes, scale=0.01):
 
     Args:
         key (jax.random.PRNGKey): Random key for generating random numbers.
-        layer_sizes (list of int): List of integers representing the sizes of each layer in the MLP.
-        scale (float, optional): Scale for the Gaussian distribution used to initialize the parameters. Default is 0.01.
+        layer_sizes (list of int): sizes of each layer in the MLP.
+        scale (float): Scale of Gaussian to initialize parameters. Default 0.01.
 
     Returns:
-        tuple: A tuple containing:
-            - list of tuples: Each tuple contains the weights and biases for a layer in the MLP.
-            - function: The MLP plasticity function.
+        mlp_params: A list of tuples of weights and biases for each layer in the MLP.
+        mlp_plasticity_function
     """
     w_key, b_key = jax.random.split(key)
     mlp_params = [
