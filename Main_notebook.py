@@ -507,6 +507,48 @@ behavioral_experiments_config_table = {
      #       '\nx': '{0,1}', 'n_epochs': 250, 'seed': 189, "null_model": "zeros"},
      3: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': False,},
      4: {"N_in": 50, "N_out": 50, 'scale_by_N_inputs': True,},
+     7: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nBad seed': "don't use"},
+     8: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': True, 'init_weights_std': 'ff=0.1, rec=0.1'},
+     9: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=0.1, rec=0.1'},
+    10: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=Kaiming, rec=Kaiming'},
+    11: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
+         '\nscale_by_N_inputs': True, 'rule': '$x^{2}y-yw$',},
+    12: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid"},
+    13: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 0.5, 'rule': '$xy-y^{2}w$', "activation": "sigmoid"},
+    14: {"input_type": 'task', 'plasticity': "ff, rec", "sparsity": 1,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)"},
+    15: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)"},
+    16: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.05,},
+    17: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.5, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    18: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    19: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y)",
+         "x_noise": 0.1,},
+    20: {"input_type": 'task', 'plasticity': "ff, rec", "inp_spars_gen": 0.3, "inp_spars_train": 1, 'velocity': False,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    21: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xy-y^{2}w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    22: {"input_type": 'task', 'plasticity': "ff, rec", "input_sparsity": 0.3, 'velocity': True,
+         '\nfeedforward_input_scale': 1, 'rule': '$xr-w$', "activation": "sigmoid(y-1)",
+         "x_noise": 0.1,},
+    24: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.01},
+    25: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.05,
+         '\ntrials_per_sess': 20,},
 }
 
 cfg = main.create_config()
@@ -515,19 +557,20 @@ cfg.num_exp_train = 25
 cfg.num_exp_test = 5
 cfg.num_test_restarts = 5
 
-cfg.fit_data = 'neural'
+cfg.fit_data = 'reinforcement'
 
 cfg.recurrent = True
-cfg.trainable_init_weights = ["w_rec", "w_ff"]
+cfg.trainable_init_weights = ["w_rec", "w_ff", "w_out"]
 cfg.plasticity_layers = ["ff", "rec"]
-cfg.postsynaptic_input_sparsity_generation = 1
-cfg.postsynaptic_input_sparsity_training = 1
+cfg.postsynaptic_input_sparsity_generation = 0.3
+cfg.postsynaptic_input_sparsity_training = 0.3
 cfg.feedforward_sparsity_generation = 1
 cfg.feedforward_sparsity_training = 1
 cfg.recurrent_sparsity_generation = 1
 cfg.recurrent_sparsity_training = 1
 
 cfg.presynaptic_firing_mean = 0
+cfg.presynaptic_noise_std = 0.1
 
 # cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
 # cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
@@ -539,29 +582,35 @@ cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 6
+cfg.expid = 26
 cfg.num_hidden_pre = 50
-cfg.num_hidden_post = 50
+cfg.num_hidden_post = 30
 
 cfg.mean_num_sessions = 1
 cfg.std_num_sessions = 0
-cfg.mean_trials_per_session = 1
+cfg.mean_trials_per_session = 20
 cfg.std_trials_per_session = 0
-cfg.mean_steps_per_trial = 50
-cfg.std_steps_per_trial = 0
-# cfg.mean_trial_time = 29
-# cfg.std_trial_time = 7
-# cfg.dt = 0.1
+# cfg.mean_steps_per_trial = 50
+# cfg.std_steps_per_trial = 0
+cfg.mean_trial_time = 29
+cfg.std_trial_time = 0
+cfg.dt = 1
+cfg.feedforward_input_scale = 1
 
 cfg.num_epochs = 250
-cfg.input_type = 'random'
+cfg.learning_rate = 3e-2
+cfg.lick_cost = 1/13
+cfg.input_type = 'task'
+cfg.do_evaluation = True
+cfg.log_expdata = True
+cfg.log_trajectories = True
 
-cfg.generation_plasticity = "1X1Y1W0R0-1X0Y2W1R0"  # Oja's
+cfg.generation_plasticity = "1X1Y1W0R1+0.31X1Y1W0R0-0.3X0Y2W1R0"  # Oja's
 
-expdata, _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+params, expdata, _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
 
 fig = plot_coeff_trajectories(cfg.expid, behavioral_experiments_config_table,
-                              use_all_81=False)
+                              use_all_81=True)
 fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
