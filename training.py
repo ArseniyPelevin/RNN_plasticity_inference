@@ -58,7 +58,7 @@ def train(key, cfg, train_experiments, test_experiments):
 
     expdata = {}  # Per-metric dict of per-evaluation-epoch lists
     _losses_and_r2s = {}  # Per-evaluation-epoch losses and r2 values (debugging only)
-    _activation_trajs = []  # Per-epoch trajectories of activations (debugging only)
+    _activation_trajs = {}  # Per-evaluation-epoch trajectories (debugging only)
 
     @partial(jax.jit, static_argnames=('cfg'))
     def run_epoch(epoch_keys, cfg, params, opt_state, train_experiments):
@@ -101,11 +101,11 @@ def train(key, cfg, train_experiments, test_experiments):
         params, opt_state, exps_losses, _activation_trajs_epoch = run_epoch(
             epoch_keys, cfg, params, opt_state, train_experiments)
 
-        _activation_trajs.append(_activation_trajs_epoch)  # Store for debugging
-
         if epoch % cfg.log_interval == 0:
             print(f"\nEpoch {epoch}")
             expdata.setdefault("epoch", []).append(epoch)
+
+            _activation_trajs[epoch] = _activation_trajs_epoch  # Store for debugging
 
             # Print and log learned plasticity parameters
             expdata = utils.print_and_log_learned_params(cfg, expdata, params['theta'])
