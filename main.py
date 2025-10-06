@@ -233,17 +233,26 @@ def run_experiment(cfg, seed=None):
     test_experiments = generate_data(test_exp_key, cfg, mode='test')
 
     time_start = time.time()
-    expdata, _activation_trajs, _losses_and_r2s = (
+    params, expdata, _activation_trajs, _losses_and_r2s = (
         training.train(train_key, cfg, train_experiments, test_experiments))
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
-    save_results(cfg, expdata, train_time)
+    save_results(cfg, params, expdata, train_time, _activation_trajs)
 
-    return expdata, _activation_trajs, _losses_and_r2s
+    return params, expdata, _activation_trajs, _losses_and_r2s
 
-def save_results(cfg, expdata, train_time):
+def save_results(cfg, params, expdata, train_time, activation_trajs):
     """Save training logs and parameters."""
+
+    # Save final parameters
+    if cfg.log_final_params:
+        export_dict = {'params': params,
+                      # 'trajectories': {str(e): tr for e, tr in enumerate(activation_trajs)}
+                      }
+        utils.save_nested_hdf5(export_dict,
+                               cfg.log_dir + f"exp_{cfg.expid}_final_params.h5")
+
     df = pd.DataFrame.from_dict(expdata)
     df["train_time"] = train_time
 
@@ -256,6 +265,7 @@ def save_results(cfg, expdata, train_time):
         elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
             df[cfg_key] = ', '.join(str(v) for v in cfg_value)
 
+    # Save expdata as .csv
     if cfg.log_expdata:
         _logdata_path = utils.save_logs(cfg, df)
 

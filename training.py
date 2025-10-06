@@ -125,4 +125,4 @@ def train(key, cfg, train_experiments, test_experiments):
             _losses_and_r2s[epoch] = _losses_and_r2
 
     # Return of train()
-    return expdata, _activation_trajs, _losses_and_r2s
+    return params, expdata, _activation_trajs, _losses_and_r2s  #, exps_losses
