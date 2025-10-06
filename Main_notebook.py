@@ -30,8 +30,9 @@ import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-
 # +
+
+
 def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     """
     Plot a single experiment's loss (top) and coefficient trajectories (bottom).
@@ -54,26 +55,49 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     df = pd.read_csv(fpath)
 
     # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
-    if 'train_loss_median' in df.columns:  # Use train_loss_median as marker of new eval
-        fig, axs = plt.subplots(3, 1, figsize=(10, 8),
-                                gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
-                                layout='tight')
-        top_ax, eval_ax, coeff_ax = axs
+    has_eval = 'train_loss_median' in df.columns
+
+    # For 27-mode we keep existing layout; for 81-mode we will recreate below with 3 coeff subplots
+    if not use_all_81:
+        if has_eval:
+            fig, axs = plt.subplots(3, 1, figsize=(10, 8),
+                                    gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
+                                    layout='tight')
+            top_ax, eval_ax, coeff_ax = axs
+        else:
+            fig, axs = plt.subplots(2, 1, figsize=(12, 7))
+            top_ax, coeff_ax = axs
+            eval_ax = None
     else:
-        fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-        top_ax, coeff_ax = axs
-        eval_ax = None
+        # placeholder; we'll create the desired layout (loss + optional eval + 3 coeff subplots)
+        top_ax = eval_ax = coeff_ax = None
 
     # --- Top: loss subplot (backwards-compatible) ---
     x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
 
+    # If we didn't yet create axes (use_all_81 True), create them now properly
+    if use_all_81:
+        if has_eval:
+            fig, axs = plt.subplots(5, 1, figsize=(12, 13),
+                                    gridspec_kw={'height_ratios': [1, 1, 2, 2, 2]}, sharex=True)
+            top_ax, eval_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
+            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
+        else:
+            fig, axs = plt.subplots(4, 1, figsize=(12, 13),
+                                    gridspec_kw={'height_ratios': [1, 2, 2, 2]}, sharex=True)
+            top_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
+            eval_ax = None
+            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
+    else:
+        # we already have coeff_ax for 27-mode
+        coeff_axes = [coeff_ax]
+
+    # plot loss on top_ax
     if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss_median'],
-                    color='blue', label='train_loss_median')
-        top_ax.plot(x_epochs, df['test_loss_median'],
-                    color='red', label='test_loss_median')
+        top_ax.plot(x_epochs, df['train_loss_median'], color='blue', label='train_loss_median')
+        top_ax.plot(x_epochs, df['test_loss_median'], color='red', label='test_loss_median')
     elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
-                                         'test_loss_mean','test_loss_std']):
+                                           'test_loss_mean','test_loss_std']):
         top_ax.plot(x_epochs, df['train_loss_mean'], color='blue', label='train_loss')
         top_ax.fill_between(x_epochs,
                             df['train_loss_mean'] - df['train_loss_std'],
@@ -140,18 +164,16 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
 
     # Fallback: if nothing found
     if not data_cols:
-        coeff_ax.text(0.5, 0.5, "No coefficient columns found in CSV",
-                      ha='center', va='center')
+        coeff_axes[0].text(0.5, 0.5, "No coefficient columns found in CSV",
+                            ha='center', va='center')
         plt.show()
         return
 
-    # group by w-exponent (third digit of suffix) for coloring / styling
-    groups = {}
+    # parse suffixes
     parsed = {}
     for c in data_cols:
         suffix = str(c).split('_')[-1]
         a, b, w, r = map(int, list(suffix))
-        groups.setdefault(w, []).append(c)
         parsed[c] = (a, b, w, r)
 
     # deterministic ordering key
@@ -160,16 +182,37 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
         return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
                 else (0, 0, 0, 0))
 
-    # assign colors within each w-group
+    # assign colors grouped like the 27-mode so r=0 colors match the old plot
+    # build ordered list of base (a,b,w) keys in deterministic order
+    base_keys = []
+    seen = set()
+    for c in sorted(data_cols, key=col_key):
+        a,b,w,r = parsed[c]
+        key3 = (a,b,w)
+        if key3 not in seen:
+            seen.add(key3)
+            base_keys.append(key3)
+
+    # assign colors per base_key but grouped by w (to mimic 27-mode coloring)
     color_map = {}
-    for _wexp, cols in groups.items():
-        cols_sorted = sorted(cols, key=col_key)
-        n = len(cols_sorted)
+    for w_val in sorted({k[2] for k in base_keys}):
+        group_keys = [k for k in base_keys if k[2] == w_val]
+        n = len(group_keys)
         cmap = plt.get_cmap('Set1')
-        colors = [cmap(0.5)] if n == 1 else [cmap(t)
-                                             for t in np.linspace(0, 1, n)]
-        for col, colcolor in zip(cols_sorted, colors, strict=False):
-            color_map[col] = colcolor
+        if n <= 1:
+            colors = [cmap(0.5)]
+        else:
+            colors = [cmap(t) for t in np.linspace(0, 1, n)]
+        for key3, colcolor in zip(group_keys, colors, strict=False):
+            # assign this color to every column that matches the (a,b,w) base key
+            for cc in data_cols:
+                if parsed[cc][:3] == key3:
+                    color_map[cc] = colcolor
+
+    # fallback: ensure every column has a color
+    for c in data_cols:
+        if c not in color_map:
+            color_map[c] = plt.get_cmap('tab10')(0)
 
     # pretty labels (now include r as well)
     def pretty_label(col):
@@ -189,186 +232,214 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
 
     x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
-    ax = coeff_ax
-
-    # jitter in axis units: small horizontal offset for R groups
-    jitter = 1.0
     x_vals = np.asarray(x)
 
-    # plot lines + markers according to R
-    for c in sorted(data_cols, key=col_key):
-        a, b, wexp, rexp = parsed[c]
-        lw = 3 if c in highlight else 2
-        ls = linestyle_map.get(wexp, '-')
-        color = color_map.get(c, 'k')
-        # shift both line and markers by rexp * jitter (in axis units)
-        x_plot = x_vals + (rexp * jitter)
-        ax.plot(x_plot, df[c], label=label_map.get(c, c),
-                linewidth=lw, linestyle=ls, color=color)
-        # overlay markers for R=1 and R=2 (same shift)
-        if rexp == 1:
-            ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                    markerfacecolor=color, markeredgecolor=color)
-        elif rexp == 2:
-            ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                    markerfacecolor='none', markeredgecolor=color)
-
-    # title with parameters if available
-    basename = os.path.basename(fpath)
-    exp_num = exp_id
-    if exp_num is not None and exp_num in params_table:
-        p = params_table[exp_num]
-        param_str = ', '.join(f'{key}={value}' for key, value in p.items())
-        ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
-    else:
-        ax.set_title(basename, fontsize=12)
-
-    ax.grid(True)
-    ax.set_xlabel('epoch')
-
-    # build legend handles for each R block separately
-    # (preserve same base 27 order)
-    # create ordered list of 27 unique (a,b,w) combos
-    base_keys = []
-    seen = set()
-    for c in sorted(data_cols, key=col_key):
-        a,b,w,r = parsed[c]
-        key3 = (a,b,w)
-        if key3 not in seen:
-            seen.add(key3)
-            base_keys.append(key3)
-
-    # helper to make a proxy handle (include marker for R1/R2)
-    def proxy_handle(col, rexp):
-        a, b, wexp, _ = parsed[col]
-        color = color_map.get(col, 'k')
-        ls = linestyle_map.get(wexp, '-')
-        lw = 3 if col in highlight else 2
-        if rexp == 0:
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls)
-        if rexp == 1:
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                          marker='o', markerfacecolor=color, markersize=6)
-        return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                      marker='o', markerfacecolor='none', markersize=6)
-
-    # now build handles/labels per R
-    handles_by_r = {0: [], 1: [], 2: []}
-    labels_by_r = {0: [], 1: [], 2: []}
-    for rexp in (0,1,2):
-        for key3 in base_keys:
-            # find column with this (a,b,w) and r=rexp
-            target = next((cc for cc in data_cols
-                           if parsed[cc][:3] == key3
-                           and parsed[cc][3] == rexp), None)
-            if target is None:
-                h = Line2D([0],[0], color='none')
-                lbl = ''
-            else:
-                h = proxy_handle(target, rexp)
-                lbl = label_map.get(target, target)
-            handles_by_r[rexp].append(h)
-            labels_by_r[rexp].append(lbl)
-
+    # --- Special handling for use_all_81: three subplots, same y-limits, no markers, no jitter ---
     if use_all_81:
-        # --- Build legend with columns = XY combos (9 columns)
-        # and rows = (w,r) combos (9 rows)
-        # Desired per-column order for a given (x,y):
-        # (w,r) = (0,0),(1,0),(2,0),(0,1),(1,1),(2,1),(0,2),(1,2),(2,2)
-        xy_keys = []
-        seen_xy = set()
+        # compute global y limits across all data columns
+        all_vals = np.hstack([df[c].values for c in data_cols])
+        ymin, ymax = np.min(all_vals), np.max(all_vals)
+        pad = max(1e-8, 0.05 * (ymax - ymin)) if ymax > ymin else 0.1
+        y_lim = (ymin - pad, ymax + pad)
+
+        # build ordered 27 base keys (a,b,w) preserving original order used in 27-mode
+        base_keys = []
+        seen = set()
         for c in sorted(data_cols, key=col_key):
-            a, b, w, r = parsed[c]
-            key_ab = (a, b)
-            if key_ab not in seen_xy:
-                seen_xy.add(key_ab)
-                xy_keys.append(key_ab)
+            a,b,w,r = parsed[c]
+            key3 = (a,b,w)
+            if key3 not in seen:
+                seen.add(key3)
+                base_keys.append(key3)
 
-        # if we don't have exactly 9 xy keys,
-        # fall back to prior base_keys grouping
-        if len(xy_keys) != 9:
-            # fallback: group by (a,b,w) order
-            # and derive 9 XY keys by selecting unique (a,b)
-            xy_keys = []
-            seen_xy = set()
+        # plot each r in its own axis
+        # allocate extra vertical space so per-axis legends can sit between subplots
+        fig.subplots_adjust(hspace=0.7)
+        for rexp, ax in enumerate(coeff_axes):
             for c in sorted(data_cols, key=col_key):
-                a, b, w, r = parsed[c]
-                key_ab = (a, b)
-                if key_ab not in seen_xy:
-                    seen_xy.add(key_ab)
-                    xy_keys.append(key_ab)
-            # trim or pad to 9 if needed
-            xy_keys = (xy_keys + [xy_keys[-1]]*9)[:9]
+                a,b,w,r = parsed[c]
+                if r != rexp:
+                    continue
+                ls = linestyle_map.get(w, '-')
+                lw = 3 if c in highlight else 2
+                color = color_map.get(c, 'k')
+                # no jitter, no markers
+                ax.plot(x_vals, df[c].values, label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
+            ax.set_ylim(y_lim)
+            ax.grid(True)
+            ax.set_ylabel('')
 
-        # build display-order arrays (row-major layout: rows=9, cols=9)
-        ncol = 9
-        nrows = 9
-        total = ncol * nrows
-        display_handles = [None] * total
-        display_labels = [None] * total
+            # build legend for this axis with 27 base entries (no markers)
+            legend_handles = []
+            legend_labels = []
+            for key3 in base_keys:
+                # find column with r==rexp that matches key3; if not found, pick representative with r==0 for label/color
+                target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == rexp), None)
+                if target is None:
+                    # fall back to any (a,b,w) representative (prefer r=0 to keep color consistent)
+                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == 0), None)
+                if target is None:
+                    # ultimate fallback, pick any matching (a,b,w)
+                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3), None)
+                if target is None:
+                    legend_handles.append(Line2D([0],[0], color='none'))
+                    legend_labels.append('')
+                else:
+                    # line-only proxy (no marker)
+                    color = color_map.get(target, 'k')
+                    ls = linestyle_map.get(parsed[target][2], '-')
+                    lw = 3 if target in highlight else 2
+                    legend_handles.append(Line2D([0],[0], color=color, lw=lw, linestyle=ls))
+                    legend_labels.append(pretty_label(target))
 
-        # desired (w,r) sequence per column
-        wr_seq = [(0,0),(1,0),(2,0),(0,1),(1,1),(2,1),(0,2),(1,2),(2,2)]
+            # place legend beneath this coefficient subplot
+            ax.legend(legend_handles, legend_labels, loc='lower center', bbox_to_anchor=(0.5, -0.65),
+                      ncol=9, fontsize=9, frameon=False)
 
-        for col_idx, (a, b) in enumerate(xy_keys):
-            for row_idx, (wexp, rexp) in enumerate(wr_seq):
-                display_index = row_idx * ncol + col_idx  # row-major position
-                # find the column that matches (a,b,wexp,rexp)
+        # set title on the middle coeff axis (or topmost coeff axis)
+        basename = os.path.basename(fpath)
+        exp_num = exp_id
+        if exp_num is not None and exp_num in params_table:
+            p = params_table[exp_num]
+            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
+            coeff_axes[0].set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+        else:
+            coeff_axes[0].set_title(basename, fontsize=12)
+
+    else:
+        # --- existing 27-parameter plotting logic (unchanged) ---
+        # group by w-exponent (third digit of suffix) for coloring / styling
+        groups = {}
+        parsed = {}
+        for c in data_cols:
+            suffix = str(c).split('_')[-1]
+            a, b, w, r = map(int, list(suffix))
+            groups.setdefault(w, []).append(c)
+            parsed[c] = (a, b, w, r)
+
+        # deterministic ordering key
+        def col_key(col):
+            s = str(col).split('_')[-1]
+            return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
+                    else (0, 0, 0, 0))
+
+        # assign colors within each w-group
+        color_map = {}
+        for _wexp, cols in groups.items():
+            cols_sorted = sorted(cols, key=col_key)
+            n = len(cols_sorted)
+            cmap = plt.get_cmap('Set1')
+            colors = [cmap(0.5)] if n == 1 else [cmap(t)
+                                                 for t in np.linspace(0, 1, n)]
+            for col, colcolor in zip(cols_sorted, colors, strict=False):
+                color_map[col] = colcolor
+
+        # pretty labels (now include r as well)
+        def pretty_label(col):
+            suffix = str(col).split('_')[-1]
+            a, b, c_, d = map(int, list(suffix))
+            parts = []
+            for exp, var in ((a, 'x'), (b, 'y'), (c_, 'w'), (d, 'r')):
+                if exp == 0:
+                    continue
+                if exp == 1:
+                    parts.append(var)
+                else:
+                    parts.append(f"{var}^{{{exp}}}")
+            return f"${''.join(parts)}$" if parts else col
+
+        label_map = {c: pretty_label(c) for c in data_cols}
+        linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
+
+        x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
+        ax = coeff_axes[0]
+
+        # jitter in axis units: small horizontal offset for R groups
+        jitter = 1.0
+        x_vals = np.asarray(x)
+
+        # plot lines + markers according to R (original behavior)
+        for c in sorted(data_cols, key=col_key):
+            a, b, wexp, rexp = parsed[c]
+            lw = 3 if c in highlight else 2
+            ls = linestyle_map.get(wexp, '-')
+            color = color_map.get(c, 'k')
+            # shift both line and markers by rexp * jitter (in axis units)
+            x_plot = x_vals + (rexp * jitter)
+            ax.plot(x_plot, df[c], label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
+            # overlay markers for R=1 and R=2 (same shift)
+            if rexp == 1:
+                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
+                        markerfacecolor=color, markeredgecolor=color)
+            elif rexp == 2:
+                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
+                        markerfacecolor='none', markeredgecolor=color)
+
+        # title with parameters if available
+        basename = os.path.basename(fpath)
+        exp_num = exp_id
+        if exp_num is not None and exp_num in params_table:
+            p = params_table[exp_num]
+            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
+            ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+        else:
+            ax.set_title(basename, fontsize=12)
+
+        ax.grid(True)
+        ax.set_xlabel('epoch')
+
+        # build legend handles for each R block separately
+        # (preserve same base 27 order)
+        # create ordered list of 27 unique (a,b,w) combos
+        base_keys = []
+        seen = set()
+        for c in sorted(data_cols, key=col_key):
+            a,b,w,r = parsed[c]
+            key3 = (a,b,w)
+            if key3 not in seen:
+                seen.add(key3)
+                base_keys.append(key3)
+
+        # helper to make a proxy handle (include marker for R1/R2)
+        def proxy_handle(col, rexp):
+            a, b, wexp, _ = parsed[col]
+            color = color_map.get(col, 'k')
+            ls = linestyle_map.get(wexp, '-')
+            lw = 3 if col in highlight else 2
+            if rexp == 0:
+                return Line2D([0], [0], color=color, lw=lw, linestyle=ls)
+            if rexp == 1:
+                return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
+                              marker='o', markerfacecolor=color, markersize=6)
+            return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
+                          marker='o', markerfacecolor='none', markersize=6)
+
+        # now build handles/labels per R
+        handles_by_r = {0: [], 1: [], 2: []}
+        labels_by_r = {0: [], 1: [], 2: []}
+        for rexp in (0,1,2):
+            for key3 in base_keys:
+                # find column with this (a,b,w) and r=rexp
                 target = next((cc for cc in data_cols
-                               if parsed[cc][:2] == (a, b)
-                               and parsed[cc][2] == wexp
+                               if parsed[cc][:3] == key3
                                and parsed[cc][3] == rexp), None)
                 if target is None:
-                    display_handles[display_index] = Line2D(
-                        [0], [0], color='none')
-                    display_labels[display_index] = ''
+                    h = Line2D([0],[0], color='none')
+                    lbl = ''
                 else:
-                    display_handles[display_index] = proxy_handle(target, rexp)
-                    display_labels[display_index] = label_map.get(target, target)
+                    h = proxy_handle(target, rexp)
+                    lbl = label_map.get(target, target)
+                handles_by_r[rexp].append(h)
+                labels_by_r[rexp].append(lbl)
 
-        # Matplotlib fills legend entries column-major;
-        # reorder so the final displayed grid (row-major)
-        # matches our display_handles list.
-        reordered_handles = [None] * total
-        reordered_labels = [None] * total
-        for i in range(total):
-            row = i % nrows
-            col = i // nrows
-            display_index = row * ncol + col
-            reordered_handles[i] = display_handles[display_index]
-            reordered_labels[i] = display_labels[display_index]
-
-        # expand bottom space to fit legend and avoid overlap
-        fig.subplots_adjust(bottom=0.46, hspace=0.70, top=0.88)
-
-        # place single legend below the figure (centered) with ncol columns
-        fig.legend(reordered_handles, reordered_labels,
-                   loc='lower center',
-                   bbox_to_anchor=(0.5, -0.02),
-                   bbox_transform=fig.transFigure,
-                   ncol=ncol,
-                   fontsize=10,
-                   frameon=False,
-                   handlelength=2.0,
-                   markerscale=1.0,
-                   labelspacing=0.4,
-                   columnspacing=1.0,
-                   handletextpad=0.5,
-                   handleheight=1.0,
-                   borderaxespad=0.5)
-
-    else:
-        # older 27-parameter mode: keep legend tight and close to axes (no huge blank)
-        # build handles in the original 27-order (base_keys with r=0)
+        # older 27-parameter legend (unchanged)
         legend_handles = []
         legend_labels = []
         for key3 in base_keys:
-            # prefer r==0 column
             target = next((cc for cc in data_cols
                            if parsed[cc][:3] == key3
                            and parsed[cc][3] == 0), None)
             if target is None:
-                # fallback to any representative
                 target = next((cc for cc in data_cols
                                if parsed[cc][:3] == key3), None)
             if target is None:
@@ -407,15 +478,16 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     else:
         tick_positions = x_vals
 
-    coeff_ax.set_xticks(tick_positions)
-    coeff_ax.set_xticklabels([str(int(v)) if float(v).is_integer() else str(v)
-                              for v in tick_positions])
+    # set xticks on the bottom-most axis
+    coeff_axes[-1].set_xticks(tick_positions)
+    coeff_axes[-1].set_xticklabels([str(int(v)) if float(v).is_integer() else str(v)
+                                     for v in tick_positions])
 
     plt.show()
 
     return fig
 
-cfg = main.create_config()
+
 
 # +
 # Set parameters and run experiment
