@@ -52,9 +52,9 @@ config = {
 
 # Network architecture
     # For input_type 'task':
-    "num_place_neurons": 20,
-    "num_visual_neurons_per_type": 10,
-    "num_velocity_neurons": 10,  # TODO how is it supposed to work?
+    "num_place_neurons": 10,
+    "num_visual_neurons_per_type": 5,
+    "num_velocity_neurons": 1,
     # For input_type 'random':
     "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
@@ -84,8 +84,8 @@ config = {
     "place_field_amplitude_std": 0.1,
     "place_field_center_jitter": 1.0,  # cm
 
-    "presynaptic_firing_mean": 0,  # TODO rename into x
-    "presynaptic_firing_std": 1,  # Input (before presynaptic) firing rates
+    "presynaptic_firing_mean": 0,  # Mean firing rate of presynaptic neurons TODO x
+    "presynaptic_firing_std": 1,  # Standard deviation of random input TODO x
     "presynaptic_noise_std": 0,  #0.05 # Noise added to presynaptic layer
 
     "feedforward_input_scale": 1,  # Scale of feedforward weights
@@ -138,13 +138,15 @@ config = {
 
 # Logging
     "do_evaluation": True,
+    "log_config": True,
+    "log_generated_experiments": False,
+    "log_trajectories": True,
     "log_expdata": True,
+    "log_final_params": True,
     "log_interval": 10,
     "data_dir": "../../../../03_data/01_original_data/",
     "log_dir": "../../../../03_data/02_training_data/",
     "fig_dir": "../../../../05_figures/",
-
-    "_return_weights_trajec": False,  # For debugging
 }
 
 def create_config():
@@ -181,9 +183,12 @@ def validate_config(cfg):
 
     if type(cfg.fit_data) is str:
         cfg.fit_data = [cfg.fit_data]
-    # Validate fit_data contains 'behavioral' or 'neural'
-    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
+    # Validate fit_data contains 'neural' and/or 'behavioral' or 'reinforcement'
+    neural_or_behavioral = "behavioral" in cfg.fit_data or "neural" in cfg.fit_data
+    if (not neural_or_behavioral and "reinforcement" not in cfg.fit_data
+        or neural_or_behavioral and "reinforcement" in cfg.fit_data):
+        raise ValueError("fit_data must contain 'behavioral' and/or 'neural',"
+                         " or 'reinforcement'")
 
     if cfg.input_type == 'task':
         num_visual_types = 6  # Teleportation IS encoded

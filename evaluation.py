@@ -208,7 +208,7 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
                 plasticity_func,
                 exp,
                 cfg,
-                mode=('training' if not cfg._return_weights_trajec else 'evaluation')
+                mode=('training' if not cfg.log_trajectories else 'evaluation')
             )
             updates, opt_state = optimizer.update(w_grads, opt_state, init_weights)
             init_weights = optax.apply_updates(init_weights, updates)
