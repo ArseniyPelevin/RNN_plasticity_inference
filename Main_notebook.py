@@ -615,6 +615,101 @@ fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
+print(_activation_trajs[0].keys())
+print(_activation_trajs[0]['xs'].shape)  # (num_steps, num_neurons_in)
+print(_activation_trajs[0]['outputs'].shape)  # (num_steps, num_neurons_out)
+print(_activation_trajs[0]['rewards'].shape)  # (num_steps, num_neurons_out)
+
+def plot_step_weights_heatmap(epoch, step, ax_i):
+    wff = _activation_trajs[epoch]['weights']['w_ff'][0, 0]
+    wrec = _activation_trajs[epoch]['weights']['w_rec'][0, 0]
+
+    wff_ax = ax[ax_i, 0].imshow(wff[step], aspect='auto', cmap='viridis', interpolation='none')
+    plt.colorbar(wff_ax, ax=ax[ax_i, 0])
+    ax[ax_i, 0].set_title('Feedforward weights, epoch %d, step %d' % (epoch, step))
+    ax[ax_i, 0].set_xlabel('Y neurons')
+    ax[ax_i, 0].set_ylabel('X neurons')
+
+    wrec_ax = ax[ax_i, 1].imshow(wrec[step], aspect='auto', cmap='viridis', interpolation='none')
+    plt.colorbar(wrec_ax, ax=ax[ax_i, 1])
+    ax[ax_i, 1].set_title('Recurrent weights, epoch %d, step %d' % (epoch, step))
+    ax[ax_i, 1].set_xlabel('Y neurons')
+    ax[ax_i, 1].set_ylabel('Y neurons')
+
+def plot_epoch_weights_traces(epoch, ax_i):
+    wff = _activation_trajs[epoch]['weights']['w_ff'][exp, sess]
+    wrec = _activation_trajs[epoch]['weights']['w_rec'][exp, sess]
+    output = _activation_trajs[epoch]['outputs'][exp, sess]
+    d = _activation_trajs[epoch]['decisions'][exp, sess]
+    r = _activation_trajs[epoch]['rewards'][exp, sess]
+
+    traces_ff = wff.reshape(wff.shape[0], -1).T
+    # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_ff.shape[0]))
+    colors_pl = plt.get_cmap('cool')(np.linspace(0, 1, cfg.num_place_neurons * wff.shape[-1]))
+    colors_vis = plt.get_cmap('autumn')(np.linspace(0, 1, (wff.shape[-2]-cfg.num_place_neurons-1) * wff.shape[-1]))
+    colors_v = plt.get_cmap("Greens")(np.linspace(0, 1, cfg.num_velocity_neurons * wff.shape[-1]))  # single green for last group
+    colors = np.concatenate([colors_pl, colors_vis, colors_v])
+    # repeat each presyn color for all posts so it matches traces_ff rows
+    # colors_traces = np.repeat(colors_pre, wff.shape[-1], axis=0)
+    for trace, color in zip(traces_ff, colors, strict=False):
+        ax[ax_i, 0].plot(trace, color=color, alpha=0.1)
+    ax[ax_i, 0].plot(output, color='gray', linewidth=2, label='output', alpha=0.5)
+    idx = np.flatnonzero(np.asarray(d) == 1)
+    ax[ax_i, 0].scatter(idx, np.where(np.asarray(r)[idx] == 1, 1, 0), s=10, c='k', zorder=10)
+
+
+    ax[ax_i, 0].set_title('Feedforward weights traces, epoch %d' % epoch)
+    ax[ax_i, 0].set_xlabel('Steps')
+
+    traces_rec = wrec.reshape(wrec.shape[0], -1).T
+    colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_rec.shape[0]))
+    for trace, color in zip(traces_rec, colors, strict=False):
+        ax[ax_i, 1].plot(trace, color=color, alpha=0.1)
+    ax[ax_i, 1].set_title('Recurrent weights traces, epoch %d' % epoch)
+    ax[ax_i, 1].set_xlabel('Steps')
+
+epoch = 250
+fig, ax = plt.subplots(5, 2, figsize=(10, 12), layout='tight')
+
+exp, sess = 0, 0
+xs = _activation_trajs[epoch]['xs'][exp, sess].T
+ys = _activation_trajs[epoch]['ys'][exp, sess].T
+# n_steps = xs.shape[1]
+n_steps = 150
+
+xs_ax = ax[0, 0].imshow(xs, aspect='auto',
+                      cmap='viridis', interpolation='none', origin='lower')
+ax[0, 0].set_title('X, epoch %d' % epoch)
+# fig.colorbar(xs_ax, ax=ax[0, 0], fraction=0.046, pad=0.04)
+divider = make_axes_locatable(ax[0, 0])
+cax = divider.append_axes("right", size="1.5%", pad=0.03)
+fig.colorbar(xs_ax, cax=cax)
+ax[0, 0].set_ylabel('Neurons')
+ax[0, 0].set_xlabel('Steps')
+
+ys_ax = ax[0, 1].imshow(ys, aspect='auto',
+                      cmap='viridis', interpolation='none', origin='lower')
+ax[0, 1].set_title('Y, epoch %d' % epoch)
+# fig.colorbar(ys_ax, ax=ax[0, 1], fraction=0.04, pad=0.01, location=)
+divider = make_axes_locatable(ax[0, 1])
+cax = divider.append_axes("right", size="1.5%", pad=0.03)
+fig.colorbar(ys_ax, cax=cax)
+ax[0, 1].set_ylabel('Neurons')
+ax[0, 1].set_xlabel('Steps')
+
+for irow in range(ax.shape[0]):
+    for jcol in range(ax.shape[1]):
+        ax[irow, jcol].set_xlim(-0.5, n_steps - 0.5)
+
+plot_epoch_weights_traces(epoch=0, ax_i=1)
+plot_epoch_weights_traces(epoch=50, ax_i=2)
+plot_epoch_weights_traces(epoch=200, ax_i=3)
+plot_epoch_weights_traces(epoch=250, ax_i=4)
+plt.show()
+fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid}_weights_traces.png",
+            dpi=300, bbox_inches="tight")
+
+# +
 # Plot example input
 import experiment
 
