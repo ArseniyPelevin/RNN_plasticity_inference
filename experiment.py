@@ -67,7 +67,8 @@ def generate_experiments(key, cfg,
             for k in weights_trajec_keys}
 
     other_keys = ['step_mask', 'rewarded_pos',
-              'feedforward_mask_training', 'recurrent_mask_training', 'exp_i']
+                  'feedforward_mask_training', 'recurrent_mask_training',
+                  'recording_mask', 'exp_i']
     agg_others = {k: jnp.array([e[k] for e in experiments_list]) for k in other_keys}
 
     # Final experiments dict with stacked arrays
@@ -146,7 +147,7 @@ def define_experiments_shapes(key, num_exps, cfg):
     max_steps_per_session = int(steps_per_session.max())  # scalar
     # (num_experiments, max_sessions, max_steps_per_session)
     step_mask = (jnp.arange(max_steps_per_session)[None, None, :]  # (1,1,max_steps)
-                  < steps_per_session[:, :, None])
+                 < steps_per_session[:, :, None])
 
     return (num_sessions, num_trials, num_steps), step_mask.astype(jnp.int32)
 
@@ -209,6 +210,10 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         rec_mask_key, cfg["num_hidden_post"], cfg["recurrent_sparsity_training"],
         exp['feedforward_mask_training']
     )
+
+    exp['recording_mask'] = jax.random.bernoulli(
+        rec_mask_key, cfg["neural_recording_sparsity"], cfg["num_hidden_post"]
+        ).astype(jnp.float32)
 
     # Initialize weights of all layers for generation of this experiment
     exp['init_weights'] = model.initialize_weights(

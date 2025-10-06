@@ -12,7 +12,7 @@ import utils
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
-# coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
+coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
 
 config = {
     "expid": 17, # For saving results and seeding random

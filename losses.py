@@ -31,7 +31,7 @@ def neural_mse_loss(
     exp_traj_ys,
     sim_traj_ys,
     step_mask,
-    # recording_sparsity,
+    recording_mask,
     # measurement_noise_scale,
 
 ):
@@ -50,11 +50,11 @@ def neural_mse_loss(
 
     Returns: Mean squared error loss for neural activity.
     """
-    exp_traj_ys_masked = exp_traj_ys * step_mask[..., None]
-    sim_traj_ys_masked = sim_traj_ys * step_mask[..., None]
+    mask = step_mask[..., None] * recording_mask[None, :]  # (N_sess,N_steps,N_neurons)
+    exp_traj_ys_masked = exp_traj_ys * mask
+    sim_traj_ys_masked = sim_traj_ys * mask
     se = optax.squared_error(exp_traj_ys_masked, sim_traj_ys_masked)
-    norm = jnp.sum(step_mask) * exp_traj_ys.shape[-1]  # N_steps * N_neurons
-    mse_loss = jnp.sum(se) / norm
+    mse_loss = jnp.sum(se) / jnp.sum(mask)
     return mse_loss
 
 def reinforce_loss(outputs, decisions, rewards, step_mask, lick_cost):
@@ -180,7 +180,7 @@ def loss(
             exp['data']['ys'],
             simulated_data['ys'],
             exp['step_mask'],
-            # cfg.neural_recording_sparsity,
+            exp['recording_mask'],
             # cfg.measurement_noise_scale,
         )
     else:
