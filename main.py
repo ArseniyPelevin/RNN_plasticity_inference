@@ -185,8 +185,9 @@ def validate_config(cfg):
     if cfg.input_type == 'task':
         num_visual_types = 5  # Teleportation is not encoded, it is lack of input
         cfg.num_hidden_pre = (cfg.num_place_neurons
-                              + num_visual_types * cfg.num_visual_neurons_per_type)
-                              # + cfg.num_velocity_neurons)  # TODO
+                              + num_visual_types * cfg.num_visual_neurons_per_type
+                              + cfg.num_velocity_neurons
+                              )
 
         cfg.mean_steps_per_trial = int(cfg.mean_trial_time / cfg.dt)
         cfg.std_steps_per_trial = int(cfg.std_trial_time / cfg.dt)

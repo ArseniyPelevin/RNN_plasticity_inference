@@ -472,8 +472,9 @@ def generate_x(key, inputs, cfg, mode):
         x_visual = jax.nn.one_hot(inputs['cue'],
                                   num_visual_types)
         x_visual = x_visual.repeat(cfg.num_visual_neurons_per_type, axis=-1)
-        # x_velocity = None  # TODO implement velocity input
-        return jnp.concatenate([x_pos, x_visual], axis=-1)
+        x_velocity = inputs['v'][:, :, None].repeat(cfg.num_velocity_neurons, axis=-1)
+        x_velocity /= jnp.mean(inputs['v'])  # Velocity firing represents relative speed
+        return jnp.concatenate([x_pos, x_visual, x_velocity], axis=-1)
 
 def generate_x_pos(key, positions, cfg, mode):
     """
