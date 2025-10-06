@@ -72,8 +72,8 @@ def train(key, cfg, train_experiments, test_experiments):
                 plasticity_func,  # Static within losses
                 exp,
                 cfg,  # Static within losses
-                mode=('training' if not cfg._return_weights_trajec
-                      else 'evaluation')  # Return trajectories in aux for debugging
+                mode=('training' if not cfg.log_trajectories
+                      else 'evaluation')  # Return trajectories in aux
             )
 
             grads = {'theta': theta_grads, 'weights': weights_grads}
@@ -87,6 +87,9 @@ def train(key, cfg, train_experiments, test_experiments):
                 'neural': aux['neural'],
                 'behavioral': aux['behavioral']
             }
+            if 'reinforcement' in cfg.fit_data:
+                all_losses['total_reward'] = aux['total_reward']
+                all_losses['total_licks'] = aux['total_licks']
 
             return (params, opt_state), (all_losses, _activation_trajs)
 
@@ -114,6 +117,14 @@ def train(key, cfg, train_experiments, test_experiments):
             train_loss_median = jnp.median(exps_losses['total'])
             print(f"Train Loss: {train_loss_median:.5f}")
             expdata.setdefault("train_loss_median", []).append(train_loss_median)
+
+            if 'reinforcement' in cfg.fit_data:
+                train_rewards = jnp.median(exps_losses['total_reward'])
+                train_licks = jnp.median(exps_losses['total_licks'])
+                print(f"Train Rewards: {train_rewards:.1f}")
+                print(f"Train Licks: {train_licks:.1f}")
+                expdata.setdefault("train_rewards", []).append(train_rewards)
+                expdata.setdefault("train_licks", []).append(train_licks)
 
             if not cfg.do_evaluation:
                 continue  # Skip evaluation on test set

@@ -393,7 +393,9 @@ def simulate_trajectory(
                 output_data['outputs'] = output
 
                 decision = compute_decision(keys[1], output, cfg.min_lick_probability)
-                if 'generation' in mode:
+                if ('generation' in mode  # For generation/evaluation/debugging
+                    or "reinforcement" in cfg.fit_data  # For reinforcement learning
+                    ):
                     output_data['decisions'] = decision
 
                 # Reward if lick at rewarded position
@@ -417,6 +419,11 @@ def simulate_trajectory(
                     if "rec" in cfg.plasticity_layers:
                         output_data['weights']['w_rec'] = w_updated['w_rec']
 
+                if ('test' in mode  # For evaluation/debugging
+                    or 'reinforcement' in cfg.fit_data  # For reinforcement learning
+                    ):
+                    output_data['rewards'] = reward
+
                 return w_updated, output_data
 
             def _skip_step(w):
@@ -426,7 +433,7 @@ def simulate_trajectory(
                 output_data['ys'] = jnp.zeros(cfg.num_hidden_post)
                 output_data['outputs'] = jnp.array(0.0)
 
-                if 'generation' in mode:
+                if 'generation' in mode or "reinforcement" in cfg.fit_data:
                     output_data['decisions'] = jnp.array(0.0)
 
                 if 'test' in mode:
@@ -437,6 +444,9 @@ def simulate_trajectory(
                         output_data['weights']['w_ff'] = w['w_ff']
                     if "rec" in cfg.plasticity_layers:
                         output_data['weights']['w_rec'] = w['w_rec']
+
+                if 'test' in mode or 'reinforcement' in cfg.fit_data:
+                    output_data['rewards'] = jnp.array(0.0)
 
                 return w, output_data
 

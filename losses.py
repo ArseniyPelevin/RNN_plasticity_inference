@@ -209,6 +209,8 @@ def loss(
     loss = reg_theta + reg_w + neural_loss + behavioral_loss + reinforcement_loss
     aux = {'trajectories': simulated_data if mode=='evaluation' else None,
            'neural': neural_loss,
-           'behavioral': behavioral_loss}
+           'behavioral': behavioral_loss,
+           'total_reward': R,
+           'total_licks': D}
 
     return loss, aux
