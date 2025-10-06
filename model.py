@@ -129,7 +129,10 @@ def network_forward(key, weights,
         y += y @ w_rec  # + b
 
     # Apply nonlinearity
-    y = jax.nn.sigmoid(y)
+    if cfg.input_type == 'task':
+        y = jax.nn.sigmoid(y-1)  # Task inputs are 1-centered
+    elif cfg.input_type == 'random':
+        y = jax.nn.sigmoid(y)  # Random inputs are 0-centered
 
     # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
     output = (y @ weights['w_out']).squeeze()  # + b_out
