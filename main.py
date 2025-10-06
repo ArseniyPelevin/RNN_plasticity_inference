@@ -13,13 +13,13 @@ import utils
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3))
 coeff_mask[:, :, :, 1:] = 0  # Zero out reward coefficients
+coeff_masks = {'ff': coeff_mask, 'rec': coeff_mask}
 
 config = {
     "expid": 17, # For saving results and seeding random
     "use_experimental_data": False,
     "input_type": 'random',  # 'random' (Mehta et al., 2023) / 'task' (Sun et al., 2025)
     "fit_data": ["neural"],  # ["behavioral", "neural"]
-    "trainable_init_weights": [],  # ['w_ff', 'w_rec', 'w_out']
 
 # Experiment design
     "num_exp_train": 25,  # Number of experiments/trajectories/animals
@@ -110,20 +110,30 @@ config = {
     "measurement_noise_scale": 0,
 
 # Plasticity
-    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0", # Oja's rule
-    "generation_model": "volterra",  # "volterra", "mlp"
-    "plasticity_model": "volterra",  # "volterra", "mlp"
+    # Dict or str, in latter case use same for all plastic layers
+    "generation_plasticity": {"ff": "1X1Y1W0R0-1X0Y2W1R0",
+                              "rec": "0.7X1Y1W0R0-0.6X0Y2W1R0-0.3X0Y0W1R0"},
+    "generation_model": {"ff": "volterra",  # "volterra", "mlp"
+                        "rec": "volterra"},
+    "plasticity_model": {"ff": "volterra",  # "volterra", "mlp"
+                         "rec": "volterra"},
     "plasticity_coeffs_init": "random",  # "zeros", "random"
-    "plasticity_coeffs_init_scale": 1e-4,
+    "plasticity_coeffs_init_scale": {'ff': 1e-4, 'rec': 1e-4},
     # Restrictions on trainable plasticity parameters
-    "trainable_coeffs": int(np.sum(coeff_mask)),
-    "coeff_mask": coeff_mask.tolist(),
+    "trainable_coeffs": {layer: int(np.sum(mask))
+                         for layer, mask in coeff_masks.items()},
+    "coeff_masks": {layer: mask.tolist() for layer, mask in coeff_masks.items()},
 
 # Training
+    # Only affects training, generation depends on generation_plasticity
+    "trainable_theta": "different",  # "same", "different"
+    "trainable_init_weights": [],  # ['w_ff', 'w_rec', 'w_out']
+
     "num_epochs": 250,
     "learning_rate": 3e-3,
     "max_grad_norm": 0.2,
 
+    # Learning init weights in evaluation with fixed theta
     "num_epochs_weights": 10,
     "learning_rate_weights": 1e-2,
     "max_grad_norm_weights": 1.0,
@@ -211,6 +221,19 @@ def validate_config(cfg):
                 if type(val) is int:
                     cfg[param] = float(val)
 
+    # Convert plasticity parameters to dict if needed
+    plasticity_params = ["generation_plasticity",
+                         "generation_model",
+                         "plasticity_model",
+                         "plasticity_coeffs_init_scale",
+                         "trainable_coeffs",
+                         "coeff_masks"]
+    # If plasticity config is not a dict, use same param for all plastic layers
+    for param in plasticity_params:
+        val = cfg[param]
+        if type(val) is not omegaconf.dictconfig.DictConfig:
+            cfg[param] = dict.fromkeys(cfg.plasticity_layers, val)
+
     return cfg
 
 def generate_data(key, cfg, mode="train"):
@@ -255,7 +278,8 @@ def save_results(cfg, params, expdata, train_time, activation_trajs):
     # Save final parameters
     if cfg.log_final_params:
         export_dict = {'params': params,
-                      # 'trajectories': {str(e): tr for e, tr in enumerate(activation_trajs)}
+                    #   'trajectories': {str(e): tr
+                    #                    for e, tr in enumerate(activation_trajs)}
                       }
         utils.save_nested_hdf5(export_dict,
                                cfg.log_dir + f"exp_{cfg.expid}_final_params.h5")
