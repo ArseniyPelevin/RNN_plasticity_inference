@@ -139,19 +139,22 @@ def network_forward(key, weights,
 
     return y, output
 
-def compute_decision(key, output):
+def compute_decision(key, output, min_lick_p):
     """ Make binary decision based on output (probability of decision).
     To lick or not to lick at this step.
 
     Args:
         key: JAX random key.
-        output (1,): Average of postsynaptic activity - probability of decision.
+        output (1,): Pre-sigmoid logit (float) for decision probability.
+        min_lick_p (float): Minimum probability of licking to encourage exploration.
 
     Returns:
         decision (float): Binary decision (0 or 1).
     """
 
-    return jax.random.bernoulli(key, jax.nn.sigmoid(output)).astype(float)
+    return jax.random.bernoulli(key, jnp.maximum(min_lick_p,  # To encourage exploration
+                                             jax.nn.sigmoid(output))
+                                ).astype(float)  # Bernoulli returns bool
 
 def compute_reward(key, decision):
     """ Compute reward based on binary decision.
@@ -390,7 +393,7 @@ def simulate_trajectory(
                 output_data['ys'] = y
                 output_data['outputs'] = output
 
-                decision = compute_decision(keys[1], output)
+                decision = compute_decision(keys[1], output, cfg.min_lick_probability)
                 if 'generation' in mode:
                     output_data['decisions'] = decision
 

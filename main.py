@@ -103,6 +103,7 @@ config = {
 
     "reward_scale": 0,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
+    "min_lick_probability": 0.05,  # To encourage exploration
 
     "synapse_learning_rate": {'ff': 1, 'rec': 1},
 
