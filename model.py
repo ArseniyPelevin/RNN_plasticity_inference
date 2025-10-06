@@ -137,7 +137,7 @@ def network_forward(key, weights,
     # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
     output = (y @ weights['w_out']).squeeze()  # + b_out
 
-    return y, output
+    return x, y, output
 
 def compute_decision(key, output, min_lick_p):
     """ Make binary decision based on output (probability of decision).
@@ -379,17 +379,22 @@ def simulate_trajectory(
 
             Returns:
                 weights: Updated weighteters after the step.
-                output_data: {y, output[, decision[, weights]]}
+                output_data: {y, - (N_hidden_post,) in (0, 1)
+                              output[, - (1,) pre-sigmoid logit (float)
+                              decision[, - (1,) binary decision {0, 1}, if generation
+                              weights]] - (dict of plastic layers), if test
+                              }
             """
-            x, rewarded_pos, valid, keys = step_variables
+            x_input, rewarded_pos, valid, keys = step_variables
 
             def _do_step(w):
                 output_data = {}
-                y, output = network_forward(keys[0],
-                                            w,
-                                            ff_mask, rec_mask,
-                                            ff_scale, rec_scale,
-                                            x, cfg)
+                x, y, output = network_forward(keys[0],
+                                               w,
+                                               ff_mask, rec_mask,
+                                               ff_scale, rec_scale,
+                                               x_input,  # Clean input without noise
+                                               cfg)
                 output_data['ys'] = y
                 output_data['outputs'] = output
 
@@ -406,7 +411,8 @@ def simulate_trajectory(
                     theta, plasticity_func, cfg)
 
                 if 'test' in mode:
-                    output_data['weights'] = {}
+                    output_data['xs'] = x  # For debugging
+                    output_data['weights'] = {}  # For evaluation/debugging
                     # Only return trajectories of plastic weights (from updated weights)
                     if "ff" in cfg.plasticity_layers:
                         output_data['weights']['w_ff'] = w_updated['w_ff']
@@ -426,6 +432,7 @@ def simulate_trajectory(
                     output_data['decisions'] = jnp.array(0.0)
 
                 if 'test' in mode:
+                    output_data['xs'] = jnp.zeros(cfg.num_hidden_pre)  # For debugging
                     output_data['weights'] = {}
                     # return current (unchanged) weights
                     if "ff" in cfg.plasticity_layers:
