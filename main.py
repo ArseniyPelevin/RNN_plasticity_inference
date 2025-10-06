@@ -96,7 +96,7 @@ config = {
     "init_weights_sparsity_generation": {'ff': 1, 'rec': 1},
     # Weight initialization mean for generation only
     "init_weights_mean_generation": {'ff': 0, 'rec': 0, 'out': 0},
-    # Weight initialization std for generation and training. float or 'Xavier'
+    # Weight initialization std for generation and training. float or 'Kaiming'
     "init_weights_std_generation": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},
         # Could be used as prior?
     "init_weights_std_training": {'ff': 1, 'rec': 1, 'out': 1},

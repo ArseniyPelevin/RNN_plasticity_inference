@@ -26,8 +26,8 @@ def initialize_weights(key, cfg,
                         (b_ff, b_rec, b_out are not used for now)
     """
     def initialize_layer_weights(key, num_pre, num_post, mean, std):
-        if std == 'Xavier':  # Use ""Xavier normal"" (paper's Kaiming)
-            std = 1 / jnp.sqrt(num_pre + num_post)
+        if std == 'Kaiming':  # Use Kaiming normal
+            std = 1 / jnp.sqrt(num_pre)  # If used at all - does not account for mask
 
         return jax.random.normal(key, shape=(num_pre, num_post)) * std + mean
 
