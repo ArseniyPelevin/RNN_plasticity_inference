@@ -111,6 +111,8 @@ def network_forward(key, weights,
     # Add noise to presynaptic layer on each step
     input_noise = jax.random.normal(key, (cfg.num_hidden_pre,))
     x += input_noise * cfg.presynaptic_noise_std
+    if cfg.input_type == 'task':
+        x = jnp.clip(x, min=0)  # Make input positive
 
     # Feedforward layer: x -- w_ff --> y
 
