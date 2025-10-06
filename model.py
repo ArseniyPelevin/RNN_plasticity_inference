@@ -178,7 +178,7 @@ def compute_expected_reward(reward, old_expected_reward):
 @partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
 def update_weights(
     x, y, old_weights,
-    reward, expected_reward,
+    reward_term,
     theta, plasticity_func,
     cfg
 ):
@@ -190,8 +190,7 @@ def update_weights(
         x (array): x (presynaptic activations)  # TODO rename into x
         y (array): y (postsynaptic activations)
         weights (dict): {w_ff, w_rec, w_out}
-        reward (float): Reward at this timestep. TODO Not implemented
-        expected_reward (float): Expected reward at this timestep.
+        reward_term (float): Reward expectation error, only if licked (d=1).
         theta (array): Array of plasticity coefficients.
         plasticity_func (function): Plasticity function.
         cfg (dict): Configuration dictionary.
@@ -244,11 +243,6 @@ def update_weights(
             "y size must match w_rec shape"
         assert old_weights['w_rec'].shape[1] == y.shape[0], \
             "y size must match w_rec shape"
-
-    # using expected reward or just the reward:
-    # 0 if expected_reward == reward
-    reward_term = reward - expected_reward
-    # reward_term = reward
 
     new_weights = {}
     # Update freedforward weights if plastic, else copy old
@@ -404,10 +398,14 @@ def simulate_trajectory(
 
                 # Reward if lick at rewarded position
                 reward = decision * rewarded_pos  # TODO cfg.reward_scale
-                expected_reward = compute_expected_reward(reward, None)
+                # expected_reward = compute_expected_reward(reward, 0)  # TODO?
+                # Treat lick probability as expected reward
+                expected_reward = jax.nn.sigmoid(output)
+                # Reward expectation error, only if licked
+                reward_term = (reward - expected_reward) * decision
 
                 w_updated = update_weights(
-                    x, y, w, reward, expected_reward,
+                    x, y, w, reward_term,
                     theta, plasticity_func, cfg)
 
                 if 'test' in mode:
