@@ -105,7 +105,7 @@ def initialize_trainable_weights(key, cfg, num_experiments, n_restarts=1):
 def network_forward(key, weights,
                     ff_mask, rec_mask,
                     ff_scale, rec_scale,
-                    x, cfg):
+                    x, y_old, cfg):
     """ Propagate through all layers from input to output. """
 
     # Add noise to presynaptic layer on each step
@@ -126,7 +126,7 @@ def network_forward(key, weights,
     if cfg.recurrent:
         # Apply scale and sparsity mask to rec weights
         w_rec = weights['w_rec'] * rec_scale * rec_mask
-        y += y @ w_rec  # + b
+        y += y_old @ w_rec  # + b
 
     # Apply nonlinearity
     if cfg.input_type == 'task':
@@ -177,8 +177,7 @@ def compute_expected_reward(reward, old_expected_reward):
 
 @partial(jax.jit,static_argnames=("plasticity_funcs", "cfg"))
 def update_weights(
-    x, y, old_weights,
-    reward_term,
+    x, y, y_old, old_weights, reward_term,
     thetas, plasticity_funcs,
     cfg
 ):
@@ -187,7 +186,7 @@ def update_weights(
 
     Calculates full weight matrix regardless of sparsity mask(s).
     Args:
-        x (array): x (presynaptic activations)  # TODO rename into x
+        x (array): x (presynaptic activations)
         y (array): y (postsynaptic activations)
         weights (dict): {w_ff, w_rec, w_out}
         reward_term (float): Reward expectation error, only if licked (d=1).
@@ -262,7 +261,7 @@ def update_weights(
     if "rec" in cfg.plasticity_layers:
         rec_layer = 'rec' if 'rec' in thetas else 'both'
         new_weights['w_rec'] = update_layer_weights(
-            y, y, old_weights['w_rec'], reward_term,
+            y_old, y, old_weights['w_rec'], reward_term,
             thetas[rec_layer],
             (plasticity_funcs[1] if len(plasticity_funcs) > 1
              else plasticity_funcs[0]),  # Tuple: either 2nd element 'rec' or 1st 'both'
@@ -327,10 +326,11 @@ def simulate_trajectory(
             ]
         }: Trajectories of activations over the course of the experiment.
     """
+    y_key, exp_key = jax.random.split(key)
     # Pre-split keys for each session and step
     n_sessions = step_mask.shape[0]
     n_steps = step_mask.shape[1]
-    flat_keys = jax.random.split(key, n_sessions * n_steps * 2)  # Two keys per step
+    flat_keys = jax.random.split(exp_key, n_sessions * n_steps * 2)  # Two keys per step
     exp_keys = flat_keys.reshape((n_sessions, n_steps, 2, 2))
 
     # Scale ff weights: by constant scale and by number of inputs to each neuron
@@ -343,7 +343,11 @@ def simulate_trajectory(
     n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
     rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
 
-    def simulate_session(weights, session_variables):
+    # Initialize y activity
+    init_y = jax.random.normal(y_key, (cfg.num_hidden_post,))
+    init_y = jax.nn.sigmoid(init_y)  # Initial activity between 0 and 1
+
+    def simulate_session(session_carry, session_variables):
         """ Simulate trajectory of weights and activations within one session.
 
         Args:
@@ -368,7 +372,7 @@ def simulate_trajectory(
                 }
             }"""
 
-        def simulate_step(weights, step_variables):
+        def simulate_step(step_carry, step_variables):
             """ Simulate forward pass within one time step.
 
             Args:
@@ -389,15 +393,17 @@ def simulate_trajectory(
             """
             x_input, rewarded_pos, valid, keys = step_variables
 
-            def _do_step(w):
+            def _do_step(carry):
+                w, y_old = carry
                 output_data = {}
-                x, y, output = network_forward(keys[0],
-                                               w,
-                                               ff_mask, rec_mask,
-                                               ff_scale, rec_scale,
-                                               x_input,  # Clean input without noise
-                                               cfg)
-                output_data['ys'] = y
+                x, y_new, output = network_forward(keys[0],
+                                                   w,
+                                                   ff_mask, rec_mask,
+                                                   ff_scale, rec_scale,
+                                                   x_input,  # Clean input without noise
+                                                   y_old,
+                                                   cfg)
+                output_data['ys'] = y_new
                 output_data['outputs'] = output
 
                 decision = compute_decision(keys[1], output, cfg.min_lick_probability)
@@ -415,7 +421,7 @@ def simulate_trajectory(
                 reward_term = (reward - expected_reward) * decision
 
                 w_updated = update_weights(
-                    x, y, w, reward_term,
+                    x, y_new, y_old, w, reward_term,
                     thetas, plasticity_funcs, cfg)
 
                 if 'test' in mode:
@@ -432,10 +438,11 @@ def simulate_trajectory(
                     ):
                     output_data['rewards'] = reward
 
-                return w_updated, output_data
+                return (w_updated, y_new), output_data
 
-            def _skip_step(w):
-                # Nothing is done: return weights unchanged and neutral outputs
+            def _skip_step(carry):
+                ''' Nothing is done: return weights unchanged and neutral outputs. '''
+                w, _ = carry
                 output_data = {}
                 # neutral y and output (shapes must match traced shapes)
                 output_data['ys'] = jnp.zeros(cfg.num_hidden_post)
@@ -456,18 +463,19 @@ def simulate_trajectory(
                 if 'test' in mode or 'reinforcement' in cfg.fit_data:
                     output_data['rewards'] = jnp.array(0.0)
 
-                return w, output_data
+                return (w, output_data['ys']), output_data
 
             # Do full computation only when valid is True (real, not padded step)
-            return jax.lax.cond(valid, _do_step, _skip_step, weights)
+            return jax.lax.cond(valid, _do_step, _skip_step, step_carry)
 
         # Run inner scan over steps within one session
-        return jax.lax.scan(simulate_step, weights, session_variables)
+        return jax.lax.scan(simulate_step, session_carry, session_variables)
 
     # Run outer scan over sessions within one experiment
-    _weights_exp, activity_trajec_exp = jax.lax.scan(
+    _carry, activity_trajec_exp = jax.lax.scan(
         simulate_session,
-        init_weights,
+        (init_weights,
+         init_y),
         (exp_x,
          exp_rewarded_pos,
          step_mask,
