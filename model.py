@@ -118,21 +118,19 @@ def network_step(key, weights,
 
     # Apply scale and sparsity mask to ff weights
     w_ff = weights['w_ff'] * ff_scale * ff_mask
-
-    y = x @ w_ff  # + b
+    # Compute feedforward activation
+    a = x @ w_ff  # + b
 
     # Recurrent layer (if present): y -- w_rec --> y
 
     if cfg.recurrent:
         # Apply scale and sparsity mask to rec weights
         w_rec = weights['w_rec'] * rec_scale * rec_mask
-        y += y_old @ w_rec  # + b
+        # Add recurrent activation
+        a += y_old @ w_rec  # + b
 
     # Apply nonlinearity
-    if cfg.input_type == 'task':
-        y = jax.nn.sigmoid(y-1)  # Task inputs are 1-centered
-    elif cfg.input_type == 'random':
-        y = jax.nn.sigmoid(y)  # Random inputs are 0-centered
+    y = jax.nn.sigmoid(a)
 
     # Compute output as pre-sigmoid logit (1,) based on postsynaptic layer activity
     output = (y @ weights['w_out']).squeeze()  # + b_out
