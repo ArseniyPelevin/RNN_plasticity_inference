@@ -102,7 +102,7 @@ def initialize_trainable_weights(key, cfg, num_experiments, n_restarts=1):
     return init_trainable_weights
 
 @partial(jax.jit, static_argnames=("cfg"))
-def network_forward(key, weights,
+def network_step(key, weights,
                     ff_mask, rec_mask,
                     ff_scale, rec_scale,
                     x, y_old, cfg):
@@ -396,7 +396,7 @@ def simulate_trajectory(
             def _do_step(carry):
                 w, y_old = carry
                 output_data = {}
-                x, y_new, output = network_forward(keys[0],
+                x, y_new, output = network_step(keys[0],
                                                    w,
                                                    ff_mask, rec_mask,
                                                    ff_scale, rec_scale,
