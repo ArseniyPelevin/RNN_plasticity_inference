@@ -199,52 +199,54 @@ def init_plasticity_mlp(key, layer_sizes, scale=0.01):
 
 def init_plasticity(key, cfg, mode):
     """
-    Initializes the parameters for a given plasticity model.
+    Initializes the plasticity coefficients for generation of plasticity (training).
     Args:
         key (int): Seed for the random number generator.
         cfg (object): Configuration object containing the model settings.
         mode (str): Mode of operation ("generation" or "plasticity").
 
     Returns:
-        generation_thetas: Per-plastic-layer dict of initialized parameters.
+        plasticity_thetas: Per-plastic-layer dict of initialized parameters.
         plasticity_funcs: Per-plastic-layer dict of plasticity functions.
     """
-    generation_thetas, plasticity_funcs = {}, {}
+    plasticity_thetas, plasticity_funcs = {}, {}
     if "generation" in mode:
         # Only for plastic layers
-        for layer in cfg.plasticity_layers:
+        for layer in cfg.plasticity_layers:  # Always 'ff' or 'rec'
             key, subkey = jax.random.split(key)
-            if cfg.generation_model[layer] == "volterra":
+            if cfg.generation_models[layer] == "volterra":
                 # Ensure the form "X1Y0W0R1"
                 cfg.generation_plasticity[layer] = standardize_coeff_init(
                     cfg.generation_plasticity[layer])
-                (generation_thetas[layer],
+                (plasticity_thetas[layer],
                  plasticity_funcs[layer]) = init_generation_volterra(
                      init=cfg.generation_plasticity[layer])
-            elif cfg.generation_model[layer] == "mlp":
+            elif cfg.generation_models[layer] == "mlp":
                 raise NotImplementedError("MLP generation model not implemented")
-                (generation_thetas[layer],
+                (plasticity_thetas[layer],
                  plasticity_funcs[layer]) = init_plasticity_mlp(
                      subkey, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
-        for layer in cfg.plasticity_layers:
+        for layer in cfg.plasticity_models:  # 'ff' or 'rec' or 'both'
+            print("Initializing plasticity for layer", layer)
             key, subkey = jax.random.split(key)
-            if cfg.plasticity_model[layer] == "volterra":
-                (generation_thetas[layer],
+            if cfg.plasticity_models[layer] == "volterra":
+                (plasticity_thetas[layer],
                  plasticity_funcs[layer]) = init_plasticity_volterra(
                      subkey,
                      init=cfg.plasticity_coeffs_init,
-                     scale=cfg.plasticity_coeffs_init_scale[layer])
-            elif cfg.plasticity_model[layer] == "mlp":
+                     scale=cfg.plasticity_coeffs_init_scales[layer])
+            elif cfg.plasticity_models[layer] == "mlp":
                 raise NotImplementedError("MLP plasticity model not implemented")
-                (generation_thetas[layer],
+                (plasticity_thetas[layer],
                  plasticity_funcs[layer]) = init_plasticity_mlp(
                      subkey, cfg.meta_mlp_layer_sizes)
 
-    if generation_thetas:
-        return generation_thetas, plasticity_funcs
-    else:
+    if plasticity_thetas:
+        return (plasticity_thetas,
+                tuple(plasticity_funcs.values()))  # Needs to be hashable for JIT
+    else:  # None of the modes matched
         raise RuntimeError(
-            "mode needs to be either generation or plasticity, "
-            "and plasticity_model needs to be either volterra or mlp"
+            "mode needs to be either 'generation' or 'plasticity', "
+            "and plasticity_model needs to be either 'volterra' or 'mlp'"
         )

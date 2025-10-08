@@ -9,15 +9,15 @@ from utils import sample_truncated_normal
 
 
 def generate_experiments(key, cfg,
-                         generation_theta, generation_func,
+                         generation_thetas, generation_funcs,
                          mode="train"):
     """ Generate all experiments/trajectories.
 
     Args:
         key (jax.random.PRNGKey): Random key for generating random numbers.
         cfg (dict): Configuration dictionary.
-        generation_theta: 4D tensor of plasticity coefficients.
-        generation_func: Plasticity function used for generation.
+        generation_thetas: per-plastic-layer dict of 4D tensor of plasticity coeffs.
+        generation_funcs: per-plastic-layer dict of plasticity funcs for generation.
         mode: "train" or "test", decides if weight trajectories are returned.
 
     Returns:
@@ -44,7 +44,7 @@ def generate_experiments(key, cfg,
             experiment_keys[exp_i],
             exp_i, cfg,
             shapes, step_masks[exp_i],
-            generation_theta, generation_func,
+            generation_thetas, generation_funcs,
             mode
         )
         experiments_list.append(exp)
@@ -152,7 +152,7 @@ def define_experiments_shapes(key, num_exps, cfg):
     return (num_sessions, num_trials, num_steps), step_mask.astype(jnp.int32)
 
 def generate_experiment(key, exp_i, cfg, shapes, step_mask,
-                generation_theta, generation_func, mode):
+                        generation_thetas, generation_funcs, mode):
     """Initialize experiment with given configuration and plasticity model.
 
     Args:
@@ -160,8 +160,8 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         exp_i: Experiment index.
         cfg: Configuration dictionary.
         shapes: Tuple of (num_sessions, num_trials, num_steps) arrays,
-        generation_theta: 4D tensor of plasticity coefficients.
-        generation_func: Plasticity function used for generation.
+        generation_thetas: per-plastic-layer dict of 4D tensor of plasticity coeffs.
+        generation_funcs: per-plastic-layer dict of plasticity funcs for generation.
         mode: "train" or "test", decides if weight trajectories are returned.
     """
     exp = {}
@@ -244,8 +244,8 @@ def generate_experiment(key, exp_i, cfg, shapes, step_mask,
         exp['init_weights'],
         feedforward_mask_generation,
         recurrent_mask_generation,
-        generation_theta,
-        generation_func,
+        generation_thetas,
+        generation_funcs,
         x_gen,
         exp['rewarded_pos'],
         exp['step_mask'],

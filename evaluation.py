@@ -7,16 +7,16 @@ import numpy as np
 import optax
 
 
-def evaluate(key, cfg, theta, plasticity_func, init_theta,
+def evaluate(key, cfg, thetas, plasticity_funcs, init_thetas,
              test_experiments, init_trainable_weights_test, expdata):
     """ Compute evaluation metrics.
 
     Args:
         key (jax.random.PRNGKey): Random key for simulation.
         cfg (dict): Configuration dictionary.
-        theta (jax.numpy.ndarray): Learned plasticity coefficients.
-        plasticity_func (function): Plasticity function.
-        init_theta (jax.numpy.ndarray): Initial random plasticity coefficients.
+        thetas (dict): Per-plastic-layer learned plasticity coefficients.
+        plasticity_funcs (dict): Per-plastic-layer plasticity functions.
+        init_thetas (dict): Per-plastic-layer initial random plasticity coefficients.
         test_experiments (dict): Dictionary of arrays
             of shape (N_exp, ... ) for each variable of test experiments.
         init_trainable_weights_test: Random initial trainable weights
@@ -32,7 +32,7 @@ def evaluate(key, cfg, theta, plasticity_func, init_theta,
     # Compute neural MSE loss and behavioral BCE loss.
     # Compute R2 scores for neural activity and weights.
     losses_and_r2 = compute_models_losses_and_r2(key, cfg, test_experiments,
-                                                 plasticity_func, init_theta, theta,
+                                                 plasticity_funcs, init_thetas, thetas,
                                                  init_trainable_weights_test)
     losses_and_r2_N = losses_and_r2.pop('N')  # Null model for reference
 
@@ -88,7 +88,7 @@ def evaluate(key, cfg, theta, plasticity_func, init_theta,
     return expdata, losses_and_r2
 
 def compute_models_losses_and_r2(key, cfg, test_experiments,
-                                 plasticity_func, init_theta, theta,
+                                 plasticity_funcs, init_thetas, thetas,
                                  init_trainable_weights_test):
     """ Compute losses and R2 scores for different model variants:
     Full model (F): learned plasticity and learned weights,
@@ -101,15 +101,16 @@ def compute_models_losses_and_r2(key, cfg, test_experiments,
         cfg (dict): Configuration dictionary.
         test_experiments (dict): Dictionary of arrays
             of shape (N_exp, ... ) for each variable of test experiments.
-        plasticity_func (function): Plasticity function.
-        theta (jax.numpy.ndarray): Learned plasticity coefficients.
-        init_trainable_weights_test: Random initial trainable weights
-            for test experiments.  Per-restart list of per-layer dicts
+        plasticity_funcs (dict): Per-plastic-layer dict of plasticity functions.
+        init_thetas (dict): Per-plastic-layer dict of initial random plasticity coeffs.
+        thetas (dict): Per-plastic-layer dict of learned plasticity coeffs.
+        init_trainable_weights_test (list): Random initial trainable weights
+            for test experiments. Per-restart list of per-layer dicts
             of per-exp arrays of randomly initialized weights.
 
     Returns: dict: Dictionary with losses and R2 scores for each model variant.
     """
-    # zero_theta, _ = synapse.init_plasticity_volterra(key=None,
+    # zero_thetas, _ = synapse.init_plasticity_volterra(key=None,
     #                                                  init="zeros", scale=None)
 
     losses_and_r2 = {}
@@ -122,31 +123,31 @@ def compute_models_losses_and_r2(key, cfg, test_experiments,
         if len(cfg.trainable_init_weights) > 0:
             # Learn initial weights for test experiments
             learned_init_weights = learn_initial_weights(
-                weights_key, cfg, theta, plasticity_func,
+                weights_key, cfg, thetas, plasticity_funcs,
                 test_experiments, init_trainable_weights_test[start])
         else:
             # Use random initial weights for test experiments
             learned_init_weights = init_trainable_weights_test[start]
 
         compute_loss_r2 = partial(compute_loss_and_r2,
-                                  loss_key, cfg, test_experiments, plasticity_func)
+                                  loss_key, cfg, test_experiments, plasticity_funcs)
 
         # Compute loss of full model with learned plasticity and learned weights
         losses_and_r2.setdefault("F", []).append(
-            compute_loss_r2(theta, learned_init_weights))
+            compute_loss_r2(thetas, learned_init_weights))
 
         if cfg.trainable_init_weights:
             # Compute loss of theta model with learned plasticity and random weights
             losses_and_r2.setdefault("T", []).append(
-                compute_loss_r2(theta, init_trainable_weights_test[start]))
+                compute_loss_r2(thetas, init_trainable_weights_test[start]))
 
             # Compute loss of weights model with zero plasticity and learned weights
             losses_and_r2.setdefault("W", []).append(
-                compute_loss_r2(init_theta, learned_init_weights))
+                compute_loss_r2(init_thetas, learned_init_weights))
 
         # Compute loss of null model with zero plasticity and random weights
         losses_and_r2.setdefault("N", []).append(
-            compute_loss_r2(init_theta, init_trainable_weights_test[start]))
+            compute_loss_r2(init_thetas, init_trainable_weights_test[start]))
 
     # Convert lists of dicts to dict of arrays
     for model in losses_and_r2:
@@ -159,16 +160,16 @@ def compute_models_losses_and_r2(key, cfg, test_experiments,
 
     return losses_and_r2
 
-@partial(jax.jit, static_argnames=['cfg', 'plasticity_func'])
-def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
+@partial(jax.jit, static_argnames=['cfg', 'plasticity_funcs'])
+def learn_initial_weights(key, cfg, learned_thetas, plasticity_funcs,
                           test_experiments,
                           init_weights):
     """ Learn initial weights of trainable layers for test experiments given theta.
     Args:
         key (jax.random.PRNGKey): Random key for generating random numbers.
         cfg: Configuration dictionary.
-        learned_theta (jax.numpy.ndarray): Learned plasticity coefficients.
-        plasticity_func (function): Plasticity function.
+        learned_thetas (dict): Per-plastic-layer dict of learned plasticity coeffs.
+        plasticity_funcs (dict): Per-plastic-layer dict of plasticity functions.
         test_experiments (dict): Variables in arrays
             of shape (N_exp, N_sess, N_steps, ...) for one start.
         init_weights (dict): Random initial trainable weights
@@ -195,17 +196,17 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
 
     opt_state = optimizer.init(init_weights)
 
-    @partial(jax.jit, static_argnames=['plasticity_func', 'cfg'])
-    def run_epoch(epoch_keys, init_weights, opt_state, learned_theta, plasticity_func,
+    @partial(jax.jit, static_argnames=['plasticity_funcs', 'cfg'])
+    def run_epoch(epoch_keys, init_weights, opt_state, learned_thetas, plasticity_funcs,
                   test_experiments, cfg):
         def run_exps(carry, exp_and_key):
             init_weights, opt_state = carry
             exp, key = exp_and_key
             (_loss, _aux), w_grads = loss_value_and_grad(
                 key,
-                learned_theta,
+                learned_thetas,
                 init_weights,
-                plasticity_func,
+                plasticity_funcs,
                 exp,
                 cfg,
                 mode=('training' if not cfg.log_trajectories else 'evaluation')
@@ -221,13 +222,13 @@ def learn_initial_weights(key, cfg, learned_theta, plasticity_func,
 
     for epoch in range(cfg.num_epochs_weights):
         init_weights, opt_state = run_epoch(test_keys[epoch], init_weights, opt_state,
-                                            learned_theta, plasticity_func,
+                                            learned_thetas, plasticity_funcs,
                                             test_experiments, cfg)
 
     return init_weights
 
-@partial(jax.jit, static_argnames=['cfg', 'plasticity_func'])
-def compute_loss_and_r2(key, cfg, experiments, plasticity_func, theta,
+@partial(jax.jit, static_argnames=['cfg', 'plasticity_funcs'])
+def compute_loss_and_r2(key, cfg, experiments, plasticity_funcs, thetas,
                         init_trainable_weights):
     """ Compute loss and R2 scores for one model variant on all test experiments.
 
@@ -236,8 +237,8 @@ def compute_loss_and_r2(key, cfg, experiments, plasticity_func, theta,
         cfg: Configuration dictionary.
         experiments (dict): Variables in arrays
             of shape (N_exp, N_sess, N_steps, ...) for one start.
-        plasticity_func (function): Plasticity function.
-        theta (jax.numpy.ndarray): Plasticity coefficients.
+        plasticity_funcs (dict): Per-plastic-layer dict of plasticity functions.
+        thetas (dict): Per-plastic-layer dict of plasticity coefficients.
         init_trainable_weights (dict): Initial synaptic weights in trainable layers.
 
     Returns:
@@ -255,9 +256,9 @@ def compute_loss_and_r2(key, cfg, experiments, plasticity_func, theta,
         # Compute test loss and R2 score
         loss, aux = losses.loss(
             key,
-            theta,
+            thetas,
             init_trainable_weights,
-            plasticity_func,  # Static within losses
+            plasticity_funcs,  # Static within losses
             exp,
             cfg,  # Static within losses
             mode='evaluation'

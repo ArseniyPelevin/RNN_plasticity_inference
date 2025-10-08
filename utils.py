@@ -212,62 +212,67 @@ def experiment_lists_to_tensors(nested_lists):
 
     return tensors, mask, steps_per_session
 
-def print_and_log_learned_params(cfg, expdata, theta):
+def print_and_log_learned_params(cfg, expdata, thetas):
     """
     Logs and prints current plasticity coefficients.
 
     Args:
         cfg (object): Configuration object containing the model settings.
         expdata (dict): Dictionary to store experimental data.
-        theta (jnp.ndarray): (3, 3, 3, 3) array of plasticity coefficients.
+        thetas (dict): per-plastic_layer dict of
+            (3, 3, 3, 3) arrays of plasticity coefficients.
 
     Returns:
         dict: Updated experimental data dictionary.
-    """
+    """ 
+    def print_and_log_learned_params_layer(layer, theta):
+        coeff_prefix = layer[0].upper()  # 'F': feedforward, 'R': recurrent, 'B': both
+        if cfg.plasticity_models[layer] == "volterra":
+            coeff_mask = jnp.array(cfg.coeff_masks[layer])
+            theta = jnp.multiply(theta, coeff_mask)
+            for i in range(3):
+                for j in range(3):
+                    for k in range(3):
+                        for l in range(3):
+                            dict_key = f"{coeff_prefix}_{i}{j}{k}{l}"
+                            expdata.setdefault(dict_key, []).append(
+                                theta[i, j, k, l]
+                            )
 
-    if cfg.plasticity_model == "volterra":
-        coeff_mask = jnp.array(cfg.coeff_mask)
-        theta = jnp.multiply(theta, coeff_mask)
-        for i in range(3):
-            for j in range(3):
-                for k in range(3):
-                    for l in range(3):
-                        dict_key = f"A_{i}{j}{k}{l}"
-                        expdata.setdefault(dict_key, []).append(
-                            theta[i, j, k, l]
-                        )
+            ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
+            top_indices = jnp.argsort(
+                jnp.abs(theta[ind_i, ind_j, ind_k, ind_l].ravel())
+            )[-5:]
 
-        ind_i, ind_j, ind_k, ind_l = coeff_mask.nonzero()
-        top_indices = jnp.argsort(
-            jnp.abs(theta[ind_i, ind_j, ind_k, ind_l].ravel())
-        )[-5:]
+            print(f"\nTop learned plasticity terms for {layer} layer:")
+            print("{:<10} {:<20}".format("Term", "Coefficient"))
 
-        print("Top learned plasticity terms:")
-        print("{:<10} {:<20}".format("Term", "Coefficient"))
-
-        for idx in reversed(top_indices):
-            term_str = ""
-            if ind_i[idx] == 1:
-                term_str += "X "
-            elif ind_i[idx] == 2:
-                term_str += "X² "
-            if ind_j[idx] == 1:
-                term_str += "Y "
-            elif ind_j[idx] == 2:
-                term_str += "Y² "
-            if ind_k[idx] == 1:
-                term_str += "W "
-            elif ind_k[idx] == 2:
-                term_str += "W² "
-            if ind_l[idx] == 1:
-                term_str += "R"
-            elif ind_l[idx] == 2:
-                term_str += "R²"
-            coeff = theta[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
-            print(f"{term_str:<10} {coeff:<20.5f}")
-    else:
-        print("MLP plasticity coeffs: ", theta)
-        expdata.setdefault("mlp_params", []).append(theta)
+            for idx in reversed(top_indices):
+                term_str = ""
+                if ind_i[idx] == 1:
+                    term_str += "X "
+                elif ind_i[idx] == 2:
+                    term_str += "X² "
+                if ind_j[idx] == 1:
+                    term_str += "Y "
+                elif ind_j[idx] == 2:
+                    term_str += "Y² "
+                if ind_k[idx] == 1:
+                    term_str += "W "
+                elif ind_k[idx] == 2:
+                    term_str += "W² "
+                if ind_l[idx] == 1:
+                    term_str += "R"
+                elif ind_l[idx] == 2:
+                    term_str += "R²"
+                coeff = theta[ind_i[idx], ind_j[idx], ind_k[idx], ind_l[idx]]
+                print(f"{term_str:<10} {coeff:<20.5f}")
+        else:
+            print(f"MLP plasticity coeffs for {layer} layer: ", theta)
+            expdata.setdefault("mlp_params", []).append(theta)
+    
+    for layer, theta in thetas.items():
+        print_and_log_learned_params_layer(layer, theta)
 
     return expdata
 
@@ -336,126 +341,6 @@ def load_nested_hdf5(fname):
         return out
     with h5py.File(fname, "r") as f:
         return _recursively_read(f)
-
-
-def validate_config(cfg: Any) -> Any:
-    """
-    Validates and processes the configuration object.
-
-    Args:
-        cfg: Configuration object containing model settings and paths.
-
-    Returns:
-        The validated and processed configuration object.
-
-    Raises:
-        ValueError: If any of the configuration validations fail.
-    """
-    
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-
-    # Convert layer_sizes from string to list if necessary
-    if isinstance(cfg.layer_sizes, str):
-        cfg.layer_sizes = ast.literal_eval(cfg.layer_sizes)
-
-    # Validate reward_ratios length
-    if len(cfg.reward_ratios) != cfg.num_sessions:
-        raise ValueError("Length of reward_ratios should be equal to num_sessions!")
-
-    # Validate plasticity_model
-    if cfg.plasticity_model not in ["volterra", "mlp"]:
-        raise ValueError("Only 'volterra' and 'mlp' plasticity models are supported!")
-
-    # Validate generation_model
-    if cfg.generation_model not in ["volterra", "mlp"]:
-        raise ValueError("Only 'volterra' and 'mlp' generation models are supported!")
-
-    # Validate meta_mlp_layer_sizes
-    if not (cfg.meta_mlp_layer_sizes[0] == 4 and cfg.meta_mlp_layer_sizes[-1] == 1):
-        raise ValueError("meta_mlp_layer_sizes must start with 4 and end with 1!")
-
-    # Validate output dimension
-    # if cfg.layer_sizes[-1] != 1:
-    #     raise ValueError("Output dimension (last element of layer_sizes) must be 1!")
-
-    # Validate number of layers
-    if len(cfg.layer_sizes) not in [2, 3]:
-        raise ValueError("Only 2 or 3 layer networks are supported!")
-
-    # Validate neural_recording_sparsity if fitting neural data
-    if "neural" in cfg.fit_data:
-        if not (0.0 <= cfg.neural_recording_sparsity <= 1.0):
-            raise ValueError("neural_recording_sparsity must be between 0 and 1!")
-
-    # Validate device
-    if cfg.device not in ["cpu", "gpu"]:
-        raise ValueError("Device must be 'cpu' or 'gpu'!")
-
-    # Validate regularization_type
-    if cfg.regularization_type.lower() not in ["l1", "l2", "none"]:
-        raise ValueError(
-            "Only 'l1', 'l2', and 'none' regularization types are supported!"
-        )
-
-    # Validate plasticity_coeffs_init for MLP
-    if cfg.plasticity_model == "mlp":
-        if cfg.plasticity_coeffs_init != "random":
-            raise ValueError(
-                "Only 'random' plasticity_coeffs_init is supported for MLP!"
-            )
-
-    # Validate fit_data contains 'behavioral' or 'neural'
-    if not ("behavioral" in cfg.fit_data or "neural" in cfg.fit_data):
-        raise ValueError("fit_data must contain 'behavioral' or 'neural', or both!")
-
-    # If using experimental data, validate related parameters
-    if cfg.use_experimental_data:
-        num_flies = len(os.listdir(cfg.data_dir))
-        if not (0 < cfg.expid <= num_flies):
-            raise ValueError(
-                f"Fly experimental data only for fly IDs 1 to {num_flies}!"
-            )
-
-        if cfg.num_sessions != 3:
-            raise ValueError("All experimental data consists of 3 sessions!")
-
-        # Uncomment the following lines if num_train validation is required
-        # if cfg.num_train != 1:
-        #     raise ValueError("When fitting per fly, num_train must be 1!")
-
-        if not ("behavioral" in cfg.fit_data and "neural" not in cfg.fit_data):
-            raise ValueError("Only 'behavioral' experimental data is available!")
-
-        # Set certain cfg fields to 'N/A' for experimental data
-        cfg.trials_per_session = "N/A"
-        cfg.reward_ratios = "N/A"
-
-    # Adjust cfg for 'mlp' plasticity_model
-    if cfg.plasticity_model == "mlp":
-        cfg.coeff_mask = "N/A"
-        cfg.l1_regularization = "N/A"
-        cfg.trainable_coeffs = 6 * cfg.meta_mlp_layer_sizes[1] + 1
-
-    # Validate settings for 'volterra' plasticity_model
-    if cfg.plasticity_model == "volterra":
-        if cfg.log_mlp_plasticity:
-            raise ValueError(
-                "log_mlp_plasticity must be False for 'volterra' plasticity!"
-            )
-
-        if cfg.plasticity_coeffs_init not in ["random", "zeros"]:
-            raise ValueError(
-                "Only 'random' or 'zeros' plasticity_coeffs_init supported for 'volterra'!"
-            )
-
-    # Adjust cfg fields if not fitting neural data
-    if "neural" not in cfg.fit_data:
-        cfg.neural_recording_sparsity = "N/A"
-        cfg.measurement_noise_scale = "N/A"
-
-    return cfg
-
 
 def standardize_coeff_init(coeff_init):
     """

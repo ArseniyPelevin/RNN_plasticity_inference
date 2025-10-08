@@ -59,7 +59,7 @@ config = {
     "num_hidden_pre": 50,  # x, presynaptic neurons for plasticity layer
     "num_hidden_post": 50,  # y, postsynaptic neurons for plasticity layer
     "recurrent": True,  # Whether to include recurrent connections
-    "plasticity_layers": ["ff"],  # ["ff", "rec"]
+    "plasticity_layers": ["ff", "rec"],  # ["ff", "rec"]
     # Fraction of postsynaptic neurons receiving FF input, for generation and training,
     # only effective if recurrent connections are present, otherwise 1
     "postsynaptic_input_sparsity_generation": 1,
@@ -277,11 +277,11 @@ def generate_data(key, cfg, mode="train"):
     # Generate model activity
     plasticity_key, experiments_key = jax.random.split(key, 2)
     #TODO add branching for experimental data
-    generation_theta, generation_func = synapse.init_plasticity(
-        plasticity_key, cfg, mode="generation_model"
+    generation_thetas, generation_funcs = synapse.init_plasticity(
+        plasticity_key, cfg, mode="generation"
     )
     experiments = experiment.generate_experiments(
-        experiments_key, cfg, generation_theta, generation_func, mode,
+        experiments_key, cfg, generation_thetas, generation_funcs, mode,
     )
 
     return experiments

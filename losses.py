@@ -82,12 +82,12 @@ def reinforce_loss(outputs, decisions, rewards, step_mask, lick_cost):
     S = R - lick_cost * D
     return -logpi_sum * S, R, D
 
-@partial(jax.jit, static_argnames=["plasticity_func", "cfg", "mode"])
+@partial(jax.jit, static_argnames=["plasticity_funcs", "cfg", "mode"])
 def loss(
     key,
-    theta,  # Current plasticity coeffs, updated on each iteration
-    weights,  # Current initial weights estimate, updated on each iteration
-    plasticity_func,  # Static within losses
+    thetas,  # Per-plastic-layer dict of current plasticity coeffs
+    weights,  # Current initial weights estimate
+    plasticity_funcs,  # Static within losses, per-plastic-layer dict
     exp,
     cfg,  # Static within losses
     mode  # 'training' or 'evaluation'
@@ -97,10 +97,10 @@ def loss(
 
     Args:
         key (int): Seed for the random number generator.
-        theta (array): Current plasticity coeffs, updated on each iteration.
+        thetas (dict): Current plasticity coeffs estimate for each plastic layer,
         weights (dict): Current initial weights estimate for each trainable layer,
             arrays of shape (N_exp, layer_shape...).
-        plasticity_func (function): Plasticity function.
+        plasticity_funcs (dict): Plasticity functions for each layer.
         exp (dict): Dictionary of variables for one experiment containing:
             'data': dict with keys:
                 - 'x_train': Training inputs
@@ -130,32 +130,33 @@ def loss(
                               for layer, layer_weights in weights.items()}
     init_weights = {**exp['init_fixed_weights'], **init_trainable_weights}
 
-    # Apply mask to plasticity coefficients to enforce constraints
-    if cfg.plasticity_model == "volterra": # Allow 'if' in jitted func: cfg is static
-        theta = jnp.multiply(theta, # ['ff'/'rec'] TODO
-                             jnp.array(cfg.coeff_mask)) # ['ff'/'rec'] TODO
-    # Compute regularization for theta and add it to total loss
-    if cfg.regularization_type_theta.lower() != "none":
-        reg_func = (
-            jnp.abs if "l1" in cfg.regularization_type_theta.lower()
-            else jnp.square
-        )
-        reg_theta = cfg.regularization_scale_theta * jnp.sum(reg_func(theta))
-    else:
-        reg_theta = 0.0
-
-    # Compute regularization for initial weights and add it to total loss
-    if cfg.regularization_type_weights.lower() != "none":
-        reg_w = 0.0
-        for init_trainable_weights_layer in init_trainable_weights.values():
+    reg_theta = 0.0
+    thetas_masked = {}
+    for layer in thetas:
+        # Apply mask to plasticity coefficients to enforce constraints
+        if cfg.plasticity_models[layer] == "volterra":
+            thetas_masked[layer] = jnp.multiply(thetas[layer],
+                                                jnp.array(cfg.coeff_masks[layer]))
+        # Compute regularization for theta
+        if cfg.reg_types_theta[layer].lower() != "none":
             reg_func = (
-                jnp.abs if "l1" in cfg.regularization_type_weights.lower()
+                jnp.abs if "l1" in cfg.reg_types_theta[layer].lower()
                 else jnp.square
             )
-            reg_w += (cfg.regularization_scale_weights
-                      * jnp.sum(reg_func(init_trainable_weights_layer)))
-    else:
-        reg_w = 0.0
+            reg_theta += (cfg.reg_scales_theta[layer]
+                         * jnp.sum(reg_func(thetas_masked[layer])))
+
+
+    # Compute regularization for initial weights and add it to total loss
+    reg_w = 0.0
+    for layer in init_trainable_weights:
+        if cfg.reg_types_weights[layer].lower() != "none":
+            reg_func = (
+                jnp.abs if "l1" in cfg.reg_types_weights[layer].lower()
+                else jnp.square
+            )
+            reg_w += (cfg.reg_scales_weights[layer]
+                      * jnp.sum(reg_func(layer)))
 
     # Return simulated trajectory of one experiment
     simulated_data = model.simulate_trajectory(
@@ -163,8 +164,8 @@ def loss(
         init_weights,
         exp['feedforward_mask_training'],
         exp['recurrent_mask_training'],
-        theta,  # Our current plasticity coefficients estimate
-        plasticity_func,
+        thetas_masked,  # Our current plasticity coefficients estimate
+        plasticity_funcs,
         exp['data']['x_train'],
         exp['rewarded_pos'],
         exp['step_mask'],

@@ -30,8 +30,8 @@ def train(key, cfg, train_experiments, test_experiments):
     train_keys = jnp.array(train_keys).reshape((num_epochs, num_exp, 2))
 
     # Initialize plasticity coefficients for training
-    init_theta, plasticity_func = synapse.init_plasticity(
-        init_plasticity_key, cfg, mode="plasticity_model"
+    init_thetas, plasticity_funcs = synapse.init_plasticity(
+        init_plasticity_key, cfg, mode="plasticity"
     )
 
     # Initialize weights of trainable layers for each train and test experiment.
@@ -41,7 +41,7 @@ def train(key, cfg, train_experiments, test_experiments):
     init_trainable_weights_test = model.initialize_trainable_weights(
         test_w_key, cfg, cfg.num_exp_test, n_restarts=cfg.num_test_restarts)
 
-    params = {'theta': init_theta,
+    params = {'thetas': init_thetas,  # per-plastic-layer dict
               'weights': init_trainable_weights_train[0]}  # n_restarts=1 for training
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
@@ -67,16 +67,16 @@ def train(key, cfg, train_experiments, test_experiments):
             exp, key = exp_and_key
             (loss, aux), (theta_grads, weights_grads) = loss_value_and_grad(
                 key,  # Pass subkey this time, because loss will not return key
-                params['theta'],  # Current plasticity coeffs, updated on each iteration
-                params['weights'],  # Current initial weights, updated on each iteration
-                plasticity_func,  # Static within losses
+                params['thetas'],  # Current plasticity coeffs on each iteration
+                params['weights'],  # Current initial weights on each iteration
+                plasticity_funcs,  # Static within losses, per-plastic-layer dict
                 exp,
                 cfg,  # Static within losses
                 mode=('training' if not cfg.log_trajectories
                       else 'evaluation')  # Return trajectories in aux
             )
 
-            grads = {'theta': theta_grads, 'weights': weights_grads}
+            grads = {'thetas': theta_grads, 'weights': weights_grads}
             updates, opt_state = optimizer.update(grads, opt_state, params)
             params = optax.apply_updates(params, updates)
 
@@ -111,7 +111,7 @@ def train(key, cfg, train_experiments, test_experiments):
             _activation_trajs[epoch] = _activation_trajs_epoch  # Store for debugging
 
             # Print and log learned plasticity parameters
-            expdata = utils.print_and_log_learned_params(cfg, expdata, params['theta'])
+            expdata = utils.print_and_log_learned_params(cfg, expdata, params['thetas'])
 
             # Print and log train loss
             train_loss_median = jnp.median(exps_losses['total'])
@@ -130,7 +130,7 @@ def train(key, cfg, train_experiments, test_experiments):
                 continue  # Skip evaluation on test set
             key, eval_key = jax.random.split(key)
             expdata, _losses_and_r2 = evaluation.evaluate(
-                eval_key, cfg, params['theta'], plasticity_func, init_theta,
+                eval_key, cfg, params['thetas'], plasticity_funcs, init_thetas,
                 test_experiments, init_trainable_weights_test,
                 expdata)
             _losses_and_r2s[epoch] = _losses_and_r2

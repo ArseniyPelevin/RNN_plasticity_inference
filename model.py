@@ -175,11 +175,11 @@ def compute_expected_reward(reward, old_expected_reward):
     """
     return 0
 
-@partial(jax.jit,static_argnames=("plasticity_func", "cfg"))
+@partial(jax.jit,static_argnames=("plasticity_funcs", "cfg"))
 def update_weights(
     x, y, old_weights,
     reward_term,
-    theta, plasticity_func,
+    thetas, plasticity_funcs,
     cfg
 ):
     """
@@ -197,10 +197,11 @@ def update_weights(
 
     Returns: Dictionary of updated weights.
     """
-    def update_layer_weights(pre, post, w, r, theta, lr):
+    def update_layer_weights(pre, post, w, r,
+                             theta, plasticity_func, lr):
             # Allow python 'if' in jitted function because cfg is static
         # Use vectorized volterra_plasticity_function
-        if cfg.plasticity_model == "volterra":
+        if "volterra" in plasticity_func.__name__:
             # Precompute powers of pre, post, w, r
             X = jnp.stack([jnp.ones_like(pre), pre, pre * pre],
                           axis=0)  # (3, N_pre)
@@ -212,7 +213,7 @@ def update_weights(
 
             dw = plasticity_func(X, Y, W, R, theta)
         # Use per-synapse mlp_plasticity_function
-        elif cfg.plasticity_model == "mlp":
+        elif "mlp" in plasticity_func.__name__:
             # vmap over postsynaptic neurons
             vmap_post = jax.vmap(plasticity_func, in_axes=(None, 0, 0, None, None))
             # vmap over presynaptic neurons now, i.e. together vmap over synapses
@@ -245,20 +246,27 @@ def update_weights(
             "y size must match w_rec shape"
 
     new_weights = {}
-    # Update freedforward weights if plastic, else copy old
+    # Update feedforward weights if plastic, else copy old
     if "ff" in cfg.plasticity_layers:
+        ff_layer = 'ff' if 'ff' in thetas else 'both'
         new_weights['w_ff'] = update_layer_weights(
             x, y, old_weights['w_ff'], reward_term,
-            theta, cfg.synapse_learning_rate['ff']  # theta['ff'] TODO
+            thetas[ff_layer],
+            plasticity_funcs[0],  # Tuple: 1st element either 'ff' or 'both',
+            cfg.synapse_learning_rate
         )
     else:
         new_weights['w_ff'] = old_weights['w_ff']
 
     # Update recurrent weights if plastic, else copy old or skip if no recurrent
     if "rec" in cfg.plasticity_layers:
+        rec_layer = 'rec' if 'rec' in thetas else 'both'
         new_weights['w_rec'] = update_layer_weights(
             y, y, old_weights['w_rec'], reward_term,
-            theta, cfg.synapse_learning_rate['rec']  # theta['rec'] TODO
+            thetas[rec_layer],
+            (plasticity_funcs[1] if len(plasticity_funcs) > 1
+             else plasticity_funcs[0]),  # Tuple: either 2nd element 'rec' or 1st 'both'
+            cfg.synapse_learning_rate
         )
     elif cfg.recurrent:
         new_weights['w_rec'] = old_weights['w_rec']
@@ -268,14 +276,14 @@ def update_weights(
 
     return new_weights
 
-@partial(jax.jit, static_argnames=("plasticity_func", "cfg", "mode"))
+@partial(jax.jit, static_argnames=("plasticity_funcs", "cfg", "mode"))
 def simulate_trajectory(
     key,
     init_weights,
     ff_mask,
     rec_mask,
-    theta,
-    plasticity_func,
+    thetas,
+    plasticity_funcs,
     exp_x,
     exp_rewarded_pos,
     step_mask,
@@ -290,8 +298,8 @@ def simulate_trajectory(
                 w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                 w_out: (num_hidden_post, 1)
                 (b_ff, b_rec, b_out are not used for now)
-        theta: Plasticity coefficients for the model.
-        plasticity_func: Plasticity function to use.
+        thetas: Per-plastic-layer dict of plasticity coefficients for the model.
+        plasticity_funcs: Per-plastic-layer dict of plasticity functions to use.
         exp_x (N_sessions, N_steps_per_session_max, N_hidden_pre):
             Presynaptic activity of one exp.
         exp_rewarded_pos (N_sessions, N_steps_per_session_max):
@@ -408,7 +416,7 @@ def simulate_trajectory(
 
                 w_updated = update_weights(
                     x, y, w, reward_term,
-                    theta, plasticity_func, cfg)
+                    thetas, plasticity_funcs, cfg)
 
                 if 'test' in mode:
                     output_data['xs'] = x  # For debugging
