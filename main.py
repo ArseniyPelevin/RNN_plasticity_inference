@@ -103,7 +103,7 @@ config = {
 
     "reward_scale": 0,
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
-    "min_lick_probability": 0.05,  # To encourage exploration
+    "min_lick_probability": 0.05,  # To encourage exploration, only in reinforcement
 
     "measurement_noise_scale": 0,
 
@@ -185,6 +185,9 @@ def validate_config(cfg):
         or neural_or_behavioral and "reinforcement" in cfg.fit_data):
         raise ValueError("fit_data must contain 'behavioral' and/or 'neural',"
                          " or 'reinforcement'")
+    
+    if not 'reinforcement' in cfg.fit_data:
+        cfg.min_lick_probability = 0.0  # No prior strategy for fitting
 
     if cfg.input_type == 'task':
         num_visual_types = 6  # Teleportation IS encoded

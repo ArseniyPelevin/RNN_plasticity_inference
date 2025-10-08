@@ -145,6 +145,7 @@ def compute_decision(key, output, min_lick_p):
         key: JAX random key.
         output (1,): Pre-sigmoid logit (float) for decision probability.
         min_lick_p (float): Minimum probability of licking to encourage exploration.
+            Used only for reinforcement learning. Set to zero for fitting.
 
     Returns:
         decision (float): Binary decision (0 or 1).
