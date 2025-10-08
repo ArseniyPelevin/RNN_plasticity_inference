@@ -150,9 +150,8 @@ def compute_decision(key, output, min_lick_p):
         decision (float): Binary decision (0 or 1).
     """
 
-    return jax.random.bernoulli(key, jnp.maximum(min_lick_p,  # To encourage exploration
-                                             jax.nn.sigmoid(output))
-                                ).astype(float)  # Bernoulli returns bool
+    return jax.random.bernoulli(key, 
+                                jnp.maximum(min_lick_p, jax.nn.sigmoid(output)))
 
 def compute_reward(key, decision):
     """ Compute reward based on binary decision.
@@ -447,7 +446,7 @@ def simulate_trajectory(
                 output_data['outputs'] = jnp.array(0.0)
 
                 if 'generation' in mode or "reinforcement" in cfg.fit_data:
-                    output_data['decisions'] = jnp.array(0.0)
+                    output_data['decisions'] = jnp.array(False)
 
                 if 'test' in mode:
                     output_data['xs'] = jnp.zeros(cfg.num_hidden_pre)  # For debugging

@@ -407,9 +407,9 @@ def generate_task_trial_input(key, num_steps, cfg, trial_type):
     # Define rewarded positions along the trial length based on trial type
     rewarded_position = jnp.zeros_like(pos)
     if trial_type == 0:
-        rewarded_position = jnp.where(cue_at_time == 4, 1.0, 0.0)
+        rewarded_position = jnp.where(cue_at_time == 4, True, False)
     elif trial_type == 1:
-        rewarded_position = jnp.where(cue_at_time == 5, 1.0, 0.0)
+        rewarded_position = jnp.where(cue_at_time == 5, True, False)
 
     return {'t': t,  # Careful, after concatenating trials, time is not continuous
             'v': v,
