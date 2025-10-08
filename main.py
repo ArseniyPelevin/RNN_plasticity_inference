@@ -305,7 +305,10 @@ def run_experiment(cfg, seed=None):
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
-    save_results(cfg, params, expdata, train_time, _activation_trajs)
+    try:
+        save_results(cfg, params, expdata, train_time, _activation_trajs)
+    except Exception as e:
+        print(f"Error saving results: {e}")
 
     return params, expdata, _activation_trajs, _losses_and_r2s
 
@@ -339,4 +342,4 @@ def save_results(cfg, params, expdata, train_time, activation_trajs):
 
 if __name__ == "__main__":
     cfg = create_config()
-    _activation_trajs, _losses_and_r2s = run_experiment(cfg)
+    params, expdata, _activation_trajs, _losses_and_r2s = run_experiment(cfg)
