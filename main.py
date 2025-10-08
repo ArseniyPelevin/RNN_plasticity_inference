@@ -105,29 +105,27 @@ config = {
     "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
     "min_lick_probability": 0.05,  # To encourage exploration
 
-    "synapse_learning_rate": {'ff': 1, 'rec': 1},
-
     "measurement_noise_scale": 0,
 
 # Plasticity
     # Dict or str, in latter case use same for all plastic layers
-    "generation_plasticity": {"ff": "1X1Y1W0R0-1X0Y2W1R0",
-                              "rec": "0.7X1Y1W0R0-0.6X0Y2W1R0-0.3X0Y0W1R0"},
-    "generation_model": {"ff": "volterra",  # "volterra", "mlp"
-                        "rec": "volterra"},
-    "plasticity_model": {"ff": "volterra",  # "volterra", "mlp"
-                         "rec": "volterra"},
+    "generation_plasticity": "1X1Y1W0R0-1X0Y2W1R0",
+    # {"ff": "1X1Y1W0R0-1X0Y2W1R0",
+    #  "rec": "0.7X1Y1W0R0-0.6X0Y2W1R0-0.3X0Y0W1R0"},
+    "generation_models": "volterra",  # "volterra", "mlp", may be different for layers
+    "plasticity_models": "volterra",  # "volterra", "mlp", may be different for layers
     "plasticity_coeffs_init": "random",  # "zeros", "random"
-    "plasticity_coeffs_init_scale": {'ff': 1e-4, 'rec': 1e-4},
+    "plasticity_coeffs_init_scales": 1e-4,  # float or dict per plastic layer
     # Restrictions on trainable plasticity parameters
     "trainable_coeffs": {layer: int(np.sum(mask))
                          for layer, mask in coeff_masks.items()},
     "coeff_masks": {layer: mask.tolist() for layer, mask in coeff_masks.items()},
+    "synapse_learning_rate": 1,
 
 # Training
     # Only affects training, generation depends on generation_plasticity
-    "trainable_theta": "different",  # "same", "different"
-    "trainable_init_weights": [],  # ['w_ff', 'w_rec', 'w_out']
+    "trainable_thetas": "different",  # "same", "different"
+    "trainable_init_weights": ['w_ff', 'w_rec', 'w_out'],  # ['w_ff', 'w_rec', 'w_out']
 
     "num_epochs": 250,
     "learning_rate": 3e-3,
@@ -139,10 +137,11 @@ config = {
     "max_grad_norm_weights": 1.0,
     "num_test_restarts": 5, # Random initializations per experiment to average loss over
 
-    "regularization_type_theta": "none",  # "l1", "l2", "none"
-    "regularization_scale_theta": 0,
-    "regularization_type_weights": "none",  # "l1", "l2", "none"
-    "regularization_scale_weights": 0,
+    # May be different for layers:
+    "reg_types_theta": "none",  # "l1", "l2", "none"
+    "reg_scales_theta": 0,
+    "reg_types_weights": "none",  # "l1", "l2", "none"
+    "reg_scales_weights": 0,
 
     "lick_cost": 0.1,  # Cost of each lick in reward-based tasks
 
@@ -161,11 +160,13 @@ config = {
 
 def create_config():
     cfg = omegaconf.OmegaConf.create(config)
-    cfg = validate_config(cfg)
 
     return cfg
 
 def validate_config(cfg):
+    for layer in cfg.plasticity_layers:
+        if layer not in ["ff", "rec"]:
+            raise ValueError("Only 'ff' and 'rec' plastic layers are supported!")
     # If no recurrent connectivity, recurrent is not plastic and not trainable
     if not cfg.recurrent and "rec" in cfg.plasticity_layers:
         cfg.plasticity_layers.remove("rec")
@@ -175,21 +176,6 @@ def validate_config(cfg):
     cfg.init_weights_sparsity_generation = {
         k: float(v) for k, v in cfg.init_weights_sparsity_generation.items()
     }
-
-    # Validate plasticity_model
-    if cfg.plasticity_model not in ["volterra", "mlp"]:
-        raise ValueError("Only 'volterra' and 'mlp' plasticity models are supported!")
-
-    # Validate generation_model
-    if cfg.generation_model not in ["volterra", "mlp"]:
-        raise ValueError("Only 'volterra' and 'mlp' generation models are supported!")
-
-    # Validate regularization_type
-    if (cfg.regularization_type_theta.lower() not in ["l1", "l2", "none"] or
-        cfg.regularization_type_weights.lower() not in ["l1", "l2", "none"]):
-        raise ValueError(
-            "Only 'l1', 'l2', and 'none' regularization types are supported!"
-        )
 
     if type(cfg.fit_data) is str:
         cfg.fit_data = [cfg.fit_data]
@@ -206,7 +192,6 @@ def validate_config(cfg):
                               + num_visual_types * cfg.num_visual_neurons_per_type
                               + cfg.num_velocity_neurons
                               )
-
         cfg.mean_steps_per_trial = int(cfg.mean_trial_time / cfg.dt)
         cfg.std_steps_per_trial = int(cfg.std_trial_time / cfg.dt)
 
@@ -223,16 +208,68 @@ def validate_config(cfg):
 
     # Convert plasticity parameters to dict if needed
     plasticity_params = ["generation_plasticity",
-                         "generation_model",
-                         "plasticity_model",
-                         "plasticity_coeffs_init_scale",
+                         "generation_models",
+                         "plasticity_models",
+                         "plasticity_coeffs_init_scales",
                          "trainable_coeffs",
-                         "coeff_masks"]
+                         "coeff_masks",
+                         "reg_types_theta",
+                         "reg_scales_theta"]
+    reg_weights_params = ["reg_types_weights",
+                          "reg_scales_weights"]
     # If plasticity config is not a dict, use same param for all plastic layers
     for param in plasticity_params:
-        val = cfg[param]
-        if type(val) is not omegaconf.dictconfig.DictConfig:
-            cfg[param] = dict.fromkeys(cfg.plasticity_layers, val)
+        # If set as single value, convert to per-plastic-layer dict using that value
+        if type(cfg[param]) is not omegaconf.dictconfig.DictConfig:
+            cfg[param] = dict.fromkeys(cfg.plasticity_layers, cfg[param])
+        # Ensure plasticity parameters given for all plastic layers
+        for layer in cfg.plasticity_layers:
+            if layer not in cfg[param]:
+                raise ValueError(f"Parameter {param} must be given for all plastic "
+                                 f"layers {cfg.plasticity_layers}!")
+        # Remove plasticity parameters for non-plastic layers
+        for layer in cfg[param]:
+            if layer not in cfg.plasticity_layers:
+                cfg[param] = {k: v for k, v in cfg[param].items() if k != layer}
+    for param in reg_weights_params:
+        # If set as single value, convert to per-trainable-layer dict using that value
+        if type(cfg[param]) is not omegaconf.dictconfig.DictConfig:
+            cfg[param] = dict.fromkeys(cfg.trainable_init_weights, cfg[param])
+        # Ensure regularization parameters given for all trainable weight layers
+        for layer in cfg.trainable_init_weights:
+            if layer not in cfg[param]:
+                raise ValueError(f"Parameter {param} must be given for all trainable "
+                                 f"weight layers {cfg.trainable_init_weights}!")
+
+    # Validate plasticity parameters
+    for layer in cfg.plasticity_layers:
+        # Validate plasticity_model
+        if cfg.plasticity_models[layer] not in ["volterra", "mlp"]:
+            raise ValueError(
+                "Plasticity model should be 'volterra' or 'mlp'!")
+        # Validate generation_model
+        if cfg.generation_models[layer] not in ["volterra", "mlp"]:
+            raise ValueError(
+                "Generation model should be 'volterra' or 'mlp'!")
+        # Validate regularization_type
+        if cfg.reg_types_theta[layer].lower() not in ["l1", "l2", "none"]:
+            raise ValueError(
+                "Regularization type for theta should be 'l1', 'l2', or 'none'!")
+    # Validate regularization_type for weights
+    for layer in cfg.trainable_init_weights:
+        if cfg.reg_types_weights[layer].lower() not in ["l1", "l2", "none"]:
+            raise ValueError(
+                "Regularization type for weights should be 'l1', 'l2', or 'none'!")
+
+    # If trainable_thetas is 'same' and layer values are same, collapse to layer 'both'
+    for param in plasticity_params[2:]:  # Skip generation params, only for training
+        if cfg.trainable_thetas == 'same' and len(cfg[param]) > 1:
+            # Ensure in 'same' mode layer values are the same
+            if cfg[param]['ff'] == cfg[param]['rec']:
+                cfg[param] = {'both': cfg[param]['ff']}
+            else:
+                raise ValueError(f"When trainable_thetas is 'same', "
+                                 f"all plastic layers must have the same {param}!")
 
     return cfg
 
