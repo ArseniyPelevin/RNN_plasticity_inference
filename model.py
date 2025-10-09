@@ -275,6 +275,95 @@ def update_weights(
     return new_weights
 
 @partial(jax.jit, static_argnames=("plasticity_funcs", "cfg", "mode"))
+def simulate_step(step_variables, exp_variables, plasticity_funcs, cfg, mode):
+    """ Simulate network activity and outputs in one time step.
+
+    Args:
+        step_variables: (
+            w (dict): {w_ff, w_rec, w_out},
+            y_old (N_hidden_post,): y at previous step,
+            x_input (N_hidden_pre,): input at this step (without noise added),
+            rewarded_pos (bool): whether this step is rewarded if licked,
+            valid (bool): whether this step is real (not padding),
+            step_key
+        )
+        exp_variables: (
+            ff_mask (N_hidden_pre, N_hidden_post): Feedforward connectivity mask,
+            rec_mask (N_hidden_post, N_hidden_post): Recurrent connectivity mask,
+            ff_scale (float): Scale of feedforward weights,
+            rec_scale (float): Scale of recurrent weights,
+            thetas (dict): Per-plastic-layer dict of plasticity coefficients.
+        )
+        plasticity_funcs: Per-plastic-layer dict of plasticity functions.
+        cfg: Configuration dictionary.
+        mode:
+            - 'simulation': return trajectories of y, output
+            - 'generation_train': return y, output, decision
+            - 'generation_test': return x, y, output, decision, rewards, weights
+
+    Returns:
+        (weights: Updated weights after the step.
+         y_new (N_hidden_post,): y after this step
+        )
+        output_data: {y, - (N_hidden_post,) in (0, 1)
+                      output[, - (1,) pre-sigmoid logit (float)
+                        # If 'generation' in mode:
+                      decision[, - (1,) boolean decision
+                        # If 'test' in mode:
+                      xs, - (N_hidden_pre,) for debugging
+                      rewards, - (1,) boolean reward
+                      weights]] - (dict of plastic layers)
+                      }
+    """
+    w, y_old, x_input, rewarded_pos, valid, keys = step_variables
+    ff_mask, rec_mask, ff_scale, rec_scale, thetas = exp_variables
+
+    output_data = {}
+    x, y_new, output = network_step(keys[0],
+                                    w,
+                                    ff_mask, rec_mask,
+                                    ff_scale, rec_scale,
+                                    x_input,  # Clean input without noise
+                                    y_old,
+                                    cfg)
+    output_data['ys'] = y_new
+    output_data['outputs'] = output
+
+    decision = compute_decision(keys[1], output, cfg.min_lick_probability)
+    if ('generation' in mode  # For generation/evaluation/debugging
+        or "reinforcement" in cfg.fit_data  # For reinforcement learning
+        ):
+        output_data['decisions'] = decision
+
+    # Reward if lick at rewarded position
+    reward = decision * rewarded_pos  # TODO cfg.reward_scale
+    # expected_reward = compute_expected_reward(reward, 0)  # TODO?
+    # Treat lick probability as expected reward
+    expected_reward = jax.nn.sigmoid(output)
+    # Reward expectation error, only if licked
+    reward_term = (reward - expected_reward) * decision
+
+    w_updated = update_weights(
+        x, y_new, y_old, w, reward_term,
+        thetas, plasticity_funcs, valid, cfg)
+
+    if 'test' in mode:
+        output_data['xs'] = x  # For debugging
+        output_data['weights'] = {}  # For evaluation/debugging
+        # Only return trajectories of plastic weights (from updated weights)
+        if "ff" in cfg.plasticity_layers:
+            output_data['weights']['w_ff'] = w_updated['w_ff']
+        if "rec" in cfg.plasticity_layers:
+            output_data['weights']['w_rec'] = w_updated['w_rec']
+
+    if ('test' in mode  # For evaluation/debugging
+        or 'reinforcement' in cfg.fit_data  # For reinforcement learning
+        ):
+        output_data['rewards'] = reward
+
+    return (w_updated, y_new), output_data
+
+@partial(jax.jit, static_argnames=("plasticity_funcs", "cfg", "mode"))
 def simulate_trajectory(
     key,
     init_weights,
@@ -296,6 +385,8 @@ def simulate_trajectory(
                 w_rec: (num_hidden_post, num_hidden_post) if recurrent,
                 w_out: (num_hidden_post, 1)
                 (b_ff, b_rec, b_out are not used for now)
+        ff_mask (N_hidden_pre, N_hidden_post): Feedforward connectivity mask.
+        rec_mask (N_hidden_post, N_hidden_post): Recurrent connectivity mask.
         thetas: Per-plastic-layer dict of plasticity coefficients for the model.
         plasticity_funcs: Per-plastic-layer dict of plasticity functions to use.
         exp_x (N_sessions, N_steps_per_session_max, N_hidden_pre):
@@ -344,6 +435,8 @@ def simulate_trajectory(
     n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
     rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
 
+    exp_variables = (ff_mask, rec_mask, ff_scale, rec_scale, thetas)
+
     def simulate_session(weights, session_variables):
         """ Simulate trajectory of weights and activations within one session.
 
@@ -370,78 +463,12 @@ def simulate_trajectory(
                     w_ff: (N_steps_per_session_max, N_hidden_pre, N_hidden_post),
                     w_rec: (N_steps_per_session_max, N_hidden_post, N_hidden_post),
                 }
-            }"""
-
-        def simulate_step(step_carry, step_variables):
-            """ Simulate forward pass within one time step.
-
-            Args:
-                weights (N_hidden_pre, N_hidden_post): carry for jax.lax.scan.
-                step_variables: (
-                    x,
-                    rewarded_pos,
-                    valid,
-                    step_key)
-
-            Returns:
-                weights: Updated weighteters after the step.
-                output_data: {y, - (N_hidden_post,) in (0, 1)
-                              output[, - (1,) pre-sigmoid logit (float)
-                                # If 'generation' in mode:
-                              decision[, - (1,) boolean decision
-                                # If 'test' in mode:
-                              xs, - (N_hidden_pre,) for debugging
-                              rewards, - (1,) boolean reward
-                              weights]] - (dict of plastic layers)
-                              }
-            """
-            w, y_old = step_carry
-            x_input, rewarded_pos, valid, keys = step_variables
-
-            output_data = {}
-            x, y_new, output = network_step(keys[0],
-                                            w,
-                                            ff_mask, rec_mask,
-                                            ff_scale, rec_scale,
-                                            x_input,  # Clean input without noise
-                                            y_old,
-                                            cfg)
-            output_data['ys'] = y_new
-            output_data['outputs'] = output
-
-            decision = compute_decision(keys[1], output, cfg.min_lick_probability)
-            if ('generation' in mode  # For generation/evaluation/debugging
-                or "reinforcement" in cfg.fit_data  # For reinforcement learning
-                ):
-                output_data['decisions'] = decision
-
-            # Reward if lick at rewarded position
-            reward = decision * rewarded_pos  # TODO cfg.reward_scale
-            # expected_reward = compute_expected_reward(reward, 0)  # TODO?
-            # Treat lick probability as expected reward
-            expected_reward = jax.nn.sigmoid(output)
-            # Reward expectation error, only if licked
-            reward_term = (reward - expected_reward) * decision
-
-            w_updated = update_weights(
-                x, y_new, y_old, w, reward_term,
-                thetas, plasticity_funcs, valid, cfg)
-
-            if 'test' in mode:
-                output_data['xs'] = x  # For debugging
-                output_data['weights'] = {}  # For evaluation/debugging
-                # Only return trajectories of plastic weights (from updated weights)
-                if "ff" in cfg.plasticity_layers:
-                    output_data['weights']['w_ff'] = w_updated['w_ff']
-                if "rec" in cfg.plasticity_layers:
-                    output_data['weights']['w_rec'] = w_updated['w_rec']
-
-            if ('test' in mode  # For evaluation/debugging
-                or 'reinforcement' in cfg.fit_data  # For reinforcement learning
-                ):
-                output_data['rewards'] = reward
-
-            return (w_updated, y_new), output_data
+            }
+        """
+        def _simulate_step(step_carry, step_variables):
+            step_variables = (*step_carry, *step_variables)
+            return simulate_step(step_variables, exp_variables,
+                                 plasticity_funcs, cfg, mode)
 
         *session_variables, y_key = session_variables
         # Initialize y activity at start of session
@@ -450,7 +477,7 @@ def simulate_trajectory(
 
         # Run inner scan over steps within one session
         (weights, _), session_output = jax.lax.scan(
-            simulate_step, (weights, init_y), session_variables)
+            _simulate_step, (weights, init_y), session_variables)
 
         return weights, session_output
 
