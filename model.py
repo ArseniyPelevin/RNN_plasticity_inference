@@ -177,7 +177,7 @@ def compute_expected_reward(reward, old_expected_reward):
 def update_weights(
     x, y, y_old, old_weights, reward_term,
     thetas, plasticity_funcs,
-    cfg
+    valid, cfg
 ):
     """
     Update weights in all layers.
@@ -225,6 +225,7 @@ def update_weights(
             dw.shape == w.shape  # and db.shape == b.shape
         ), "dw and w should be of the same shape to prevent broadcasting while adding"
 
+        dw *= valid  # Do not update weights on padded steps
         w = utils.softclip(w + lr * dw, cap=cfg.synaptic_weight_threshold)
 
         return w
@@ -397,52 +398,50 @@ def simulate_trajectory(
             w, y_old = step_carry
             x_input, rewarded_pos, valid, keys = step_variables
 
-            def _do_step(carry):
-                w, y_old = carry
-                output_data = {}
-                x, y_new, output = network_step(keys[0],
-                                                   w,
-                                                   ff_mask, rec_mask,
-                                                   ff_scale, rec_scale,
-                                                   x_input,  # Clean input without noise
-                                                   y_old,
-                                                   cfg)
-                output_data['ys'] = y_new
-                output_data['outputs'] = output
+            output_data = {}
+            x, y_new, output = network_step(keys[0],
+                                            w,
+                                            ff_mask, rec_mask,
+                                            ff_scale, rec_scale,
+                                            x_input,  # Clean input without noise
+                                            y_old,
+                                            cfg)
+            output_data['ys'] = y_new
+            output_data['outputs'] = output
 
-                decision = compute_decision(keys[1], output, cfg.min_lick_probability)
-                if ('generation' in mode  # For generation/evaluation/debugging
-                    or "reinforcement" in cfg.fit_data  # For reinforcement learning
-                    ):
-                    output_data['decisions'] = decision
+            decision = compute_decision(keys[1], output, cfg.min_lick_probability)
+            if ('generation' in mode  # For generation/evaluation/debugging
+                or "reinforcement" in cfg.fit_data  # For reinforcement learning
+                ):
+                output_data['decisions'] = decision
 
-                # Reward if lick at rewarded position
-                reward = decision * rewarded_pos  # TODO cfg.reward_scale
-                # expected_reward = compute_expected_reward(reward, 0)  # TODO?
-                # Treat lick probability as expected reward
-                expected_reward = jax.nn.sigmoid(output)
-                # Reward expectation error, only if licked
-                reward_term = (reward - expected_reward) * decision
+            # Reward if lick at rewarded position
+            reward = decision * rewarded_pos  # TODO cfg.reward_scale
+            # expected_reward = compute_expected_reward(reward, 0)  # TODO?
+            # Treat lick probability as expected reward
+            expected_reward = jax.nn.sigmoid(output)
+            # Reward expectation error, only if licked
+            reward_term = (reward - expected_reward) * decision
 
-                w_updated = update_weights(
-                    x, y_new, y_old, w, reward_term,
-                    thetas, plasticity_funcs, cfg)
+            w_updated = update_weights(
+                x, y_new, y_old, w, reward_term,
+                thetas, plasticity_funcs, valid, cfg)
 
-                if 'test' in mode:
-                    output_data['xs'] = x  # For debugging
-                    output_data['weights'] = {}  # For evaluation/debugging
-                    # Only return trajectories of plastic weights (from updated weights)
-                    if "ff" in cfg.plasticity_layers:
-                        output_data['weights']['w_ff'] = w_updated['w_ff']
-                    if "rec" in cfg.plasticity_layers:
-                        output_data['weights']['w_rec'] = w_updated['w_rec']
+            if 'test' in mode:
+                output_data['xs'] = x  # For debugging
+                output_data['weights'] = {}  # For evaluation/debugging
+                # Only return trajectories of plastic weights (from updated weights)
+                if "ff" in cfg.plasticity_layers:
+                    output_data['weights']['w_ff'] = w_updated['w_ff']
+                if "rec" in cfg.plasticity_layers:
+                    output_data['weights']['w_rec'] = w_updated['w_rec']
 
-                if ('test' in mode  # For evaluation/debugging
-                    or 'reinforcement' in cfg.fit_data  # For reinforcement learning
-                    ):
-                    output_data['rewards'] = reward
+            if ('test' in mode  # For evaluation/debugging
+                or 'reinforcement' in cfg.fit_data  # For reinforcement learning
+                ):
+                output_data['rewards'] = reward
 
-                return (w_updated, y_new), output_data
+            return (w_updated, y_new), output_data
 
         *session_variables, y_key = session_variables
         # Initialize y activity at start of session
@@ -465,5 +464,11 @@ def simulate_trajectory(
          exp_keys,
          y_keys)
     )
+
+    # Zero out padding steps in trajectories
+    for name, traj in activity_trajec_exp.items():
+        if name != 'weights':
+            activity_trajec_exp[name] = (traj * step_mask[..., None]
+                                         if name in ['xs', 'ys'] else traj * step_mask)
 
     return activity_trajec_exp
