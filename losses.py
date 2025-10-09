@@ -55,6 +55,39 @@ def neural_mse_loss(
     sim_traj_ys_masked = sim_traj_ys * mask
     se = optax.squared_error(exp_traj_ys_masked, sim_traj_ys_masked)
     mse_loss = jnp.sum(se) / jnp.sum(mask)
+
+    # # TEMP
+    # EPS = 1e-12
+
+    # def soft_hist_probs(y, n_bins=32, sigma=None):
+    #     """Return soft histogram probs of values in [0,1].
+    #     y: any-shape array with values in [0,1]. We flatten.
+    #     """
+    #     y_flat = jnp.ravel(y)
+    #     bins = jnp.linspace(0.0, 1.0, n_bins)
+    #     if sigma is None:
+    #         sigma = 1.0 / n_bins  # reasonable default
+    #     # distances: (n_samples, n_bins)
+    #     diffs = y_flat[:, None] - bins[None, :]
+    #     weights = jnp.exp(-0.5 * (diffs / sigma) ** 2)
+    #     probs = jnp.sum(weights, axis=0)
+    #     probs = probs / (jnp.sum(probs) + EPS)
+    #     return probs  # shape (n_bins,)
+
+    # def soft_hist_entropy(y, n_bins=32, sigma=None):
+    #     p = soft_hist_probs(y, n_bins=n_bins, sigma=sigma)
+    #     p = jnp.clip(p, EPS, 1.0)
+    #     return -jnp.sum(p * jnp.log(p))  # scalar
+
+    # def edge_penalty(y, eps=0.02):
+    #     """Penalty for values within eps of 0 or 1. Smooth squared penalty."""
+    #     y = (y - 0.5) ** 2
+    #     return jnp.mean(y)
+    # y = sim_traj_ys_masked
+    # H = soft_hist_entropy(y)
+    # edge = edge_penalty(y)
+    # H_loss = -H + 3 * edge
+    # return H_loss
     return mse_loss
 
 def reinforce_loss(outputs, decisions, rewards, step_mask, lick_cost):
