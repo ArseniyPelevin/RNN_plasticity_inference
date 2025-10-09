@@ -185,8 +185,8 @@ def validate_config(cfg):
         or neural_or_behavioral and "reinforcement" in cfg.fit_data):
         raise ValueError("fit_data must contain 'behavioral' and/or 'neural',"
                          " or 'reinforcement'")
-    
-    if not 'reinforcement' in cfg.fit_data:
+
+    if 'reinforcement' not in cfg.fit_data:
         cfg.min_lick_probability = 0.0  # No prior strategy for fitting
 
     if cfg.input_type == 'task':

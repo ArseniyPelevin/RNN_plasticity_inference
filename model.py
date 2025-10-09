@@ -151,7 +151,7 @@ def compute_decision(key, output, min_lick_p):
         decision (float): Binary decision (0 or 1).
     """
 
-    return jax.random.bernoulli(key, 
+    return jax.random.bernoulli(key,
                                 jnp.maximum(min_lick_p, jax.nn.sigmoid(output)))
 
 def compute_reward(key, decision):
@@ -304,8 +304,8 @@ def simulate_trajectory(
         step_mask (N_sessions, N_steps_per_session_max): Valid (not padding) steps
         cfg: Configuration dictionary.
         mode:
-            - 'simulation': return trajectories of x, y, output
-            - 'generation_train': return x, y, output, decision, rewards
+            - 'simulation': return trajectories of y, output
+            - 'generation_train': return y, output, decision
             - 'generation_test': return x, y, output, decision, rewards, weights
 
     Returns:
@@ -315,19 +315,21 @@ def simulate_trajectory(
                 # If 'generation' in mode:
             decision_trajec_exp (N_sessions, N_steps_per_session_max),
                 # If 'test' in mode:
-            [weights_trajec_exp {  # Only the plastic layers
+            xs_trajec_exp (N_sessions, N_steps_per_session_max, N_hidden_pre),
+            rewards_trajec_exp (N_sessions, N_steps_per_session_max),
+            weights_trajec_exp {  # Only the plastic layers
                 w_ff: (N_sessions, N_steps_per_session_max,
                        N_hidden_pre, N_hidden_post),
                 w_rec: (N_sessions, N_steps_per_session_max,
                         N_hidden_post, N_hidden_post)
                 }
-            ]
         }: Trajectories of activations over the course of the experiment.
     """
     y_key, exp_key = jax.random.split(key)
     # Pre-split keys for each session and step
     n_sessions = step_mask.shape[0]
     n_steps = step_mask.shape[1]
+    y_keys = jax.random.split(y_key, n_sessions)  # For initial y of each session
     flat_keys = jax.random.split(exp_key, n_sessions * n_steps * 2)  # Two keys per step
     exp_keys = flat_keys.reshape((n_sessions, n_steps, 2, 2))
 
@@ -341,11 +343,7 @@ def simulate_trajectory(
     n_rec_inputs = jnp.where(n_rec_inputs == 0, 1, n_rec_inputs) # avoid /0
     rec_scale = cfg.recurrent_input_scale / jnp.sqrt(n_rec_inputs)[None, :]
 
-    # Initialize y activity
-    init_y = jax.random.normal(y_key, (cfg.num_hidden_post,))
-    init_y = jax.nn.sigmoid(init_y)  # Initial activity between 0 and 1
-
-    def simulate_session(session_carry, session_variables):
+    def simulate_session(weights, session_variables):
         """ Simulate trajectory of weights and activations within one session.
 
         Args:
@@ -354,7 +352,8 @@ def simulate_trajectory(
                 session_x,
                 session_rewarded_pos,
                 session_mask,
-                session_keys) for the session.
+                session_keys,
+                y_keys) for the session.
 
         Returns:
             weights_session: Parameters at the end of the session.
@@ -364,6 +363,8 @@ def simulate_trajectory(
                     # If 'generation' in mode:
                 decision_trajec_session (N_steps_per_session_max),
                     # If 'test' in mode:
+                xs_trajec_session (N_steps_per_session_max, N_hidden_pre),
+                rewards_trajec_session (N_steps_per_session_max),
                 weights_trajec_session: {  # Only the plastic layers
                     w_ff: (N_steps_per_session_max, N_hidden_pre, N_hidden_post),
                     w_rec: (N_steps_per_session_max, N_hidden_post, N_hidden_post),
@@ -385,10 +386,15 @@ def simulate_trajectory(
                 weights: Updated weighteters after the step.
                 output_data: {y, - (N_hidden_post,) in (0, 1)
                               output[, - (1,) pre-sigmoid logit (float)
-                              decision[, - (1,) binary decision {0, 1}, if generation
-                              weights]] - (dict of plastic layers), if test
+                                # If 'generation' in mode:
+                              decision[, - (1,) boolean decision
+                                # If 'test' in mode:
+                              xs, - (N_hidden_pre,) for debugging
+                              rewards, - (1,) boolean reward
+                              weights]] - (dict of plastic layers)
                               }
             """
+            w, y_old = step_carry
             x_input, rewarded_pos, valid, keys = step_variables
 
             def _do_step(carry):
@@ -438,46 +444,26 @@ def simulate_trajectory(
 
                 return (w_updated, y_new), output_data
 
-            def _skip_step(carry):
-                ''' Nothing is done: return weights unchanged and neutral outputs. '''
-                w, _ = carry
-                output_data = {}
-                # neutral y and output (shapes must match traced shapes)
-                output_data['ys'] = jnp.zeros(cfg.num_hidden_post)
-                output_data['outputs'] = jnp.array(0.0)
-
-                if 'generation' in mode or "reinforcement" in cfg.fit_data:
-                    output_data['decisions'] = jnp.array(False)
-
-                if 'test' in mode:
-                    output_data['xs'] = jnp.zeros(cfg.num_hidden_pre)  # For debugging
-                    output_data['weights'] = {}
-                    # return current (unchanged) weights
-                    if "ff" in cfg.plasticity_layers:
-                        output_data['weights']['w_ff'] = w['w_ff']
-                    if "rec" in cfg.plasticity_layers:
-                        output_data['weights']['w_rec'] = w['w_rec']
-
-                if 'test' in mode or 'reinforcement' in cfg.fit_data:
-                    output_data['rewards'] = jnp.array(0.0)
-
-                return (w, output_data['ys']), output_data
-
-            # Do full computation only when valid is True (real, not padded step)
-            return jax.lax.cond(valid, _do_step, _skip_step, step_carry)
+        *session_variables, y_key = session_variables
+        # Initialize y activity at start of session
+        init_y = jax.random.normal(y_key, (cfg.num_hidden_post,))
+        init_y = jax.nn.sigmoid(init_y)  # Initial activity between 0 and 1
 
         # Run inner scan over steps within one session
-        return jax.lax.scan(simulate_step, session_carry, session_variables)
+        (weights, _), session_output = jax.lax.scan(
+            simulate_step, (weights, init_y), session_variables)
+
+        return weights, session_output
 
     # Run outer scan over sessions within one experiment
     _carry, activity_trajec_exp = jax.lax.scan(
         simulate_session,
-        (init_weights,
-         init_y),
+        init_weights,
         (exp_x,
          exp_rewarded_pos,
          step_mask,
-         exp_keys)
+         exp_keys,
+         y_keys)
     )
 
     return activity_trajec_exp

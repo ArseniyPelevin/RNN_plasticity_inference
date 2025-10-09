@@ -228,7 +228,6 @@ def init_plasticity(key, cfg, mode):
                      subkey, cfg.meta_mlp_layer_sizes)
     elif "plasticity" in mode:
         for layer in cfg.plasticity_models:  # 'ff' or 'rec' or 'both'
-            print("Initializing plasticity for layer", layer)
             key, subkey = jax.random.split(key)
             if cfg.plasticity_models[layer] == "volterra":
                 (plasticity_thetas[layer],
