@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 
 @partial(jax.jit, static_argnames=("returns"))
-def simulate_step(step_variables, returns):
+def simulate_step(step_variables, plasticity, returns):
     """ Simulate network activity and outputs in one time step.
 
     Args:  # TODO
@@ -17,6 +17,7 @@ def simulate_step(step_variables, returns):
             valid (bool): whether this step is real (not padding),
             step_key
         )
+        plasticity: dict of plasticity modules for each plastic layer.
         returns: Tuple of strings indicating which outputs to return.
 
     Returns:
@@ -35,7 +36,7 @@ def simulate_step(step_variables, returns):
     """
     network, *step_variables = step_variables
 
-    network, *activity = network(step_variables)
+    network, *activity = network(step_variables, plasticity)
 
     # Construct dictionary of step outputs asked for return.
     # Will be stacked to form trajectory in scans
@@ -61,6 +62,7 @@ def simulate_trajectory(
     exp,
     x_input,
     network,
+    plasticity,
     returns
     ):
     """ Simulate trajectory of activations (and weights) of one experiment (animal).
@@ -135,7 +137,7 @@ def simulate_trajectory(
             # step_carry: (network, y_old)
             # step_variables: (x_input, rewarded_pos, valid, step_keys)
             step_variables = (*step_carry, *step_variables)
-            return simulate_step(step_variables, returns)
+            return simulate_step(step_variables, plasticity, returns)
 
         *session_variables, y_key = session_variables
         # Initialize y activity at start of session

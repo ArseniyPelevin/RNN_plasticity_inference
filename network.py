@@ -18,8 +18,7 @@ class Network(eqx.Module):
     cfg: object = eqx.field(static=True)
     input_type: str = eqx.field(static=True)
 
-    def __init__(self, key, plasticity, cfg, input_type, mode):
-        self.plasticity = plasticity  # TODO?? Does it create a copy or reference?
+    def __init__(self, key, cfg, input_type, mode):
         self.cfg = cfg
         self.input_type = input_type
 
@@ -163,7 +162,7 @@ class Network(eqx.Module):
         n_inputs = jnp.where(n_inputs == 0, 1, n_inputs) # avoid /0
         return base_scale / jnp.sqrt(n_inputs)[None, :]
 
-    def __call__(self, step_variables):
+    def __call__(self, step_variables, plasticity):
         """ Forward pass through the network for one time step,
         with plasticity updates.
 
@@ -174,6 +173,7 @@ class Network(eqx.Module):
                 rewarded_pos (bool): whether this step is rewarded if licked,
                 valid (bool): whether this step is real (not padding),
                 keys: (input_noise_key, decision_key)
+            plasticity: dict of plasticity modules for each plastic layer.
         Returns:
             network: Updated network after plasticity.
             x (N_x_neurons,): x at this step (with noise added),
@@ -227,7 +227,7 @@ class Network(eqx.Module):
                            (0.1 * decision) * reward)
 
         network = self.update_weights(x, y, y_old, decision, reward, expected_reward,
-                                      mean_y_activation, valid)
+                                      mean_y_activation, valid, plasticity)
 
         return network, x, y, output, decision, reward
 
@@ -251,7 +251,7 @@ class Network(eqx.Module):
                                                 jax.nn.sigmoid(output)))
 
     def update_weights(self, x, y, y_old, decision, reward, expected_reward,
-                       mean_y_activation, valid):
+                       mean_y_activation, valid, plasticity):
         def plasticity_vmap(pre, post, weights, reward):
             def plasticity_vmap_pre(pre, post, weights, reward):
                 # vmap over pre-synapses
@@ -276,10 +276,10 @@ class Network(eqx.Module):
 
         # plasticity update for weights from input -> recurrent
         if 'ff' in self.cfg.plasticity_layers:
-            if 'both' in self.plasticity:
-                plasticity_function = self.plasticity['both']
+            if 'both' in plasticity:
+                plasticity_function = plasticity['both']
             else:
-                plasticity_function = self.plasticity['ff']
+                plasticity_function = plasticity['ff']
             ff_weights = plasticity_vmap(x, y, self.ff_layer.weight, reward_term)
             tanh_scale = self.cfg.synaptic_weight_threshold
             ff_weights = jax.nn.tanh(ff_weights / tanh_scale) * tanh_scale
@@ -292,10 +292,10 @@ class Network(eqx.Module):
         # bias update to maintain target activation of 0.0 (before
         # nonlinearity)
         if 'rec' in self.cfg.plasticity_layers:
-            if 'both' in self.plasticity:
-                plasticity_function = self.plasticity['both']
+            if 'both' in plasticity:
+                plasticity_function = plasticity['both']
             else:
-                plasticity_function = self.plasticity['rec']
+                plasticity_function = plasticity['rec']
             rec_weights = plasticity_vmap(y_old, y, self.rec_layer.weight, reward_term)
             tanh_scale = self.cfg.synaptic_weight_threshold
             rec_weights = jax.nn.tanh(rec_weights / tanh_scale) * tanh_scale

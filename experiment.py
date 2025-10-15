@@ -31,9 +31,8 @@ def generate_experiments(key, cfg, mode):
 
     # Presplit keys for each experiment
     (plasticity_gen_key,
-     plasticity_train_key,
      shapes_key,
-     *experiment_keys) = jax.random.split(key, num_exps + 3)
+     *experiment_keys) = jax.random.split(key, num_exps + 2)
 
     # Define number of sessions, trials, steps for all experiments
     shapes, step_masks = define_experiments_shapes(shapes_key, num_exps, cfg.experiment)
@@ -41,8 +40,6 @@ def generate_experiments(key, cfg, mode):
     # Initialize plasticity for generation and training
     generation_plasticity = plasticity.initialize_plasticity(
         plasticity_gen_key, cfg.plasticity, mode='generation')
-    training_plasticity = plasticity.initialize_plasticity(
-        plasticity_train_key, cfg.plasticity, mode='training')
 
     # Build list of experiment dicts
     experiments_list = []
@@ -51,7 +48,7 @@ def generate_experiments(key, cfg, mode):
             experiment_keys[exp_i],
             exp_i,
             shapes, step_masks[exp_i],
-            generation_plasticity, training_plasticity,
+            generation_plasticity,
             cfg,
             mode
         )
@@ -127,7 +124,7 @@ class Experiment(eqx.Module):
     weights_trajec: dict = None  # Only for test experiments
 
     def __init__(self, key, exp_i, shapes, step_mask,
-                 generation_plasticity, training_plasticity, cfg, mode):
+                 plasticity_gen, cfg, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -153,10 +150,13 @@ class Experiment(eqx.Module):
          x_train_key,
          simulation_key) = jax.random.split(key, 6)
 
-        network_gen = Network(net_gen_key, generation_plasticity,
-                              cfg.network, self.cfg.input_type, mode='generation')
-        self.network = Network(net_train_key, training_plasticity,
-                               cfg.network, self.cfg.input_type, mode='training')
+        # Initialize two different networks with different sparsity masks.
+        # Generation network is not saved, only its activity is used.
+        # Training network is saved and used for training.
+        network_gen = Network(net_gen_key, cfg.network,
+                              self.cfg.input_type, mode='generation')
+        self.network = Network(net_train_key, cfg.network,
+                               self.cfg.input_type, mode='training')
 
         # Generate inputs and step mask for this experiment
         inputs = self.generate_inputs(inputs_key, shapes)
@@ -173,6 +173,7 @@ class Experiment(eqx.Module):
             self,
             x_gen,
             network_gen,
+            plasticity_gen,
             returns=('xs', 'ys', 'outputs', 'decisions', 'rewards',
                      'weights' if mode == 'test' else '')
         )
