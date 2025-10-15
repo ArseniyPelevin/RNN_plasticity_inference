@@ -1,6 +1,7 @@
 from functools import partial
 
 import jax
+import jax.numpy as jnp
 
 
 @partial(jax.jit, static_argnames=("returns"))
@@ -146,6 +147,10 @@ def simulate_trajectory(
             _simulate_step, (network, init_y), session_variables)
 
         return network, session_output
+
+    # Reset running averages in the network at the start of simulation
+    network.mean_y_activation = jnp.zeros((network.cfg.num_y_neurons,))
+    network.expected_reward = 0.0
 
     # Run outer scan over sessions within one experiment
     _carry, activity_trajec_exp = jax.lax.scan(

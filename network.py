@@ -7,12 +7,9 @@ class Network(eqx.Module):
     ff_layer: eqx.Module
     rec_layer: eqx.Module
     out_layer: eqx.Module
-    # num_inputs: int
-    # num_recurrent: int
-    # num_outputs: int
     plasticity: dict
-    mean_y_activation: jnp.array
-    expected_reward: float
+    mean_y_activation: jnp.array  # Running average of y activation for bias update
+    expected_reward: float  # Running average of rewards when licked
     ff_mask: jnp.array
     rec_mask: jnp.array
     recording_mask: jnp.array
@@ -38,9 +35,6 @@ class Network(eqx.Module):
         # self.ff_layer = eqx.tree_at(lambda layer: layer.weight,
         #                             self.ff_layer,
         #                             self.ff_layer.weight * self.cfg.init_weight_)
-
-        self.mean_y_activation = jnp.zeros((self.cfg.num_y_neurons,), dtype=jnp.float32)
-        self.expected_reward = 0.0  # For reward expectation moving average
 
         self.set_masks_and_scales(mask_key, mode)
 
