@@ -4,9 +4,9 @@ import evaluation
 import jax
 import jax.numpy as jnp
 import losses
-import model
+import network
 import optax
-import synapse
+import plasticity
 import utils
 
 
@@ -21,38 +21,46 @@ def train(key, cfg, train_experiments, test_experiments):
         test_experiments (dict): Dictionary of arrays
             of shape (N_exp, ... ) for each variable of test experiments.
     """
-    num_epochs = cfg["num_epochs"] + 1  # +1 so that we have 250th epoch
-    num_exp = cfg.num_exp_train
+    num_epochs = cfg.num_epochs + 1  # +1 so that we have 250th epoch
+    num_exp_train = len(train_experiments)
+    num_exp_test = len(test_experiments)
+
+    # Presplit keys for initialization
     (init_plasticity_key,
      train_w_key,
      test_w_key,
-     *train_keys) = jax.random.split(key, 3 + num_epochs * num_exp)
-    train_keys = jnp.array(train_keys).reshape((num_epochs, num_exp, 2))
+     *train_keys) = jax.random.split(key, 3 + num_epochs * num_exp_train)
+    train_keys = jnp.array(train_keys).reshape((num_epochs, num_exp_train) + key.shape)
 
-    # Initialize plasticity coefficients for training
-    init_thetas, plasticity_funcs = synapse.init_plasticity(
-        init_plasticity_key, cfg, mode="plasticity"
-    )
+    # Initialize plasticity modules for each plastic layer
+    plasticity_train = plasticity.initialize_plasticity(
+        init_plasticity_key, cfg.plasticity, mode='training')
+    # Initialize weights of all layers for each train and test experiment.
+    # Store them as per-layer dict of arrays of shape (n_experiments, ...)
+    w_init_train = network.initialize_weights(
+        train_w_key, len(train_experiments), cfg.network)
+    w_init_test = network.initialize_weights(
+        test_w_key, len(test_experiments), cfg.network)
 
-    # Initialize weights of trainable layers for each train and test experiment.
-    # Store them as per-layer dict of arrays of shape (n_restarts, n_experiments, ...)
-    init_trainable_weights_train = model.initialize_trainable_weights(
-        train_w_key, cfg, cfg.num_exp_train)
-    init_trainable_weights_test = model.initialize_trainable_weights(
-        test_w_key, cfg, cfg.num_exp_test, n_restarts=cfg.num_test_restarts)
+    # Apply initial weights to each experiment's network
+    for i, exp in enumerate(train_experiments):
+        exp.network = exp.network.apply_weights(w_init_train[i])
+    # TODO test
 
-    params = {'thetas': init_thetas,  # per-plastic-layer dict
-              'weights': init_trainable_weights_train[0]}  # n_restarts=1 for training
+    # Initialize trainable parameters
+    params = {'plasticity': plasticity_train,
+              'w_init_learned': {layer: w_init_train[layer]
+                                 for layer in cfg.training.trainable_init_weights}}
 
     # Return value (scalar) of the function (loss value) and gradient wrt its
     # parameters at argnums (theta and init_weights) - !Check argnums!
     loss_value_and_grad = jax.value_and_grad(losses.loss, argnums=(1, 2), has_aux=True)
 
-    # optimizer = optax.adam(learning_rate=cfg["learning_rate"])
+    # optimizer = optax.adam(learning_rate=cfg.learning_rate)
     # Apply gradient clipping as in the article
     optimizer = optax.chain(
-        optax.clip_by_global_norm(cfg["max_grad_norm"]),
-        optax.adam(learning_rate=cfg["learning_rate"]),
+        optax.clip_by_global_norm(cfg.max_grad_norm),
+        optax.adam(learning_rate=cfg.learning_rate),
     )
     opt_state = optimizer.init(params)
 
@@ -69,11 +77,11 @@ def train(key, cfg, train_experiments, test_experiments):
                 key,  # Pass subkey this time, because loss will not return key
                 params['thetas'],  # Current plasticity coeffs on each iteration
                 params['weights'],  # Current initial weights on each iteration
-                plasticity_funcs,  # Static within losses, per-plastic-layer dict
                 exp,
                 cfg,  # Static within losses
-                mode=('training' if not cfg.log_trajectories
-                      else 'evaluation')  # Return trajectories in aux
+                returns=(None if not cfg.log_trajectories
+                         else ('xs', 'ys', 'outputs',
+                               'decisions', 'rewards', 'weights'))
             )
 
             grads = {'thetas': theta_grads, 'weights': weights_grads}
@@ -130,8 +138,8 @@ def train(key, cfg, train_experiments, test_experiments):
                 continue  # Skip evaluation on test set
             key, eval_key = jax.random.split(key)
             expdata, _losses_and_r2 = evaluation.evaluate(
-                eval_key, cfg, params['thetas'], plasticity_funcs, init_thetas,
-                test_experiments, init_trainable_weights_test,
+                eval_key, cfg, params['thetas'], plasticity,
+                test_experiments, w_init_test,
                 expdata)
             _losses_and_r2s[epoch] = _losses_and_r2
 

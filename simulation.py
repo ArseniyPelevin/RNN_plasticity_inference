@@ -1,5 +1,6 @@
 from functools import partial
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 
@@ -8,7 +9,7 @@ import jax.numpy as jnp
 def simulate_step(step_variables, plasticity, returns):
     """ Simulate network activity and outputs in one time step.
 
-    Args:  # TODO
+    Args:
         step_variables: (
             network: Network,
             y_old (N_y_neurons,): y at previous step,
@@ -50,9 +51,9 @@ def simulate_step(step_variables, plasticity, returns):
         # Only return trajectories of plastic weights (from updated weights)
         if "ff" in network.cfg.plasticity_layers:
             output_data['weights']['w_ff'] = network.ff_layer.weight
-            # TODO biases?
         if "rec" in network.cfg.plasticity_layers:
             output_data['weights']['w_rec'] = network.rec_layer.weight
+            output_data['weights']['b_rec'] = network.rec_layer.bias
 
     return (network, activity[1]), output_data
 
@@ -101,12 +102,6 @@ def simulate_trajectory(
     flat_keys = jax.random.split(exp_key, n_sessions * n_steps * 2)  # Two keys per step
     exp_keys = flat_keys.reshape((n_sessions, n_steps, 2) + exp_key.shape)
 
-    # network = eqx.tree_at(
-    #     lambda n: (n.ff_layer.weight, n.rec_layer.weight, n.out_layer.weight),
-    #     network,
-    #     (init_weights['w_ff'].T, init_weights['w_rec'].T, init_weights['w_out'].T)
-    # )
-
     def simulate_session(network, session_variables):
         """ Simulate trajectory of weights and activations within one session.
 
@@ -151,8 +146,11 @@ def simulate_trajectory(
         return network, session_output
 
     # Reset running averages in the network at the start of simulation
-    network.mean_y_activation = jnp.zeros((network.cfg.num_y_neurons,))
-    network.expected_reward = 0.0
+    network = eqx.tree_at(
+        lambda n: (n.mean_y_activation, n.expected_reward),
+        network,
+        (jnp.zeros((network.cfg.num_y_neurons,)), 0.0),
+        )
 
     # Run outer scan over sessions within one experiment
     _carry, activity_trajec_exp = jax.lax.scan(

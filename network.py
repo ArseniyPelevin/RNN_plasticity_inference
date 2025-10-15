@@ -7,14 +7,16 @@ class Network(eqx.Module):
     ff_layer: eqx.Module
     rec_layer: eqx.Module
     out_layer: eqx.Module
-    plasticity: dict
-    mean_y_activation: jnp.array  # Running average of y activation for bias update
-    expected_reward: float  # Running average of rewards when licked
+
     ff_mask: jnp.array
     rec_mask: jnp.array
     recording_mask: jnp.array
     ff_scale: jnp.array
     rec_scale: jnp.array
+
+    mean_y_activation: jnp.array  # Running average of y activation for bias update
+    expected_reward: float  # Running average of rewards when licked
+
     cfg: object = eqx.field(static=True)
     input_type: str = eqx.field(static=True)
 
@@ -31,9 +33,8 @@ class Network(eqx.Module):
         self.out_layer = eqx.nn.Linear(self.cfg.num_y_neurons,
                                        self.cfg.num_outputs, key=key3)
 
-        # self.ff_layer = eqx.tree_at(lambda layer: layer.weight,
-        #                             self.ff_layer,
-        #                             self.ff_layer.weight * self.cfg.init_weight_)
+        self.mean_y_activation = jnp.zeros((self.cfg.num_y_neurons,))
+        self.expected_reward = 0.0
 
         self.set_masks_and_scales(mask_key, mode)
 
@@ -161,6 +162,37 @@ class Network(eqx.Module):
         n_inputs = mask.sum(axis=0) # N_inputs per postsynaptic neuron
         n_inputs = jnp.where(n_inputs == 0, 1, n_inputs) # avoid /0
         return base_scale / jnp.sqrt(n_inputs)[None, :]
+
+    def apply_weights(self, weights):
+        """ Set weights of the network to given values.
+
+        Args:
+            weights: Per-layer dict of arrays of shape
+                (num_x_neurons, num_y_neurons) for 'ff' weights,
+                (num_y_neurons, num_y_neurons) for 'rec' weights,
+                (num_y_neurons,) for 'rec' biases,
+                (num_y_neurons,) for 'out' weights,
+                (1,) for 'out' biases.
+        Returns:
+            network: Updated network with new weights.
+        """
+        return eqx.tree_at(
+            lambda network: (
+                network.ff_layer.weight,
+                network.rec_layer.weight,
+                network.rec_layer.bias,
+                network.out_layer.weight,
+                network.out_layer.bias
+            ),
+            self,
+            (
+                weights['ff']['w'],
+                weights['rec']['w'],
+                weights['rec']['b'],
+                weights['out']['w'].squeeze(),
+                weights['out']['b'].squeeze()
+            )
+        )
 
     def __call__(self, step_variables, plasticity):
         """ Forward pass through the network for one time step,
@@ -324,3 +356,66 @@ class Network(eqx.Module):
             self,
             (ff_weights, rec_weights, rec_biases,
              mean_y_activation, expected_reward))
+
+def initialize_layer_weights(key, cfg, layers=('ff', 'rec', 'out')):
+    """ Initialize trainable initial weights for one experiment.
+
+    Args:
+        cfg (dict): Configuration dictionary with network parameters.
+        layers (list): List of layers to initialize weights for.
+    Returns:
+        w_init (dict): Per-layer dict of weight arrays.
+    """
+    ff_w_key, rec_w_key, rec_b_key, out_w_key, out_b_key = jax.random.split(key, 5)
+
+    w_init = {}
+    # Initialize feedforward weights
+    if 'ff' in layers:
+        w_init['ff'] = {}
+        w_init['ff']['w'] = jax.random.normal(ff_w_key,
+            (cfg.num_y_neurons,
+             cfg.num_x_neurons)
+             ) * cfg.init_weights_std['training']['ff']
+
+    if 'rec' in layers:
+        w_init['rec'] = {}
+        w_init['rec']['w'] = jax.random.normal(
+            rec_w_key,
+            (cfg.num_y_neurons,
+             cfg.num_y_neurons)
+             ) * cfg.init_weights_std['training']['rec']
+        w_init['rec']['b'] = jax.random.normal(
+            rec_b_key,
+            (cfg.num_y_neurons,)
+             ) * cfg.init_weights_std['training']['rec']
+
+    if 'out' in layers:
+        w_init['out'] = {}
+        w_init['out']['w'] = jax.random.normal(
+            out_w_key,
+            (cfg.num_outputs,
+             cfg.num_y_neurons)
+             ) * cfg.init_weights_std['training']['out']
+        w_init['out']['b'] = jax.random.normal(
+            out_b_key,
+            (cfg.num_outputs,)
+             ) * cfg.init_weights_std['training']['out']
+
+    return w_init
+
+def initialize_weights(key, num_exps, cfg, layers=('ff', 'rec', 'out')):
+    """ Initialize trainable initial weights for one experiment.
+
+    Args:
+        num_exps (int): Number of experiments to initialize weights for.
+        cfg (dict): Configuration dictionary with network parameters.
+        layers (list): List of layers to initialize weights for.
+    Returns:
+        w_inits (list): List of weights dicts for all experiments.
+    """
+    keys = jax.random.split(key, num_exps)
+    w_inits = []
+    for i in range(num_exps):
+        w_init = initialize_layer_weights(keys[i], cfg, layers)
+        w_inits.append(w_init)
+    return w_inits

@@ -4,9 +4,9 @@ from functools import partial
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import network
 import plasticity
 import simulation
-from network import Network
 from scipy import stats
 from utils import sample_truncated_normal
 
@@ -31,15 +31,18 @@ def generate_experiments(key, cfg, mode):
 
     # Presplit keys for each experiment
     (plasticity_gen_key,
+     w_init_key,
      shapes_key,
-     *experiment_keys) = jax.random.split(key, num_exps + 2)
+     *experiment_keys) = jax.random.split(key, num_exps + 3)
 
     # Define number of sessions, trials, steps for all experiments
     shapes, step_masks = define_experiments_shapes(shapes_key, num_exps, cfg.experiment)
 
-    # Initialize plasticity for generation and training
-    generation_plasticity = plasticity.initialize_plasticity(
+    # Initialize plasticity for generation
+    plasticity_gen = plasticity.initialize_plasticity(
         plasticity_gen_key, cfg.plasticity, mode='generation')
+    # initialize weights for generation of all experiments
+    w_init_gen = network.initialize_weights(w_init_key, num_exps, cfg.network)
 
     # Build list of experiment dicts
     experiments_list = []
@@ -48,7 +51,8 @@ def generate_experiments(key, cfg, mode):
             experiment_keys[exp_i],
             exp_i,
             shapes, step_masks[exp_i],
-            generation_plasticity,
+            plasticity_gen,
+            w_init_gen[exp_i],
             cfg,
             mode
         )
@@ -117,6 +121,7 @@ class Experiment(eqx.Module):
     exp_i: int
     cfg: object = eqx.field(static=True)
     network: eqx.Module
+    w_init_gen: jnp.array
     step_mask: jnp.array
     x_input: jnp.array
     rewarded_pos: jnp.array
@@ -124,7 +129,7 @@ class Experiment(eqx.Module):
     weights_trajec: dict = None  # Only for test experiments
 
     def __init__(self, key, exp_i, shapes, step_mask,
-                 plasticity_gen, cfg, mode):
+                 plasticity_gen, w_init_gen, cfg, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -139,6 +144,7 @@ class Experiment(eqx.Module):
         """
         self.exp_i = exp_i
         self.step_mask = step_mask
+        self.w_init_gen = w_init_gen
         self.cfg = cfg.experiment
         self.data = {}
 
@@ -153,10 +159,13 @@ class Experiment(eqx.Module):
         # Initialize two different networks with different sparsity masks.
         # Generation network is not saved, only its activity is used.
         # Training network is saved and used for training.
-        network_gen = Network(net_gen_key, cfg.network,
-                              self.cfg.input_type, mode='generation')
-        self.network = Network(net_train_key, cfg.network,
-                               self.cfg.input_type, mode='training')
+        network_gen = network.Network(net_gen_key, cfg.network,
+                                      self.cfg.input_type, mode='generation')
+        self.network = network.Network(net_train_key, cfg.network,
+                                       self.cfg.input_type, mode='training')
+
+        # Set initial weights for generation to network_gen
+        network_gen = network_gen.apply_weights(self.w_init_gen)
 
         # Generate inputs and step mask for this experiment
         inputs = self.generate_inputs(inputs_key, shapes)
