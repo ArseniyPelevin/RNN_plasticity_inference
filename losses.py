@@ -132,6 +132,7 @@ def loss(
         plasticity: dict of plasticity modules for each plastic layer.
         cfg: Configuration object.
         returns: Tuple of strings indicating which outputs to return.
+        fixed_thetas (dict): If given, use instead of params['thetas'] to learn w_init
 
     Returns:
         loss (float): Total loss computed as the sum of theta regularization,
@@ -142,24 +143,27 @@ def loss(
             'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0
             }
     """
-    thetas = params['thetas']
     w_init_learned = params['w_init_learned'][exp.exp_i]
 
-    # Update plasticity coefficients with current estimates.
-    for layer in thetas:
-        # Apply mask to plasticity coefficients to enforce constraints
-        if cfg.plasticity.plasticity_models[layer] == "volterra":
-            thetas[layer] *= plasticity[layer].coeff_mask
-        plasticity[layer] = eqx.tree_at(
-            lambda p: p.coeffs, plasticity[layer], thetas[layer])
+    # If thetas are learned, apply current estimates to plasticity modules
+    if "thetas" in params:
+        thetas = params['thetas']
+        for layer in thetas:
+            # Apply mask to plasticity coefficients to enforce constraints
+            if cfg.plasticity.plasticity_models[layer] == "volterra":
+                thetas[layer] *= plasticity[layer].coeff_mask
+            # Apply current coefficients estimates to plasticity modules
+            plasticity[layer] = eqx.tree_at(
+                lambda p: p.coeffs, plasticity[layer], thetas[layer])
+
     # Update initial weights of trainable layers with current estimates.
     w_init = {**exp.w_init_train, **w_init_learned}  # Second overrides first
     # Apply updated weights to experiment's network
     exp = eqx.tree_at(lambda exp: exp.network, exp, exp.network.apply_weights(w_init))
 
     reg_theta = 0.0
-    # Compute regularization for theta
-    if cfg.training.reg_types_theta.lower() != "none":
+    # Compute regularization for theta, if thetas are learned
+    if cfg.training.reg_types_theta.lower() != "none" and "thetas" in params:
         reg_func = (
             jnp.abs if "l1" in cfg.training.reg_types_theta.lower()
             else jnp.square
@@ -238,6 +242,7 @@ def loss(
     simulated_data = {k: v for k, v in simulated_data.items() if k in returns}
 
     aux = {'trajectories': simulated_data,
+           'total': loss,
            'neural': neural_loss,
            'behavioral': behavioral_loss,
            'total_reward': R,

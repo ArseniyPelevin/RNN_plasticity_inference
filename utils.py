@@ -52,8 +52,8 @@ def print_and_log_learned_params(cfg, expdata, thetas):
     """
     def print_and_log_learned_params_layer(layer, theta):
         coeff_prefix = layer[0].upper()  # 'F': feedforward, 'R': recurrent, 'B': both
-        if cfg.plasticity_models[layer] == "volterra":
-            coeff_mask = jnp.array(cfg.coeff_masks[layer])
+        if cfg.plasticity.plasticity_models[layer] == "volterra":
+            coeff_mask = jnp.array(cfg.plasticity.coeff_masks[layer])
             theta = jnp.multiply(theta, coeff_mask)
             for i in range(3):
                 for j in range(3):
