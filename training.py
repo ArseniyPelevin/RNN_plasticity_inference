@@ -7,6 +7,25 @@ import optax
 import plasticity
 import utils
 
+loss_value_and_grad = eqx.filter_value_and_grad(losses.loss, has_aux=True)
+
+@eqx.filter_jit
+def meta_learning_step(params, key, exp, plasticity, cfg, optimizer, opt_state):
+    (loss, aux), grads = loss_value_and_grad(
+        params,  # Current params on each iteration
+        key,
+        exp,
+        plasticity,
+        cfg,  # Static within losses
+        returns=(None if not cfg.logging.log_trajectories
+                 else ('xs', 'ys', 'outputs',
+                       'decisions', 'rewards', 'weights'))
+    )
+
+    updates, opt_state = optimizer.update(grads, opt_state)
+    params = eqx.apply_updates(params, updates)
+
+    return params, opt_state, loss, aux
 
 def train(key, cfg, train_experiments, test_experiments):
     """ Initialize values and functions, start training loop.
@@ -42,10 +61,6 @@ def train(key, cfg, train_experiments, test_experiments):
             {layer: exp.w_init_train[layer]
              for layer in cfg.training.trainable_init_weights})
 
-    # Return value (scalar) of the function (loss value) and gradient wrt its
-    # parameters at argnums (theta and init_weights) - !Check argnums!
-    loss_value_and_grad = eqx.filter_value_and_grad(losses.loss, has_aux=True)
-
     # optimizer = optax.adam(learning_rate=cfg.learning_rate)
     # Apply gradient clipping as in the article
     optimizer = optax.chain(
@@ -58,25 +73,6 @@ def train(key, cfg, train_experiments, test_experiments):
     _losses_and_r2s = {}  # Per-evaluation-epoch losses and r2 values (debugging only)
     _activation_trajs = {}  # Per-evaluation-epoch trajectories (debugging only)
 
-    @eqx.filter_jit
-    def meta_learning_step(params, key, exp, cfg, opt_state):
-        (loss, aux), grads = loss_value_and_grad(
-            params,  # Current params on each iteration
-            key,
-            exp,
-            plasticity_train,
-            cfg,  # Static within losses
-            returns=(None if not cfg.logging.log_trajectories
-                        else ('xs', 'ys', 'outputs',
-                            'decisions', 'rewards', 'weights'))
-        )
-
-        updates, opt_state = optimizer.update(grads, opt_state)
-        params = eqx.apply_updates(params, updates)
-
-
-        return params, opt_state, loss, aux
-
     for epoch in range(num_epochs):
         epoch_keys = train_keys[epoch]
         epoch_trajectories, epoch_losses = [], []
@@ -84,7 +80,7 @@ def train(key, cfg, train_experiments, test_experiments):
             exp_key = epoch_keys[exp_i]
 
             params, opt_state, loss, aux = meta_learning_step(
-                params, exp_key, exp, cfg, opt_state)
+                params, exp_key, exp, plasticity_train, cfg, optimizer, opt_state)
 
             # For debugging: return trajectories of activations and weights
             exp_trajectories = aux['trajectories']
