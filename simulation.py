@@ -1,11 +1,10 @@
-from functools import partial
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 
-@partial(jax.jit, static_argnames=("returns"))
+@eqx.filter_jit
 def simulate_step(step_variables, plasticity, returns):
     """ Simulate network activity and outputs in one time step.
 
@@ -57,7 +56,7 @@ def simulate_step(step_variables, plasticity, returns):
 
     return (network, activity[1]), output_data
 
-@partial(jax.jit, static_argnames=("returns"))
+@eqx.filter_jit
 def simulate_trajectory(
     key,
     exp,

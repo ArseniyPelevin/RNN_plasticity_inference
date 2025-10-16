@@ -5,8 +5,7 @@ import jax
 import numpy as np
 import omegaconf
 import pandas as pd
-
-# import training
+import training
 import utils
 
 # coeff_mask = np.zeros((3, 3, 3, 3))
@@ -67,7 +66,7 @@ config = {
     # Network architecture
         # For input_type 'task', num_x_neurons is set automatically
         "num_x_neurons": 50,  # x, presynaptic neurons for feedforward layer
-        "num_y_neurons": 50,  # y, neurons of recurrent layer
+        "num_y_neurons": 100,  # y, neurons of recurrent layer
         "num_outputs": 1,
 
         "plasticity_layers": ["ff", "rec"],  # ["ff", "rec"]
@@ -109,8 +108,8 @@ config = {
         "fit_data": ["neural"],  # ["behavioral", "neural"]
 
         # Only affects training, generation depends on generation_plasticity
-        "trainable_thetas": "same",  # "same", "different"
-        "trainable_init_weights": ['w_ff', 'w_rec', 'w_out'],
+        "trainable_thetas": "different",  # "same", "different"
+        "trainable_init_weights": ['ff', 'rec', 'out'],
 
         "num_epochs": 250,
         "learning_rate": 3e-3,
@@ -154,7 +153,7 @@ config = {
     },
 
     "logging": {
-        "expid": 17, # For saving results and seeding random
+        "exp_id": 17, # For saving results and seeding random
         "log_interval": 10,
 
         "do_evaluation": True,
@@ -220,17 +219,6 @@ def validate_config(cfg):
             if "sparsity" in param or "scale" in param or "std" in param:
                 cfg[section][param] = convert_to_float(cfg[section][param])
 
-    # Ensure generation_plasticity for each plastic layer is a list of dicts
-    for layer in cfg.plasticity.generation_plasticity:
-        if (type(cfg.plasticity.generation_plasticity[layer])
-            is not omegaconf.listconfig.ListConfig):
-            cfg.plasticity.generation_plasticity[layer] = [
-                cfg.plasticity.generation_plasticity[layer]]
-        for coeff_dict in cfg.plasticity.generation_plasticity[layer]:
-            if type(coeff_dict) is not omegaconf.dictconfig.DictConfig:
-                raise ValueError(f"Each element of generation_plasticity for layer "
-                                 f"{layer} must be a dict of coefficient values!")
-
     for param in cfg.plasticity:
         # If set as single value, convert to per-plastic-layer dict using that value
         if type(cfg.plasticity[param]) is not omegaconf.dictconfig.DictConfig:
@@ -255,6 +243,17 @@ def validate_config(cfg):
             else:
                 raise ValueError(f"When trainable_thetas is 'same', "
                                  f"all plastic layers must have the same {param}!")
+
+    # Ensure generation_plasticity for each plastic layer is a list of dicts
+    for layer in cfg.plasticity.generation_plasticity:
+        if (type(cfg.plasticity.generation_plasticity[layer])
+            is not omegaconf.listconfig.ListConfig):
+            cfg.plasticity.generation_plasticity[layer] = [
+                cfg.plasticity.generation_plasticity[layer]]
+        for coeff_dict in cfg.plasticity.generation_plasticity[layer]:
+            if type(coeff_dict) is not omegaconf.dictconfig.DictConfig:
+                raise ValueError(f"Each element of generation_plasticity for layer "
+                                 f"{layer} must be a dict of coefficient values!")
 
     # Validate plasticity parameters
     for layer in cfg.plasticity.plasticity_models:
@@ -281,7 +280,7 @@ def validate_config(cfg):
 def run_experiment(cfg, seed=None):
     cfg = validate_config(cfg)
     if seed is None:
-        seed = cfg.experiment.expid
+        seed = cfg.logging.exp_id
     cfg.experiment.seed = seed  # Save seed in config for logging
     key = jax.random.PRNGKey(seed)
 
@@ -293,17 +292,18 @@ def run_experiment(cfg, seed=None):
     test_experiments = experiment.generate_experiments(exp_key2, cfg, mode='test')
 
     time_start = time.time()
-    params, expdata, _activation_trajs, _losses_and_r2s = (
+    # params, expdata, _activation_trajs, _losses_and_r2s = (
+    params, expdata = (
         training.train(train_key, cfg, train_experiments, test_experiments))
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
     try:
-        save_results(cfg, params, expdata, train_time, _activation_trajs)
+        save_results(cfg, params, expdata, train_time)#, _activation_trajs)
     except Exception as e:
         print(f"Error saving results: {e}")
 
-    return params, expdata, _activation_trajs, _losses_and_r2s
+    return params, expdata#, _activation_trajs, _losses_and_r2s
 
 def save_results(cfg, params, expdata, train_time, activation_trajs):
     """Save training logs and parameters."""
@@ -315,7 +315,8 @@ def save_results(cfg, params, expdata, train_time, activation_trajs):
                     #                    for e, tr in enumerate(activation_trajs)}
                       }
         utils.save_nested_hdf5(export_dict,
-                               cfg.log_dir + f"exp_{cfg.expid}_final_params.h5")
+                               cfg.log_dir +
+                               f"exp_{cfg.logging.exp_id}_final_params.h5")
 
     df = pd.DataFrame.from_dict(expdata)
     df["train_time"] = train_time

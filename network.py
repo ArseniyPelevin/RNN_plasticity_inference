@@ -357,7 +357,7 @@ class Network(eqx.Module):
             (ff_weights, rec_weights, rec_biases,
              mean_y_activation, expected_reward))
 
-def initialize_layer_weights(key, cfg, layers=('ff', 'rec', 'out')):
+def initialize_weights(key, cfg, layers=('ff', 'rec', 'out')):
     """ Initialize trainable initial weights for one experiment.
 
     Args:
@@ -403,8 +403,8 @@ def initialize_layer_weights(key, cfg, layers=('ff', 'rec', 'out')):
 
     return w_init
 
-def initialize_weights(key, num_exps, cfg, layers=('ff', 'rec', 'out')):
-    """ Initialize trainable initial weights for one experiment.
+def initialize_exps_weights(key, num_exps, cfg, layers=('ff', 'rec', 'out')):
+    """ Initialize trainable initial weights for all experiments.
 
     Args:
         num_exps (int): Number of experiments to initialize weights for.
@@ -416,6 +416,6 @@ def initialize_weights(key, num_exps, cfg, layers=('ff', 'rec', 'out')):
     keys = jax.random.split(key, num_exps)
     w_inits = []
     for i in range(num_exps):
-        w_init = initialize_layer_weights(keys[i], cfg, layers)
+        w_init = initialize_weights(keys[i], cfg, layers)
         w_inits.append(w_init)
     return w_inits

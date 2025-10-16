@@ -1,11 +1,9 @@
 """Module with utility functions, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
 
-import inspect
 import logging
-import re
 from pathlib import Path
-import h5py
 
+import h5py
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -13,7 +11,7 @@ import numpy as np
 
 def setup_platform(device: str) -> None:
     """Set up the environment based on the configuration."""
-    
+
     # Suppress JAX backend initialization messages if using CPU
     if device == "cpu":
         logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
@@ -25,7 +23,7 @@ def setup_platform(device: str) -> None:
 
     device = jax.lib.xla_bridge.get_backend().platform
     logging.info(f"Platform: {device}\n")
-    
+
 def softclip(x, cap, p=10):
     return x / ((1.0 + jnp.abs(x / cap) ** p) ** (1.0 / p))
 
@@ -51,7 +49,7 @@ def print_and_log_learned_params(cfg, expdata, thetas):
 
     Returns:
         dict: Updated experimental data dictionary.
-    """ 
+    """
     def print_and_log_learned_params_layer(layer, theta):
         coeff_prefix = layer[0].upper()  # 'F': feedforward, 'R': recurrent, 'B': both
         if cfg.plasticity_models[layer] == "volterra":
@@ -97,7 +95,7 @@ def print_and_log_learned_params(cfg, expdata, thetas):
         else:
             print(f"MLP plasticity coeffs for {layer} layer: ", theta)
             expdata.setdefault("mlp_params", []).append(theta)
-    
+
     for layer, theta in thetas.items():
         print_and_log_learned_params_layer(layer, theta)
 
@@ -114,7 +112,7 @@ def save_logs(cfg, df):
     Returns:
         Path: The path where the logs were saved.
     """
-    
+
     # local_random = random.Random()
     # local_random.seed(os.urandom(10))
     # sleep_duration = local_random.uniform(1, 5)
@@ -125,7 +123,7 @@ def save_logs(cfg, df):
     if cfg.log_expdata:
 
         logdata_path.mkdir(parents=True, exist_ok=True)
-        csv_file = logdata_path / f"exp_{cfg.expid}.csv"
+        csv_file = logdata_path / f"exp_{cfg.logging.exp_id}.csv"
         write_header = not csv_file.exists()
 
         lock_file = csv_file.with_suffix(".lock")

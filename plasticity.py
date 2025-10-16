@@ -13,7 +13,7 @@ def initialize_plasticity(key, cfg, mode):
                 key,
                 learning_rate=cfg.synapse_learning_rate[layer],
                 init_scale=cfg.plasticity_coeffs_init_scale[layer],
-                coeff_masks=jnp.array(cfg.coeff_masks[layer]),  # For VolterraPlasticity
+                coeff_mask=jnp.array(cfg.coeff_masks[layer]),  # For VolterraPlasticity
                 hidden_sizes=None)  #cfg.mlp_hidden_sizes[layer])  # For MLPPlasticity
         if mode == 'generation':
             if cfg.plasticity_models[layer] == 'mlp':
@@ -26,16 +26,16 @@ def initialize_plasticity(key, cfg, mode):
 
 
 class VolterraPlasticity(eqx.Module):
-    coefficients: jnp.array
+    coeffs: jnp.array
     learning_rate: float
-    coeff_masks: jnp.array
+    coeff_mask: jnp.array
 
     def __init__(self, key, learning_rate, init_scale,
-                 coeff_masks, hidden_sizes=None):
+                 coeff_mask, hidden_sizes=None):
         # Initialize coefficients
         self.learning_rate = learning_rate
-        self.coefficients = jax.random.normal(key, (3, 3, 3, 3)) * init_scale
-        self.coeff_masks = coeff_masks
+        self.coeffs = jax.random.normal(key, (3, 3, 3, 3)) * init_scale
+        self.coeff_mask = coeff_mask
 
     def set_coefficient(
         self,
@@ -45,8 +45,8 @@ class VolterraPlasticity(eqx.Module):
         weight=0,
         reward=0
     ):
-        coefficients = self.coefficients.at[pre, post, weight, reward].set(value)
-        return eqx.tree_at(lambda p: p.coefficients, self, coefficients)
+        coeffs = self.coeffs.at[pre, post, weight, reward].set(value)
+        return eqx.tree_at(lambda p: p.coeffs, self, coeffs)
 
     def __call__(self, pre, post, weight, reward):
         pre_powers = jnp.array([1.0, pre, pre**2])
@@ -56,7 +56,7 @@ class VolterraPlasticity(eqx.Module):
         terms = jnp.outer(
             pre_powers, jnp.outer(post_powers, jnp.outer(weight_powers, reward_powers))
         ).reshape(3, 3, 3, 3)
-        weight_update = jnp.sum(self.coefficients * terms)
+        weight_update = jnp.sum(self.coeffs * terms)
 
         return weight + self.learning_rate * weight_update
 
@@ -66,7 +66,7 @@ class MLPPlasticity(eqx.Module):
     learning_rate: float
 
     def __init__(self, key, learning_rate, init_scale,
-                 coeff_masks=None, hidden_sizes=None):
+                 coeff_mask=None, hidden_sizes=None):
         layers = []
         keys = jax.random.split(key, len(hidden_sizes) + 1)
         for i in range(len(hidden_sizes) - 1):

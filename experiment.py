@@ -1,6 +1,4 @@
 
-from functools import partial
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -41,8 +39,6 @@ def generate_experiments(key, cfg, mode):
     # Initialize plasticity for generation
     plasticity_gen = plasticity.initialize_plasticity(
         plasticity_gen_key, cfg.plasticity, mode='generation')
-    # initialize weights for generation of all experiments
-    w_init_gen = network.initialize_weights(w_init_key, num_exps, cfg.network)
 
     # Build list of experiment dicts
     experiments_list = []
@@ -52,7 +48,6 @@ def generate_experiments(key, cfg, mode):
             exp_i,
             shapes, step_masks[exp_i],
             plasticity_gen,
-            w_init_gen[exp_i],
             cfg,
             mode
         )
@@ -122,6 +117,7 @@ class Experiment(eqx.Module):
     cfg: object = eqx.field(static=True)
     network: eqx.Module
     w_init_gen: jnp.array
+    w_init_train: jnp.array
     step_mask: jnp.array
     x_input: jnp.array
     rewarded_pos: jnp.array
@@ -129,7 +125,7 @@ class Experiment(eqx.Module):
     weights_trajec: dict = None  # Only for test experiments
 
     def __init__(self, key, exp_i, shapes, step_mask,
-                 plasticity_gen, w_init_gen, cfg, mode):
+                 plasticity_gen, cfg, mode):
         """Initialize experiment with given configuration and plasticity model.
 
         Args:
@@ -144,17 +140,18 @@ class Experiment(eqx.Module):
         """
         self.exp_i = exp_i
         self.step_mask = step_mask
-        self.w_init_gen = w_init_gen
         self.cfg = cfg.experiment
         self.data = {}
 
         # Generate random keys for different parts of the model
         (net_gen_key,
          net_train_key,
+         w_init_gen_key,
+         w_init_train_key,
          inputs_key,
          x_gen_key,
          x_train_key,
-         simulation_key) = jax.random.split(key, 6)
+         simulation_key) = jax.random.split(key, 8)
 
         # Initialize two different networks with different sparsity masks.
         # Generation network is not saved, only its activity is used.
@@ -164,8 +161,13 @@ class Experiment(eqx.Module):
         self.network = network.Network(net_train_key, cfg.network,
                                        self.cfg.input_type, mode='training')
 
-        # Set initial weights for generation to network_gen
+        # Initialize weights for generation and training. Store them to experiment
+        self.w_init_gen = network.initialize_weights(w_init_gen_key, cfg.network)
+        self.w_init_train = network.initialize_weights(w_init_train_key, cfg.network)
+
+        # Apply initial weights to corresponding networks
         network_gen = network_gen.apply_weights(self.w_init_gen)
+        self.network = self.network.apply_weights(self.w_init_train)
 
         # Generate inputs and step mask for this experiment
         inputs = self.generate_inputs(inputs_key, shapes)
@@ -385,7 +387,7 @@ class Experiment(eqx.Module):
 
         return t, v_smooth, positions
 
-    @partial(jax.jit, static_argnames=["mode"])
+    @eqx.filter_jit
     def generate_x(self, key, inputs, mode):
         """ Generate X layer activity based on input.
 
