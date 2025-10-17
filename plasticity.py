@@ -3,18 +3,24 @@ import jax
 import jax.numpy as jnp
 
 
-def initialize_plasticity(key, cfg, mode):
+def initialize_plasticity(key, cfg, mode, scale=None):
     plasticity_functions = {'volterra': VolterraPlasticity,
                             'mlp': MLPPlasticity}
     plasticity = {}
     for layer in cfg.plasticity_models:
+        if not scale:  # scale=0.0 is passed from evaluation for null plasticity model
+            init_scale = cfg.plasticity_coeffs_init_scale[layer]
+
+        # Initialize plasticity modules for each plastic layer
         plasticity[layer] = plasticity_functions[
             cfg.plasticity_models[layer]](
                 key,
                 learning_rate=cfg.synapse_learning_rate[layer],
-                init_scale=cfg.plasticity_coeffs_init_scale[layer],
+                init_scale=init_scale,
                 coeff_mask=jnp.array(cfg.coeff_masks[layer]),  # For VolterraPlasticity
                 hidden_sizes=None)  #cfg.mlp_hidden_sizes[layer])  # For MLPPlasticity
+
+        # Set known plasticity coefficients if in generation mode
         if mode == 'generation':
             if cfg.plasticity_models[layer] == 'mlp':
                 raise NotImplementedError("How should MLP generation coeffs be set?")

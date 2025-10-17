@@ -13,7 +13,7 @@ loss_value_and_grad = eqx.filter_value_and_grad(losses.loss, has_aux=True)
 def meta_learning_step(params, key, exp, plasticity,
                        cfg, optimizer, opt_state, returns=()):
     """ Compute gradients of one trajectory and update params. """
-    (loss, aux), grads = loss_value_and_grad(
+    (_loss, aux), grads = loss_value_and_grad(
         params,  # Current params on each iteration
         key,
         exp,
@@ -25,7 +25,7 @@ def meta_learning_step(params, key, exp, plasticity,
     updates, opt_state = optimizer.update(grads, opt_state)
     params = eqx.apply_updates(params, updates)
 
-    return params, opt_state, loss, aux
+    return params, opt_state, aux
 
 def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
     """ Initialize plasticity, params, optimizer, and start training loop.
@@ -112,7 +112,7 @@ def training_loop(key, params, plasticity, experiments,
         for exp_i, exp in enumerate(experiments):
             exp_key = epoch_keys[exp_i]
 
-            params, opt_state, loss, aux = meta_learning_step(
+            params, opt_state, aux = meta_learning_step(
                 params, exp_key, exp, plasticity, cfg, optimizer, opt_state,
                 returns)
 
@@ -132,7 +132,7 @@ def training_loop(key, params, plasticity, experiments,
         if epoch % cfg.logging.log_interval == 0:
             print(f"\nEpoch {epoch}")
             expdata, _losses_and_r2 = compute_and_log_evaluation_metrics(
-                exp_key, epoch, cfg, expdata, params, plasticity,
+                exp_key, epoch, cfg, expdata, params,
                 test_experiments, epoch_losses)
             _losses_and_r2s[epoch] = _losses_and_r2
 
@@ -143,7 +143,7 @@ def training_loop(key, params, plasticity, experiments,
     return params, expdata, trajectories, _losses_and_r2s
 
 def compute_and_log_evaluation_metrics(key, epoch, cfg, expdata,
-                                       params, plasticity,
+                                       params,
                                        test_experiments,
                                        epoch_losses):
     """ Log metrics on training set and evaluate on test set. """
@@ -174,9 +174,7 @@ def compute_and_log_evaluation_metrics(key, epoch, cfg, expdata,
 
     key, eval_key = jax.random.split(key)
     expdata, _losses_and_r2 = evaluation.evaluate(
-        eval_key, cfg,
-        params['thetas'], plasticity,
-        test_experiments)
+        eval_key, params['thetas'], test_experiments, expdata, cfg)
 
     return expdata, _losses_and_r2
 

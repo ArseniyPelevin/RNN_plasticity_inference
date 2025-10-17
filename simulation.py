@@ -5,12 +5,12 @@ import jax.numpy as jnp
 
 
 @eqx.filter_jit
-def simulate_step(step_variables, plasticity, returns):
+def simulate_step(network, step_variables, plasticity, returns):
     """ Simulate network activity and outputs in one time step.
 
     Args:
+        network: Network,
         step_variables: (
-            network: Network,
             y_old (N_y_neurons,): y at previous step,
             x_input (N_x_neurons,): input at this step (without noise added),
             rewarded_pos (bool): whether this step is rewarded if licked,
@@ -34,7 +34,6 @@ def simulate_step(step_variables, plasticity, returns):
              weights - (dict of plastic layers)
              }
     """
-    network, *step_variables = step_variables
 
     network, *activity = network(step_variables, plasticity)
 
@@ -130,8 +129,9 @@ def simulate_trajectory(
         def _simulate_step(step_carry, step_variables):
             # step_carry: (network, y_old)
             # step_variables: (x_input, rewarded_pos, valid, step_keys)
-            step_variables = (*step_carry, *step_variables)
-            return simulate_step(step_variables, plasticity, returns)
+            network, y_old = step_carry
+            step_variables = (y_old, *step_variables)
+            return simulate_step(network, step_variables, plasticity, returns)
 
         *session_variables, y_key = session_variables
         # Initialize y activity at start of session

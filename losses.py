@@ -118,8 +118,7 @@ def loss(
     exp,
     plasticity,
     cfg,
-    returns
-):
+    returns):
     """
     Computes the total loss for the model on one experiment trajectory.
 
@@ -132,7 +131,6 @@ def loss(
         plasticity: dict of plasticity modules for each plastic layer.
         cfg: Configuration object.
         returns: Tuple of strings indicating which outputs to return.
-        fixed_thetas (dict): If given, use instead of params['thetas'] to learn w_init
 
     Returns:
         loss (float): Total loss computed as the sum of theta regularization,
@@ -143,23 +141,20 @@ def loss(
             'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0
             }
     """
-    w_init_learned = params['w_init_learned'][exp.exp_i]
-
-    # If thetas are learned, apply current estimates to plasticity modules
-    if "thetas" in params:
+    # Apply thetas from params to plasticity
+    if 'thetas' in params:
         thetas = params['thetas']
         for layer in thetas:
             # Apply mask to plasticity coefficients to enforce constraints
-            if cfg.plasticity.plasticity_models[layer] == "volterra":
+            if plasticity[layer].coeff_mask is not None:  # If Volterra
                 thetas[layer] *= plasticity[layer].coeff_mask
-            # Apply current coefficients estimates to plasticity modules
-            plasticity[layer] = eqx.tree_at(
-                lambda p: p.coeffs, plasticity[layer], thetas[layer])
+            plasticity[layer] = eqx.tree_at(lambda p: p.coeffs,
+                                     plasticity[layer],
+                                     thetas[layer])
 
-    # Update initial weights of trainable layers with current estimates.
-    w_init = {**exp.w_init_train, **w_init_learned}  # Second overrides first
-    # Apply updated weights to experiment's network
-    exp = eqx.tree_at(lambda exp: exp.network, exp, exp.network.apply_weights(w_init))
+    # Apply weights from params to network
+    w_init_learned = params['w_init_learned'][exp.exp_i]
+    network = exp.network.apply_weights(w_init_learned)
 
     reg_theta = 0.0
     # Compute regularization for theta, if thetas are learned
@@ -197,7 +192,7 @@ def loss(
         key,
         exp,
         exp.x_input,
-        exp.network,
+        network,
         plasticity,
         returns=simulation_returns
     )

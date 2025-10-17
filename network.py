@@ -176,23 +176,31 @@ class Network(eqx.Module):
         Returns:
             network: Updated network with new weights.
         """
-        return eqx.tree_at(
-            lambda network: (
-                network.ff_layer.weight,
-                network.rec_layer.weight,
-                network.rec_layer.bias,
-                network.out_layer.weight,
-                network.out_layer.bias
-            ),
-            self,
-            (
-                weights['ff']['w'],
-                weights['rec']['w'],
-                weights['rec']['b'],
-                weights['out']['w'].squeeze(),
-                weights['out']['b'].squeeze()
-            )
-        )
+        if 'ff' in weights:
+            self = eqx.tree_at(
+                lambda network: network.ff_layer.weight,
+                self,
+                weights['ff']['w']
+                )
+        if 'rec' in weights:
+            self = eqx.tree_at(
+                lambda network: (
+                    network.rec_layer.weight,
+                    network.rec_layer.bias),
+                    self,
+                    (weights['rec']['w'],
+                     weights['rec']['b'])
+                     )
+        if 'out' in weights:
+            self = eqx.tree_at(
+                lambda network: (
+                    network.out_layer.weight,
+                    network.out_layer.bias),
+                    self,
+                    (weights['out']['w'].squeeze(),
+                     weights['out']['b'].squeeze())
+                     )
+        return self
 
     def __call__(self, step_variables, plasticity):
         """ Forward pass through the network for one time step,
