@@ -4,7 +4,6 @@ import experiment
 import jax
 import numpy as np
 import omegaconf
-import pandas as pd
 import training
 import utils
 
@@ -104,6 +103,29 @@ config = {
         "measurement_noise_scale": 0,
     },
 
+    # All plasticity parameters can be different for ff and rec layers if set as dict.
+    # If set as single value, the same will be used for all plastic layers.
+    "plasticity": {
+        # Per-plastic-layer dict or str, in latter case use same for all plastic layers
+        "generation_plasticity": {
+            # 1xy - 1y2w
+            'ff': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}],
+            'rec': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}]
+        },
+        "generation_models": "volterra",  # "volterra" / "mlp"
+        "plasticity_models": "volterra",  # "volterra" / "mlp"
+        "plasticity_coeffs_init_scale": 1e-4,
+        # Restrictions on trainable plasticity parameters
+        "num_trainable_coeffs": {layer: int(np.sum(mask))
+                            for layer, mask in coeff_masks.items()},
+        # Per-plastic-layer masks for plasticity coefficients
+        "coeff_masks": {k: v.tolist() for k, v in coeff_masks.items()},
+
+        "synapse_learning_rate": 1,
+    },
+
     "training": {
         "fit_data": ["neural"],  # ["behavioral", "neural"]
 
@@ -129,43 +151,21 @@ config = {
         "lick_cost": 0.1,  # Cost of each lick in reward-based tasks
     },
 
-    # All plasticity parameters can be different for ff and rec layers if set as dict.
-    # If set as single value, the same will be used for all plastic layers.
-    "plasticity": {
-        # Per-plastic-layer dict or str, in latter case use same for all plastic layers
-        "generation_plasticity": {
-            # 1xy - 1y2w
-            'ff': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
-                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}],
-            'rec': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
-                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}]
-        },
-        "generation_models": "volterra",  # "volterra" / "mlp"
-        "plasticity_models": "volterra",  # "volterra" / "mlp"
-        "plasticity_coeffs_init_scale": 1e-4,
-        # Restrictions on trainable plasticity parameters
-        "num_trainable_coeffs": {layer: int(np.sum(mask))
-                            for layer, mask in coeff_masks.items()},
-        # Per-plastic-layer masks for plasticity coefficients
-        "coeff_masks": {k: v.tolist() for k, v in coeff_masks.items()},
-
-        "synapse_learning_rate": 1,
-    },
-
     "logging": {
         "exp_id": 17, # For saving results and seeding random
         "log_interval": 10,
 
         "do_evaluation": True,
+
         "log_config": True,
-        "log_generated_experiments": False,
-        "log_trajectories": True,
-        "log_expdata": True,
-        "log_final_params": True,
+        "log_final_params": True,  # Save final learned parameters (theta, init weights)
+        "log_expdata": True,  # Plasticity coeffs and metrics on evaluation epochs
+        "log_trajectories": True,  # Save activity and weight trajectories
+        "log_generated_experiments": True,
 
         "data_dir": "../../../../03_data/01_original_data/",
         "log_dir": "../../../../03_data/02_training_data/",
-        "fig_dir": "../../../../05_figures/"
+        # "fig_dir": "../../../../05_figures/"
     }
 }
 
@@ -292,48 +292,22 @@ def run_experiment(cfg, seed=None):
     test_experiments = experiment.generate_experiments(exp_key2, cfg, mode='test')
 
     time_start = time.time()
-    # params, expdata, _activation_trajs, _losses_and_r2s = (
-    params, expdata = (
-        training.train(train_key, cfg, train_experiments, test_experiments))
+    params, expdata, trajectories, _losses_and_r2s = (
+        training.meta_learn_plasticity(train_key, cfg,
+                                       train_experiments, test_experiments))
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
+     # Save results
     try:
-        save_results(cfg, params, expdata, train_time)#, _activation_trajs)
+        path = utils.save_results(cfg, params, expdata, train_time, trajectories,
+                                  train_experiments, test_experiments)
     except Exception as e:
         print(f"Error saving results: {e}")
+        path = ''
 
-    return params, expdata#, _activation_trajs, _losses_and_r2s
-
-def save_results(cfg, params, expdata, train_time, activation_trajs):
-    """Save training logs and parameters."""
-
-    # Save final parameters
-    if cfg.log_final_params:
-        export_dict = {'params': params,
-                    #   'trajectories': {str(e): tr
-                    #                    for e, tr in enumerate(activation_trajs)}
-                      }
-        utils.save_nested_hdf5(export_dict,
-                               cfg.log_dir +
-                               f"exp_{cfg.logging.exp_id}_final_params.h5")
-
-    df = pd.DataFrame.from_dict(expdata)
-    df["train_time"] = train_time
-
-    # Add configuration parameters to DataFrame
-    for cfg_key, cfg_value in cfg.items():
-        if isinstance(cfg_value, (float | int | str)):
-            df[cfg_key] = cfg_value
-        elif isinstance(cfg_value, omegaconf.dictconfig.DictConfig):
-            df[cfg_key] = ', '.join(f"{k}: {v}" for k, v in cfg_value.items())
-        elif isinstance(cfg_value, omegaconf.listconfig.ListConfig):
-            df[cfg_key] = ', '.join(str(v) for v in cfg_value)
-
-    # Save expdata as .csv
-    if cfg.log_expdata:
-        _logdata_path = utils.save_logs(cfg, df)
+    return params, expdata, trajectories, _losses_and_r2s, path
 
 if __name__ == "__main__":
     cfg = create_config()
-    params, expdata, _activation_trajs, _losses_and_r2s = run_experiment(cfg)
+    params, expdata, trajectories, _losses_and_r2s, path = run_experiment(cfg)

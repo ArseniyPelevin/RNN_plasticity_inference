@@ -1,12 +1,17 @@
 """Module with utility functions, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
 
 import logging
+import pickle
+from itertools import count
 from pathlib import Path
 
+import equinox as eqx
 import h5py
 import jax
 import jax.numpy as jnp
 import numpy as np
+import omegaconf
+import pandas as pd
 
 
 def setup_platform(device: str) -> None:
@@ -101,6 +106,59 @@ def print_and_log_learned_params(cfg, expdata, thetas):
 
     return expdata
 
+def save_results(cfg, params, expdata, train_time, trajectories,
+                 train_experiments, test_experiments):
+    """Save training logs and parameters."""
+
+    def create_directory():
+        path = Path(cfg.logging.log_dir)
+        path.mkdir(parents=True, exist_ok=True)  # Create log_dir if it doesn't exist
+        dir_name = f"Exp_{cfg.logging.exp_id}"
+        for i in count():
+            name = dir_name if i == 0 else f"{dir_name}_({i})"
+            candidate = path / name
+            try:
+                candidate.mkdir(parents=True, exist_ok=False)
+                break
+            except FileExistsError:
+                continue
+        return candidate.as_posix() + '/'
+
+    path = create_directory()
+
+    # Save configuration
+    if cfg.logging.log_config:
+        # Save configuration used for the experiment
+        omegaconf.OmegaConf.save(cfg, path + "config.yaml")
+
+    # Save final parameters
+    if cfg.logging.log_final_params:
+        with open(path + "final_params.pkl", "wb+") as f:
+            pickle.dump(jax.device_get(params), f)
+
+    if cfg.logging.log_expdata:
+        # Save expdata as .csv
+        df = pd.DataFrame.from_dict(expdata)
+        df["train_time"] = train_time
+        df.to_csv(path + "expdata.csv", mode="w+", index=False)
+        # TODO allow appending to existing file if retraining
+
+    if cfg.logging.log_generated_experiments:
+        # Save generated experiments
+        for name, experiments in zip(["train", "test"],
+                                     [train_experiments, test_experiments],
+                                     strict=False):
+            exp_path = Path(path + f"generated_{name}_experiments")
+            exp_path.mkdir(parents=True, exist_ok=True)
+            for i, exp in enumerate(experiments):
+                eqx.tree_serialise_leaves(exp_path / f"experiment_{i}.eqx", exp)
+
+    if cfg.logging.log_trajectories:
+        # Save trajectories
+        save_nested_hdf5(trajectories, path + "trajectories.h5")
+
+    return path
+
 def save_logs(cfg, df):
     """
     Saves the logs to a specified directory based on the configuration.
@@ -140,18 +198,20 @@ def save_logs(cfg, df):
 
     return logdata_path
 
-def save_nested_hdf5(obj, fname):
+def save_nested_hdf5(obj, path):
     """Save a nested dict of arrays to HDF5, preserving the tree."""
-    with h5py.File(fname, "w") as f:
-        def _recursively_write(group, d):
-            for k, v in d.items():
-                if isinstance(v, dict):
-                    subgroup = group.create_group(k)
-                    _recursively_write(subgroup, v)
-                else:
-                    arr = np.array(jax.device_get(v))
-                    group.create_dataset(k, data=arr, compression="gzip", compression_opts=4)
-        _recursively_write(f, obj)
+    with h5py.File(path, 'w') as f:
+        for k, lst in obj.items():
+            g = f.create_group(str(k))
+            for i, rec in enumerate(lst):
+                s = g.create_group(str(i))
+                for name, arr in rec.items():
+                    if name == 'weights':
+                        wg = s.create_group('weights')
+                        for wk, wv in arr.items():
+                            wg.create_dataset(wk, data=np.array(wv))
+                    else:
+                        s.create_dataset(name, data=np.array(arr))
 
 def load_nested_hdf5(fname):
     """Load HDF5 into nested dict (datasets -> numpy arrays)."""

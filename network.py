@@ -17,12 +17,12 @@ class Network(eqx.Module):
     mean_y_activation: jnp.array  # Running average of y activation for bias update
     expected_reward: float  # Running average of rewards when licked
 
+    clip_input: bool = eqx.field(static=True)
     cfg: object = eqx.field(static=True)
-    input_type: str = eqx.field(static=True)
 
     def __init__(self, key, cfg, input_type, mode):
         self.cfg = cfg
-        self.input_type = input_type
+        self.clip_input = (input_type == 'task')  # Task inputs are positive
 
         key1, key2, key3, mask_key = jax.random.split(key, 4)
 
@@ -230,7 +230,7 @@ class Network(eqx.Module):
         input_noise = jax.random.normal(input_noise_key, (self.cfg.num_x_neurons,))
         x = inputs + input_noise * self.cfg.input_noise_std
         # Make x positive if task input
-        if self.input_type == 'task':
+        if self.clip_input:
             x = jnp.clip(x, min=0)
 
         # Feedforward layer: x -- w_ff --> y
