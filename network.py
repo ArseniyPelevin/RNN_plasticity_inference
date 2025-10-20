@@ -28,7 +28,7 @@ class Network(eqx.Module):
         key1, key2, key3, mask_key = jax.random.split(key, 4)
 
         self.ff_layer = eqx.nn.Linear(self.cfg.num_x_neurons,
-                                      self.cfg.num_y_neurons, key=key1)
+                                      self.cfg.num_y_neurons, key=key1, use_bias=False)
         self.rec_layer = eqx.nn.Linear(self.cfg.num_y_neurons,
                                        self.cfg.num_y_neurons, key=key2)
         self.out_layer = eqx.nn.Linear(self.cfg.num_y_neurons,
@@ -114,7 +114,7 @@ class Network(eqx.Module):
         )
         mask = mask.at[chosen_rows, zero_cols].set(1)
 
-        return mask.astype(jnp.bool)
+        return mask.astype(bool)
 
     def generate_recurrent_mask(self, key, n_post, rec_sparsity, ff_mask):
         """Generate a binary mask for the recurrent weights to enforce sparsity.
@@ -157,7 +157,7 @@ class Network(eqx.Module):
 
         mask = mask.at[chosen_rows, zero_cols].set(1)
 
-        return mask.astype(jnp.bool)
+        return mask.astype(bool)
 
     def compute_input_scale(self, mask, base_scale):
         """ Scale weights by constant and by number of inputs to each neuron."""
@@ -239,9 +239,8 @@ class Network(eqx.Module):
 
         # Apply scale and sparsity mask to ff weights
         w_ff = self.ff_layer.weight.T * self.ff_scale * self.ff_mask
-        b_ff = self.ff_layer.bias
         # Compute feedforward activation
-        y_activation = x @ w_ff + b_ff
+        y_activation = x @ w_ff
 
         # Recurrent layer (if present): y -- w_rec --> y
 
@@ -263,7 +262,7 @@ class Network(eqx.Module):
         decision = self.compute_decision(decision_key, output)
 
         # Reward if licked at rewarded position
-        reward = (decision * rewarded_pos).astype(jnp.bool)
+        reward = (decision * rewarded_pos).astype(bool)
         # Expected reward is moving average of recent rewards when licked
         expected_reward = ((1 - 0.1 * decision) * self.expected_reward +
                            (0.1 * decision) * reward)

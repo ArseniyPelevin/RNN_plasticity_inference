@@ -29,7 +29,25 @@ def meta_learning_step(params, key, exp, plasticity,
 
 def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
     """ Initialize plasticity, params, optimizer, and start training loop.
-    Learn plasticity coefficients and initial weights of trainable layers. """
+    Learn plasticity coefficients and initial weights of trainable layers.
+
+    Args:
+        key (jax.random.PRNGKey): Random key for initialization.
+        cfg: Configuration object.
+        train_experiments (list): List of Experiment objects for training.
+        test_experiments (list): List of Experiment objects for evaluation.
+
+    Returns:
+        params (dict): Learned parameters after training:
+            'thetas': dict of plasticity coefficients for each plastic layer,
+            'w_init_learned': per-training-experiment list of
+                dicts of initial weights for each trainable layer.
+        expdata (dict): Per-metric dict of per-evaluation-epoch lists.
+        trajectories (dict): Per-evaluation-epoch dict of per-experiment lists
+            of per-variable dicts of trajectories (if logged).
+        _losses_and_r2s (dict): Per-evaluation-epoch dict of per-model-variant dicts
+            with losses and R2 scores for each test experiment. For debugging only.
+        """
 
     init_plasticity_key, train_key = jax.random.split(key)
 
@@ -82,9 +100,10 @@ def training_loop(key, params, plasticity, experiments,
     Returns:
         params (dict): Learned parameters after training.
         expdata (dict): Per-metric dict of per-evaluation-epoch lists.
-        trajectories (dict): Per-evaluation-epoch trajectories (if logged).
-        _losses_and_r2s (dict): Per-evaluation-epoch losses and r2 values
-            of each test experiment (if evaluation done). For debugging only.
+        trajectories (dict): Per-evaluation-epoch dict of per-experiment lists
+            of per-variable dicts of trajectories (if logged).
+        _losses_and_r2s (dict): Per-evaluation-epoch dict of per-model-variant dicts
+            with losses and R2 scores for each test experiment. For debugging only.
     """
 
     num_exps = len(experiments)
