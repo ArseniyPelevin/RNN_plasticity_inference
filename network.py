@@ -12,7 +12,8 @@ class Network(eqx.Module):
     rec_mask: jnp.array
     recording_mask: jnp.array
     ff_scale: jnp.array
-    rec_scale: jnp.array
+    rec_w_scale: jnp.array
+    rec_b_scale: jnp.array
 
     mean_y_activation: jnp.array  # Running average of y activation for bias update
     expected_reward: float  # Running average of rewards when licked
@@ -60,8 +61,9 @@ class Network(eqx.Module):
         )
         self.ff_scale = self.compute_input_scale(self.ff_mask,
                                                  self.cfg.feedforward_input_scale)
-        self.rec_scale = self.compute_input_scale(self.rec_mask,
-                                                  self.cfg.recurrent_input_scale)
+        self.rec_w_scale = self.compute_input_scale(self.rec_mask,
+                                                    self.cfg.recurrent_input_scale)
+        self.rec_b_scale = self.cfg.recurrent_input_scale
 
     def generate_feedforward_mask(self, key, n_pre, n_post,
                                   ff_sparsity, input_sparsity):
@@ -244,8 +246,8 @@ class Network(eqx.Module):
         # Recurrent layer (if present): y -- w_rec --> y
 
         # Apply scale and sparsity mask to rec weights
-        w_rec = self.rec_layer.weight.T * self.rec_scale * self.rec_mask
-        b_rec = self.rec_layer.bias
+        w_rec = self.rec_layer.weight.T * self.rec_w_scale * self.rec_mask
+        b_rec = self.rec_layer.bias * self.rec_b_scale
         # Add recurrent activation
         y_activation += y_old @ w_rec + b_rec
 
