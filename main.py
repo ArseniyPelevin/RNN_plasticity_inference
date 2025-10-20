@@ -174,6 +174,8 @@ def create_config():
     cfg = validate_config(cfg)
     return cfg
 
+def load_config(path):
+    cfg = omegaconf.OmegaConf.load(path)
     return cfg
 
 def validate_config(cfg):
