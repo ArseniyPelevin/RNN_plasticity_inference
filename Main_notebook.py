@@ -26,14 +26,13 @@ import main
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import training
+
+# import training
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-# +
 
-
-def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
+def plot_coeff_trajectories(exp_id, path, params_table, use_all_81=False):
     """
     Plot a single experiment's loss (top) and coefficient trajectories (bottom).
 
@@ -45,11 +44,13 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     """
 
     # single file path for the single experiment
-    path = r"..\\..\\..\\..\\03_data\\02_training_data\\"
-    fpath = os.path.join(path, f"exp_{exp_id}.csv")
+    fpath = os.path.join(path, f"Exp_{exp_id}_results.csv")
+    if not os.path.exists(fpath):
+        new_dir = os.path.join(os.path.dirname(path.rstrip('/\\')), f"Exp_{exp_id}")
+        fpath = os.path.join(new_dir, f"Exp_{exp_id}_results.csv")
 
     # highlight a few columns (if they exist)
-    highlight = {"A_1100", "A_0210"}
+    highlight = {"F_1100", "F_0210"}  # TODO use generation_plasticity config
 
     # --- read data ---
     df = pd.read_csv(fpath)
@@ -381,9 +382,9 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
         if exp_num is not None and exp_num in params_table:
             p = params_table[exp_num]
             param_str = ', '.join(f'{key}={value}' for key, value in p.items())
-            ax.set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
+            ax.set_title(f"Exp_{exp_num}: {param_str}", fontsize=12)
         else:
-            ax.set_title(basename, fontsize=12)
+            ax.set_title(f"Exp_{exp_num}", fontsize=12)
 
         ax.grid(True)
         ax.set_xlabel('epoch')
@@ -488,7 +489,6 @@ def plot_coeff_trajectories(exp_id, params_table, use_all_81=False):
     return fig
 
 
-
 # +
 # Set parameters and run experiment
 # training = reload(training)
@@ -549,80 +549,162 @@ behavioral_experiments_config_table = {
     24: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.01},
     25: {'rule': "$xyr+0.3xy-0.3y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "min_lick_pr": 0.05,
          '\ntrials_per_sess': 20,},
+    27: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff, w_out", "input_type": "random", "n_coeffs": 81},
+    28: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff", "input_type": "random", "n_coeffs": 81, "seed": 27},
+    29: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff", "input_type": "random", "n_coeffs": 27, "recording_sparsity": 0.5},
+    30: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff", "input_type": "random", "n_coeffs": 27, "recording_sparsity": 0.25},
+    31: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff", "input_type": "random", "n_coeffs": 27, "recording_sparsity": 0.1,
+         '\nN_pre': 20, 'N_post': 30,},
+    32: {'rule': "$xy-y^{2}w$", "trainable_w": "w_rec, w_ff", "input_type": "random", "n_coeffs": 27, "recording_sparsity": 0.1,
+         '\nN_pre': 20, 'N_post': 300,},
+
+    64: {'plasticity_layers': ["ff"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 0, "input_noise_std": 0, "seed": 47,
+         "\nrec_b_scale": "rec_w_scale"},
+    65: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 1, "input_noise_std": 0, "seed": 47,
+         "\ninput_sparsity": 1},
+    66: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 1, "input_noise_std": 0, "seed": 47,
+         "\ninput_sparsity_gen": 0.3, "input_sparsity_train": 1},
+    67: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 1, "input_noise_std": 0, "seed": 47,
+         "\ninput_sparsity_gen": 0.3, "input_sparsity_train": 0.3},
+    68: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 1, "input_noise_std": 0, "seed": 47,
+         "\ninput_sparsity_gen": 0.3, "input_sparsity_train": 0.3, "rec_bias": True},
+    69: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
+         "\nuse_ff_bias": False, "recurrent_input_scale": 0.5, "input_noise_std": 0, "seed": 47,
+         "\ninput_sparsity_gen": 0.3, "input_sparsity_train": 0.3, "rec_bias": True},
 }
 
 cfg = main.create_config()
 
-cfg.num_exp_train = 25
-cfg.num_exp_test = 5
-cfg.num_test_restarts = 5
+cfg.logging.exp_id = 70
 
-cfg.fit_data = 'reinforcement'
+path = None
+params, expdata, trajectories, _losses_and_r2s, path = main.run_experiment(cfg, seed=47)
+if not path:  # When run to plot older experiment
+    path = cfg.logging.log_dir + f"Exp_{cfg.logging.exp_id}/"
 
-cfg.recurrent = True
-cfg.trainable_init_weights = ["w_rec", "w_ff", "w_out"]
-cfg.plasticity_layers = ["ff", "rec"]
-cfg.postsynaptic_input_sparsity_generation = 0.3
-cfg.postsynaptic_input_sparsity_training = 0.3
-cfg.feedforward_sparsity_generation = 1
-cfg.feedforward_sparsity_training = 1
-cfg.recurrent_sparsity_generation = 1
-cfg.recurrent_sparsity_training = 1
-
-cfg.presynaptic_firing_mean = 0
-cfg.presynaptic_noise_std = 0.1
-
-# cfg.init_weights_sparsity_generation = {'ff': 0.5, 'rec': 0.5}
-# cfg.init_weights_mean_generation = {'ff': 2, 'rec': -1, 'out': 0}
-# cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
-# cfg.init_weights_std_training = {'ff': 1, 'rec': 1, 'out': 0}
-cfg.init_weights_sparsity_generation = {'ff': 1, 'rec': 1}
-cfg.init_weights_mean_generation = {'ff': 0, 'rec': 0, 'out': 0}
-cfg.init_weights_std_generation = {'ff': 0.1, 'rec': 0.1, 'out': 1}
-cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 1}
-
-# Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 26
-cfg.num_hidden_pre = 50
-cfg.num_hidden_post = 30
-
-cfg.mean_num_sessions = 1
-cfg.std_num_sessions = 0
-cfg.mean_trials_per_session = 20
-cfg.std_trials_per_session = 0
-# cfg.mean_steps_per_trial = 50
-# cfg.std_steps_per_trial = 0
-cfg.mean_trial_time = 29
-cfg.std_trial_time = 0
-cfg.dt = 1
-cfg.feedforward_input_scale = 1
-
-cfg.num_epochs = 250
-cfg.learning_rate = 3e-2
-cfg.lick_cost = 1/13
-cfg.input_type = 'task'
-cfg.do_evaluation = True
-cfg.log_expdata = True
-cfg.log_trajectories = True
-
-cfg.generation_plasticity = "1X1Y1W0R1+0.31X1Y1W0R0-0.3X0Y2W1R0"  # Oja's
-
-params, expdata, _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
-
-fig = plot_coeff_trajectories(cfg.expid, behavioral_experiments_config_table,
-                              use_all_81=True)
-fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid} coeff trajectories.png",
+fig = plot_coeff_trajectories(cfg.logging.exp_id, path, behavioral_experiments_config_table,
+                              use_all_81=False)
+fig.savefig(path + f"Exp_{cfg.logging.exp_id}_coeff_trajectories.png",
             dpi=300, bbox_inches="tight")
 plt.close(fig)
 # +
-print(_activation_trajs[0].keys())
-print(_activation_trajs[0]['xs'].shape)  # (num_steps, num_neurons_in)
-print(_activation_trajs[0]['outputs'].shape)  # (num_steps, num_neurons_out)
-print(_activation_trajs[0]['rewards'].shape)  # (num_steps, num_neurons_out)
+# inspect equinox module content
+import dataclasses
+from typing import Any
+
+import equinox as eqx
+import main
+
+
+def inspect_eqx_module(module: eqx.Module, *, max_str_len: int = 200):
+    """
+    Pretty-print all properties (fields) of an eqx.Module.
+
+    For each leaf we print:
+      - path (dotted for module fields, [i] for sequences, ['k'] for dicts)
+      - python type name
+      - is_array (True if eqx thinks it's an array-like leaf)
+      - traceable (True if it is an *inexact* array — floats — i.e. gradients possible)
+      - shape (if array-like)
+
+    Example usage:
+        inspect_eqx_module(my_network)
+    """
+    def is_array(x: Any) -> bool:
+        # eqx.is_array returns True for array leaves (including ints); keep it if available
+        return eqx.is_array(x) if hasattr(eqx, "is_array") else isinstance(x, jnp.ndarray)
+
+    def is_traceable_array(x: Any) -> bool:
+        # inexact arrays (float) are traceable for grad
+        if hasattr(eqx, "is_inexact_array"):
+            return eqx.is_inexact_array(x)
+        try:
+            return isinstance(x, jnp.ndarray) and jnp.issubdtype(x.dtype, jnp.inexact)
+        except Exception:
+            return False
+
+    def short(x: Any) -> str:
+        s = repr(x)
+        return s if len(s) <= max_str_len else s[: max_str_len - 3] + "..."
+
+    def walk(obj: Any, path: str):
+        # module -> iterate dataclass fields
+        if isinstance(obj, eqx.Module):
+            print(f"{path:60}  Module {type(obj).__name__}")
+            for f in dataclasses.fields(type(obj)):
+                name = f.name
+                try:
+                    val = getattr(obj, name)
+                except Exception as e:
+                    print(f"{path + '.' + name:60}  <error reading field: {e}>")
+                    continue
+                walk(val, path + "." + name)
+            return
+
+        # dict
+        if isinstance(obj, dict):
+            print(f"{path:60}  dict")
+            for k, v in obj.items():
+                walk(v, path + f"[{repr(k)}]")
+            return
+
+        # sequence
+        if isinstance(obj, (list, tuple)):
+            print(f"{path:60}  {type(obj).__name__} len={len(obj)}")
+            for i, v in enumerate(obj):
+                walk(v, path + f"[{i}]")
+            return
+
+        # array-like leaves
+        if is_array(obj):
+            # shape/dtype if possible
+            shape = getattr(obj, "shape", None)
+            dtype = getattr(obj, "dtype", None)
+            traceable = is_traceable_array(obj)
+            print(
+                f"{path:60}  array  type={type(obj).__name__:<15} traceable={traceable!s:<5} shape={shape} dtype={dtype}"
+            )
+            return
+
+        # other leaf
+        print(f"{path:60}  {type(obj).__name__:<15}  value={short(obj)}")
+
+    walk(module, type(module).__name__)
+
+# print(type(network))
+# print(type(batched_network))
+# inspect_eqx_module(network)
+# inspect_eqx_module(batched_network)
+import experiment
+import plasticity
+
+key = jax.random.key(1912)
+cfg = main.create_config()
+cfg.logging.log_trajectories = False
+train_experiments = experiment.generate_experiments(key, cfg, mode='train')
+# params, expdata = main.run_experiment(cfg)
+# plasticity = plasticity.initialize_plasticity(key, cfg.plasticity, 'training')
+# exp = train_experiments[0]
+# inspect_eqx_module(plasticity['both'])
+inspect_eqx_module(train_experiments[0])
+
+
+# +
+# Plot activity and weights trajectories
+# print(trajectories[0].keys())
+# print(trajectories[0]['xs'].shape)  # (num_steps, num_neurons_in)
+# print(trajectories[0]['outputs'].shape)  # (num_steps, num_neurons_out)
+# print(trajectories[0]['rewards'].shape)  # (num_steps, num_neurons_out)
 
 def plot_step_weights_heatmap(epoch, step, ax_i):
-    wff = _activation_trajs[epoch]['weights']['w_ff'][0, 0]
-    wrec = _activation_trajs[epoch]['weights']['w_rec'][0, 0]
+    exp, sess = 0, 0
+    wff = trajectories[epoch][exp]['weights']['w_ff'][sess]
+    # wrec = trajectories[epoch][exp]['weights']['w_rec'][sess]
 
     wff_ax = ax[ax_i, 0].imshow(wff[step], aspect='auto', cmap='viridis', interpolation='none')
     plt.colorbar(wff_ax, ax=ax[ax_i, 0])
@@ -637,45 +719,45 @@ def plot_step_weights_heatmap(epoch, step, ax_i):
     ax[ax_i, 1].set_ylabel('Y neurons')
 
 def plot_epoch_weights_traces(epoch, ax_i):
-    wff = _activation_trajs[epoch]['weights']['w_ff'][exp, sess]
-    wrec = _activation_trajs[epoch]['weights']['w_rec'][exp, sess]
-    output = _activation_trajs[epoch]['outputs'][exp, sess]
-    d = _activation_trajs[epoch]['decisions'][exp, sess]
-    r = _activation_trajs[epoch]['rewards'][exp, sess]
+    wff = trajectories[epoch][exp]['weights']['w_ff'][sess]
+    # wrec = trajectories[epoch][exp]['weights']['w_rec'][sess]
+    output = trajectories[epoch][exp]['outputs'][sess]
+    d = trajectories[epoch][exp]['decisions'][sess]
+    r = trajectories[epoch][exp]['rewards'][sess]
 
     traces_ff = wff.reshape(wff.shape[0], -1).T
     # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_ff.shape[0]))
-    colors_pl = plt.get_cmap('cool')(np.linspace(0, 1, cfg.num_place_neurons * wff.shape[-1]))
-    colors_vis = plt.get_cmap('autumn')(np.linspace(0, 1, (wff.shape[-2]-cfg.num_place_neurons-1) * wff.shape[-1]))
-    colors_v = plt.get_cmap("Greens")(np.linspace(0, 1, cfg.num_velocity_neurons * wff.shape[-1]))  # single green for last group
-    colors = np.concatenate([colors_pl, colors_vis, colors_v])
+    # colors_pl = plt.get_cmap('cool')(np.linspace(0, 1, cfg.experiment.num_place_neurons * wff.shape[-1]))
+    # colors_vis = plt.get_cmap('autumn')(np.linspace(0, 1, (wff.shape[-2]-cfg.experiment.num_place_neurons-1) * wff.shape[-1]))
+    # colors_v = plt.get_cmap("Greens")(np.linspace(0, 1, cfg.experiment.num_velocity_neurons * wff.shape[-1]))  # single green for last group
+    # colors = np.concatenate([colors_pl, colors_vis, colors_v])
     # repeat each presyn color for all posts so it matches traces_ff rows
     # colors_traces = np.repeat(colors_pre, wff.shape[-1], axis=0)
-    for trace, color in zip(traces_ff, colors, strict=False):
-        ax[ax_i, 0].plot(trace, color=color, alpha=0.1)
+    # for trace, color in zip(traces_ff, colors, strict=False):
+    #     ax[ax_i, 0].plot(trace, color=color, alpha=0.1)
+    for trace in traces_ff:
+        ax[ax_i, 0].plot(trace, color='orange', alpha=0.1)
     ax[ax_i, 0].plot(output, color='gray', linewidth=2, label='output', alpha=0.5)
     idx = np.flatnonzero(np.asarray(d) == 1)
     ax[ax_i, 0].scatter(idx, np.where(np.asarray(r)[idx] == 1, 1, 0), s=10, c='k', zorder=10)
 
-
     ax[ax_i, 0].set_title('Feedforward weights traces, epoch %d' % epoch)
     ax[ax_i, 0].set_xlabel('Steps')
 
-    traces_rec = wrec.reshape(wrec.shape[0], -1).T
-    colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_rec.shape[0]))
-    for trace, color in zip(traces_rec, colors, strict=False):
-        ax[ax_i, 1].plot(trace, color=color, alpha=0.1)
-    ax[ax_i, 1].set_title('Recurrent weights traces, epoch %d' % epoch)
-    ax[ax_i, 1].set_xlabel('Steps')
+    # traces_rec = wrec.reshape(wrec.shape[0], -1).T
+    # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_rec.shape[0]))
+    # for trace, color in zip(traces_rec, colors, strict=False):
+    #     ax[ax_i, 1].plot(trace, color=color, alpha=0.1)
+    # ax[ax_i, 1].set_title('Recurrent weights traces, epoch %d' % epoch)
+    # ax[ax_i, 1].set_xlabel('Steps')
 
 epoch = 250
 fig, ax = plt.subplots(5, 2, figsize=(10, 12), layout='tight')
 
 exp, sess = 0, 0
-xs = _activation_trajs[epoch]['xs'][exp, sess].T
-ys = _activation_trajs[epoch]['ys'][exp, sess].T
-# n_steps = xs.shape[1]
-n_steps = 150
+xs = trajectories[epoch][exp]['xs'][sess].T
+ys = trajectories[epoch][exp]['ys'][sess].T
+n_steps = xs.shape[1]
 
 xs_ax = ax[0, 0].imshow(xs, aspect='auto',
                       cmap='viridis', interpolation='none', origin='lower')
@@ -702,11 +784,11 @@ for irow in range(ax.shape[0]):
         ax[irow, jcol].set_xlim(-0.5, n_steps - 0.5)
 
 plot_epoch_weights_traces(epoch=0, ax_i=1)
-plot_epoch_weights_traces(epoch=50, ax_i=2)
-plot_epoch_weights_traces(epoch=200, ax_i=3)
+plot_epoch_weights_traces(epoch=40, ax_i=2)
+plot_epoch_weights_traces(epoch=100, ax_i=3)
 plot_epoch_weights_traces(epoch=250, ax_i=4)
 plt.show()
-fig.savefig(cfg.fig_dir + f"Beh_Exp{cfg.expid}_weights_traces.png",
+fig.savefig(path + f"Exp_{cfg.logging.exp_id}_weights_traces.png",
             dpi=300, bbox_inches="tight")
 
 # +
@@ -748,27 +830,27 @@ cfg.init_weights_std_generation = {'ff': 1, 'rec': 1, 'out': 0}
 cfg.init_weights_std_training = {'ff': 0.1, 'rec': 0.1, 'out': 0.1}
 
 # Exp57 = scaling by number of inputs, ff sparsity = 1
-cfg.expid = 180
-cfg.num_hidden_pre = 1000
-cfg.num_hidden_post = 1000
+cfg.logging.exp_id = 180
+cfg.num_x_neurons = 1000
+cfg.num_y_neurons = 1000
 
 cfg.num_epochs = 300
 
 for steps in [5, 10, 15, 20, 50, 100, 150]:
     cfg.mean_steps_per_trial = steps
-    cfg.expid += 1
+    cfg.logging.exp_id += 1
     _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
 
     param_table = {
-        cfg.expid: {
+        cfg.logging.exp_id: {
             'recurrent': True, 'plasticity': "ff, rec", 'train_w': "w_rec, w_ff",
            "\nN_in": 1000, "N_out": 1000, 'init_spars': 'ff: 0.5, rec: 0.5',
            '\ninit_w_mean': 'ff=-0.2, rec=0.3', 'init_w_std': 'ff=1, rec=1',
            '\nn_steps': steps}}
 
-    fig = plot_coeff_trajectories(cfg.expid, param_table,
+    fig = plot_coeff_trajectories(cfg.logging.exp_id, param_table,
                                 use_all_81=False)
-    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.logging.exp_id} coeff trajectories.png",
                 dpi=300, bbox_inches="tight")
     plt.close(fig)
 
@@ -798,26 +880,26 @@ plt.show()
 def run(cfg):
     _activation_trajs = main.run_experiment(cfg)
 
-    params_table = {cfg.expid: {
+    params_table = {cfg.logging.exp_id: {
         'trainable': str(cfg.trainable_init_weights),
-        'inp_spar': cfg.postsynaptic_input_sparsity_generation,
+        'inp_spar': cfg.input_sparsity_generation,
         'ff_spar': cfg.feedforward_sparsity_generation,
         'rec_spar': cfg.recurrent_sparsity_generation,
         'init_spar_gen': cfg.init_weights_sparsity_generation,
         }}
 
-    fig = plot_coeff_trajectories(cfg.expid, params_table,
+    fig = plot_coeff_trajectories(cfg.logging.exp_id, params_table,
                                 use_all_81=False)
-    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+    fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.logging.exp_id} coeff trajectories.png",
                 dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 cfg.recurrent = True
 cfg.plasticity_layers = ["ff", "rec"]
 cfg.init_weights_std_training = {'ff': 0.01, 'rec': 0.01, 'out': 0}
-last_expid = 62
-cfg.num_hidden_pre = 100
-cfg.num_hidden_post = 100
+last_logging.exp_id = 62
+cfg.num_x_neurons = 100
+cfg.num_y_neurons = 100
 cfg.mean_steps_per_trial = 50
 cfg.num_epochs = 300
 i = 1
@@ -827,20 +909,20 @@ for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
     for input_spars in [0.3, 0.6, 1]:
         for ff_spars in [0.3, 0.6, 1]:
             for rec_spars in [0.3, 0.6, 1]:
-                cfg.postsynaptic_input_sparsity_generation = input_spars
-                cfg.postsynaptic_input_sparsity_training = input_spars
+                cfg.input_sparsity_generation = input_spars
+                cfg.input_sparsity_training = input_spars
                 cfg.feedforward_sparsity_generation = ff_spars
                 cfg.feedforward_sparsity_training = ff_spars
                 cfg.recurrent_sparsity_generation = rec_spars
                 cfg.recurrent_sparsity_training = rec_spars
 
-                cfg.expid = last_expid + i
+                cfg.logging.exp_id = last_logging.exp_id + i
 
                 run(cfg)
                 i += 1
 
-    cfg.postsynaptic_input_sparsity_generation = 1
-    cfg.postsynaptic_input_sparsity_training = 1
+    cfg.input_sparsity_generation = 1
+    cfg.input_sparsity_training = 1
     cfg.feedforward_sparsity_generation = 1
     cfg.feedforward_sparsity_training = 1
     cfg.recurrent_sparsity_generation = 1
@@ -850,7 +932,7 @@ for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
         for init_spar_rec in [0.3, 0.6, 1]:
             cfg.init_weights_sparsity_generation = {'ff': init_spar_ff,
                                                     'rec': init_spar_rec}
-            cfg.expid = last_expid + i
+            cfg.logging.exp_id = last_logging.exp_id + i
             run(cfg)
             i += 1
 
@@ -865,43 +947,43 @@ for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
 # +
 # Run Exp10-16
 print("\nEXPERIMENT 10")
-cfg.expid = 10
-cfg.presynaptic_firing_std = 0.5
+cfg.logging.exp_id = 10
+cfg.input_firing_std = 0.5
 main.run_experiment()
 
 print("\nEXPERIMENT 11")
-cfg.expid = 11
-cfg.presynaptic_firing_std = 0.1
+cfg.logging.exp_id = 11
+cfg.input_firing_std = 0.1
 main.run_experiment()
 
-cfg.presynaptic_firing_std = 1
+cfg.input_firing_std = 1
 
 print("\nEXPERIMENT 12")
-cfg.expid = 12
+cfg.logging.exp_id = 12
 cfg.synapse_learning_rate = 0.5
 main.run_experiment()
 
 print("\nEXPERIMENT 13")
-cfg.expid = 13
+cfg.logging.exp_id = 13
 cfg.synapse_learning_rate = 1
 main.run_experiment()
 
 cfg.synapse_learning_rate = 0.1
 
 print("\nEXPERIMENT 14")
-cfg.expid = 14
+cfg.logging.exp_id = 14
 cfg.init_weights_std = 0.05
 main.run_experiment()
 
 print("\nEXPERIMENT 15")
-cfg.expid = 15
+cfg.logging.exp_id = 15
 cfg.init_weights_std = 0.01
 main.run_experiment()
 
 cfg.init_weights_std = 0.1
 
 print("\nEXPERIMENT 16")
-cfg.expid = 16
+cfg.logging.exp_id = 16
 main.run_experiment()
 
 
@@ -909,23 +991,23 @@ main.run_experiment()
 # Explore space of input-output layer sizes
 
 cfg.num_exp_train = 25
-cfg.presynaptic_noise_std = 0
-cfg.presynaptic_firing_std = 1
+cfg.input_noise_std = 0
+cfg.input_firing_std = 1
 cfg.synapse_learning_rate = 1
 cfg.init_weights_std = 0.01
 
 for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
                                       [10, 50, 100, 500, 1000]))):
-    cfg.num_hidden_pre = N_in
-    cfg.num_hidden_post = N_out
-    cfg.expid = 50 + i
+    cfg.num_x_neurons = N_in
+    cfg.num_y_neurons = N_out
+    cfg.logging.exp_id = 50 + i
     main.run_experiment()
-    params_dict = {cfg.expid: {"N_in": N_in, "N_out": N_out}}
-    fig = plot_coeff_trajectories(cfg.expid, params_dict)
-    fig.savefig(cfg.fig_dir + f"Exp{cfg.expid} coeff trajectories.png",
+    params_dict = {cfg.logging.exp_id: {"N_in": N_in, "N_out": N_out}}
+    fig = plot_coeff_trajectories(cfg.logging.exp_id, params_dict)
+    fig.savefig(cfg.fig_dir + f"Exp{cfg.logging.exp_id} coeff trajectories.png",
             dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"Plotted Exp{cfg.expid} with N_in={N_in}, N_out={N_out}")
+    print(f"Plotted Exp{cfg.logging.exp_id} with N_in={N_in}, N_out={N_out}")
 
 # +
 # Diagnose trajectories for NaN
@@ -1023,8 +1105,8 @@ plt.show()
 
 # +
 # Explore recurrent sparsity parameters
-cfg.num_hidden_pre = 50
-cfg.num_hidden_post = 50
+cfg.num_x_neurons = 50
+cfg.num_y_neurons = 50
 cfg.recurrent = True
 cfg.plasticity_layers = ["rec"]
 cfg.feedforward_input_scale = 1
@@ -1045,10 +1127,10 @@ for plasticity in [["rec"], ["ff", "rec"]]:
                 # cfg.feedforward_input_scale = ff_scale
                 # cfg.recurrent_input_scale = rec_scale
                 exp_id = last_exp_id + i
-                cfg.expid = exp_id
-                print(f"\nEXPERIMENT {cfg.expid}:")
+                cfg.logging.exp_id = exp_id
+                print(f"\nEXPERIMENT {cfg.logging.exp_id}:")
                 _activation_trajs = main.run_experiment()
-                params_dict = {cfg.expid: {"N_in": 50, "N_out": 50,
+                params_dict = {cfg.logging.exp_id: {"N_in": 50, "N_out": 50,
                                         "plasticity": "+".join(plasticity),
                                            "\ninp_spar": input_sparsity,
                                             "FF_spar": ff_sparsity,
@@ -1057,10 +1139,10 @@ for plasticity in [["rec"], ["ff", "rec"]]:
                                         #    "rec_scale": rec_scale}}
                                                 }}
                 recurrent_experiments_config_table.update(params_dict)
-                fig = plot_coeff_trajectories(cfg.expid,
+                fig = plot_coeff_trajectories(cfg.logging.exp_id,
                                                 recurrent_experiments_config_table,
                                                 use_all_81=False)
-                fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.expid} coeff trajectories.png",
+                fig.savefig(cfg.fig_dir + f"RNN_Exp{cfg.logging.exp_id} coeff trajectories.png",
                             dpi=300, bbox_inches="tight")
                 plt.close(fig)
                 i += 1
@@ -1127,10 +1209,10 @@ ax_xs.set_ylabel('Time step')
 ax_xs.set_xlabel('Neuron')
 ax_ys.set_xlabel('Neuron')
 
-ax_xs.set_xlim(-0.5, cfg["num_hidden_pre"])
-ax_xs.set_ylim(cfg["mean_steps_per_trial"], -0.5)
-ax_ys.set_xlim(-0.5, cfg["num_hidden_post"])
-ax_ys.set_ylim(cfg["mean_steps_per_trial"], -0.5)
+ax_xs.set_xlim(-0.5, cfg.num_x_neurons)
+ax_xs.set_ylim(cfg.mean_steps_per_trial, -0.5)
+ax_ys.set_xlim(-0.5, cfg.num_y_neurons)
+ax_ys.set_ylim(cfg.mean_steps_per_trial, -0.5)
 
 # Bottom: w evolution
 num_rows = 4
@@ -1162,7 +1244,7 @@ plt.show()
 
 # +
 # Print data
-key = jax.random.PRNGKey(cfg["expid"])
+key = jax.random.PRNGKey(cfg.logging.exp_id)
 key, experiments = training.generate_data(key, cfg)
 
 print(len(experiments[0].data))
