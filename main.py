@@ -9,7 +9,7 @@ import utils
 
 # coeff_mask = np.zeros((3, 3, 3, 3))
 # coeff_mask[0:2, 0, 0, 0:2] = 1
-coeff_mask = np.ones((3, 3, 3, 3)).astype(np.bool)
+coeff_mask = np.ones((3, 3, 3, 3)).astype(bool)
 coeff_mask[:, :, :, 1:] = False  # Zero out reward coefficients
 coeff_masks = {'ff': coeff_mask, 'rec': coeff_mask}
 
@@ -18,7 +18,7 @@ config = {
         "use_experimental_data": False,
         "input_type": 'random',  # 'random' (Mehta 2023) / 'task' (Sun 2025)
 
-        "num_exp_train": 5,  # Number of experiments/trajectories/animals
+        "num_exp_train": 25,  # Number of experiments/trajectories/animals
         "num_exp_test": 5,
 
         # Commented below are real values as per CA1 recording article (Sun 2025)
@@ -64,11 +64,11 @@ config = {
     "network": {
     # Network architecture
         # For input_type 'task', num_x_neurons is set automatically
-        "num_x_neurons": 50,  # x, presynaptic neurons for feedforward layer
-        "num_y_neurons": 100,  # y, neurons of recurrent layer
+        "num_x_neurons": 10,  # x, presynaptic neurons for feedforward layer
+        "num_y_neurons": 10,  # y, neurons of recurrent layer
         "num_outputs": 1,
 
-        "plasticity_layers": ["ff", "rec"],  # ["ff", "rec"]
+        "plasticity_layers": ["ff"],  # List of plastic layers: 'ff' and/or 'rec'
         # Fraction of Y neurons receiving FF input, for generation and training,
         # only effective if recurrent connections are present, otherwise 1
         "input_sparsity": {"generation": 1, "training": 1},
@@ -84,10 +84,10 @@ config = {
         # TODO? output_sparsity?  # Fraction of Y neurons contributing to output
 
     # Network dynamics
-        "input_noise_std": 0,  #0.05 # Noise added to input layer
+        "input_noise_std": 0.0, # Noise added to input layer
 
         "feedforward_input_scale": 1,  # Scale of feedforward weights
-        "recurrent_input_scale": 1,  # Scale of recurrent weights
+        "recurrent_input_scale": 0,  # Scale of recurrent weights
         # TODO? Also different for generation and training?
 
         # Weight initialization std for generation and training
@@ -95,7 +95,7 @@ config = {
                              "training": {'ff': 1, 'rec': 1, 'out': 1}},
 
         "reward_scale": 0,
-        "synaptic_weight_threshold": 6,  # Weights are normally in the range [-4, 4]
+        "synaptic_weight_threshold": 10,  # Weights are normally in the range [-4, 4]
         "min_lick_probability": 0.05,  # To encourage exploration, only in reinforcement
 
         "homeostasis_rate": 0.1,  # Rate of bias adaptation to mean post activity
@@ -127,11 +127,11 @@ config = {
     },
 
     "training": {
-        "fit_data": ["neural"],  # ["behavioral", "neural"]
+        "fit_data": ["neural"],  # ["behavioral", "neural"] / ["reinforcement"]
 
         # Only affects training, generation depends on generation_plasticity
-        "trainable_thetas": "different",  # "same", "different"
-        "trainable_init_weights": ['ff', 'rec', 'out'],
+        "trainable_thetas": "same",  # "same", "different"
+        "trainable_init_weights": [],#'ff', 'rec', 'out'],
 
         "num_epochs": 250,
         "learning_rate": 3e-3,
