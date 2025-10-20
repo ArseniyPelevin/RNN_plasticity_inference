@@ -113,7 +113,7 @@ def save_results(cfg, params, expdata, train_time, trajectories,
     def create_directory():
         path = Path(cfg.logging.log_dir)
         path.mkdir(parents=True, exist_ok=True)  # Create log_dir if it doesn't exist
-        dir_name = f"Exp_{cfg.logging.exp_id}"
+        dir_name = f"Exp_{exp_id}"
         for i in count():
             name = dir_name if i == 0 else f"{dir_name}_({i})"
             candidate = path / name
@@ -124,23 +124,25 @@ def save_results(cfg, params, expdata, train_time, trajectories,
                 continue
         return candidate.as_posix() + '/'
 
+    exp_id = cfg.logging.exp_id
+
     path = create_directory()
 
     # Save configuration
     if cfg.logging.log_config:
         # Save configuration used for the experiment
-        omegaconf.OmegaConf.save(cfg, path + "config.yaml")
+        omegaconf.OmegaConf.save(cfg, path + f"Exp_{exp_id}_config.yaml")
 
     # Save final parameters
     if cfg.logging.log_final_params:
-        with open(path + "final_params.pkl", "wb+") as f:
+        with open(path + f"Exp_{exp_id}_final_params.pkl", "wb+") as f:
             pickle.dump(jax.device_get(params), f)
 
     if cfg.logging.log_expdata:
         # Save expdata as .csv
         df = pd.DataFrame.from_dict(expdata)
         df["train_time"] = train_time
-        df.to_csv(path + "expdata.csv", mode="w+", index=False)
+        df.to_csv(path + f"Exp_{exp_id}_results.csv", mode="w+", index=False)
         # TODO allow appending to existing file if retraining
 
     if cfg.logging.log_generated_experiments:
@@ -155,10 +157,11 @@ def save_results(cfg, params, expdata, train_time, trajectories,
 
     if cfg.logging.log_trajectories:
         # Save trajectories
-        save_nested_hdf5(trajectories, path + "trajectories.h5")
+        save_nested_hdf5(trajectories, path + f"Exp_{exp_id}_trajectories.h5")
 
     return path
 
+# Older version allowing appending to existing log files
 def save_logs(cfg, df):
     """
     Saves the logs to a specified directory based on the configuration.
