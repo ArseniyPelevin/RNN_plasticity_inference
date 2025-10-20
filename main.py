@@ -171,6 +171,8 @@ config = {
 
 def create_config():
     cfg = omegaconf.OmegaConf.create(config)
+    cfg = validate_config(cfg)
+    return cfg
 
     return cfg
 
@@ -278,7 +280,6 @@ def validate_config(cfg):
     return cfg
 
 def run_experiment(cfg, seed=None):
-    cfg = validate_config(cfg)
     if seed is None:
         seed = cfg.logging.exp_id
     cfg.experiment.seed = seed  # Save seed in config for logging
