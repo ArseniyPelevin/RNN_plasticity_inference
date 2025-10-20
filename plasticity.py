@@ -3,12 +3,12 @@ import jax
 import jax.numpy as jnp
 
 
-def initialize_plasticity(key, cfg, mode, scale=None):
+def initialize_plasticity(key, cfg, mode, init_scale=None):
     plasticity_functions = {'volterra': VolterraPlasticity,
                             'mlp': MLPPlasticity}
     plasticity = {}
     for layer in cfg.plasticity_models:
-        if not scale:  # scale=0.0 is passed from evaluation for null plasticity model
+        if init_scale is None:  # init_scale=0.0 for null plasticity model in evaluation
             init_scale = cfg.plasticity_coeffs_init_scale[layer]
 
         # Initialize plasticity modules for each plastic layer

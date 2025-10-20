@@ -21,8 +21,8 @@ def evaluate(key, thetas, test_experiments, expdata, cfg):
 
     Returns:
         expdata (dict): Updated expdata dictionary with evaluation metrics.
-        losses_and_r2 (dict): Dictionary with losses and R2 scores
-            for each experiment in each model variant.
+        losses_and_r2 (dict): Dictionary for different model variants
+            with losses and R2 scores for each test experiment.
     """
 
     # Compute neural MSE loss and behavioral BCE loss.
@@ -101,7 +101,7 @@ def compute_models_losses_and_r2(key, thetas, test_experiments, cfg):
     plasticity_key, weights_key, loss_key = jax.random.split(key, 3)
 
     plasticity_test = plasticity.initialize_plasticity(
-        plasticity_key, cfg.plasticity, mode='evaluation', scale=0.0)
+        plasticity_key, cfg.plasticity, mode='evaluation', init_scale=0.0)
 
     null_thetas = {layer: plasticity_test[layer].coeffs for layer in plasticity_test}
     null_w_init = [{} for _ in range(len(test_experiments))]
