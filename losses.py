@@ -1,11 +1,8 @@
-""" Copied originally from https://github.com/yashsmehta/MetaLearnPlasticity.
-Modified for our needs"""
-from functools import partial
-
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import model
 import optax
+import simulation
 
 
 def behavioral_ce_loss(logits, decisions, step_mask):
@@ -25,7 +22,6 @@ def behavioral_ce_loss(logits, decisions, step_mask):
 
     return jnp.sum(losses) / jnp.sum(step_mask)  # Mean over valid steps only
 
-@jax.jit
 def neural_mse_loss(
     # key,
     exp_traj_ys,
@@ -45,7 +41,7 @@ def neural_mse_loss(
                 Simulated trajectory of postsynaptic neurons.
         step_mask (N_sessions, N_steps):
                 Mask to distinguish valid and padding values.
-        # recording_sparsity (float): Sparsity of the neural recordings.
+        recording_mask (N_neurons): Sparsity of the neural recordings.
         # measurement_noise_scale (float): Scale of the measurement noise.
 
     Returns: Mean squared error loss for neural activity.
@@ -115,38 +111,26 @@ def reinforce_loss(outputs, decisions, rewards, step_mask, lick_cost):
     S = R - lick_cost * D
     return -logpi_sum * S, R, D
 
-@partial(jax.jit, static_argnames=["plasticity_funcs", "cfg", "mode"])
+@eqx.filter_jit
 def loss(
+    params,
     key,
-    thetas,  # Per-plastic-layer dict of current plasticity coeffs
-    weights,  # Current initial weights estimate
-    plasticity_funcs,  # Static within losses, per-plastic-layer dict
     exp,
-    cfg,  # Static within losses
-    mode  # 'training' or 'evaluation'
-):
+    plasticity,
+    cfg,
+    returns):
     """
     Computes the total loss for the model on one experiment trajectory.
 
     Args:
+        params (dict): Current estimates of the parameters to be optimized:
+            'thetas': dict of plasticity coefficients for each plastic layer,
+            'w_init_learned': dict of initial weights for each trainable layer.
         key (int): Seed for the random number generator.
-        thetas (dict): Current plasticity coeffs estimate for each plastic layer,
-        weights (dict): Current initial weights estimate for each trainable layer,
-            arrays of shape (N_exp, layer_shape...).
-        plasticity_funcs (dict): Plasticity functions for each layer.
-        exp (dict): Dictionary of variables for one experiment containing:
-            'data': dict with keys:
-                - 'x_train': Training inputs
-                - 'ys': Experimental outputs
-                - 'outputs': Model outputs
-                - 'decisions': Binary decisions
-            'step_mask': Mask to distinguish valid and padding values
-            'init_fixed_weights': dict of arrays of fixed initial weights
-            'feedforward_mask_training': Feedforward connectivity mask
-            'recurrent_mask_training': Recurrent connectivity mask
-            'exp_i': Index of the experiment in the batch
-        cfg (object): Configuration object containing the model settings.
-        mode (str): "training" or "evaluation" - decides returning trajectories.
+        exp: Experiment object containing the data and network.
+        plasticity: dict of plasticity modules for each plastic layer.
+        cfg: Configuration object.
+        returns: Tuple of strings indicating which outputs to return.
 
     Returns:
         loss (float): Total loss computed as the sum of theta regularization,
@@ -157,91 +141,103 @@ def loss(
             'behavioral': behavioral_loss if "behavioral" in cfg.fit_data else 0
             }
     """
+    # Apply thetas from params to plasticity
+    if 'thetas' in params:
+        thetas = params['thetas']
+        for layer in thetas:
+            # Apply mask to plasticity coefficients to enforce constraints
+            if plasticity[layer].coeff_mask is not None:  # If Volterra
+                thetas[layer] *= plasticity[layer].coeff_mask
+            plasticity[layer] = eqx.tree_at(lambda p: p.coeffs,
+                                     plasticity[layer],
+                                     thetas[layer])
 
-    # Combine fixed and trainable initial weights for the current experiment
-    init_trainable_weights = {layer: layer_weights[exp['exp_i']]
-                              for layer, layer_weights in weights.items()}
-    init_weights = {**exp['init_fixed_weights'], **init_trainable_weights}
+    # Apply weights from params to network
+    w_init_learned = params['w_init_learned'][exp.exp_i]
+    network = exp.network.apply_weights(w_init_learned)
 
     reg_theta = 0.0
-    thetas_masked = {}
-    for layer in thetas:
-        # Apply mask to plasticity coefficients to enforce constraints
-        if cfg.plasticity_models[layer] == "volterra":
-            thetas_masked[layer] = jnp.multiply(thetas[layer],
-                                                jnp.array(cfg.coeff_masks[layer]))
-        # Compute regularization for theta
-        if cfg.reg_types_theta[layer].lower() != "none":
-            reg_func = (
-                jnp.abs if "l1" in cfg.reg_types_theta[layer].lower()
-                else jnp.square
-            )
-            reg_theta += (cfg.reg_scales_theta[layer]
-                         * jnp.sum(reg_func(thetas_masked[layer])))
-
+    # Compute regularization for theta, if thetas are learned
+    if cfg.training.reg_types_theta.lower() != "none" and "thetas" in params:
+        reg_func = (
+            jnp.abs if "l1" in cfg.training.reg_types_theta.lower()
+            else jnp.square
+        )
+        reg_theta += jnp.sum(  # Sum over all leaves of thetas
+            jnp.sum(reg_func(x)) for x in jax.tree_util.tree_leaves(thetas)
+            ) * cfg.training.reg_scales_theta
 
     # Compute regularization for initial weights and add it to total loss
     reg_w = 0.0
-    for layer in init_trainable_weights:
-        if cfg.reg_types_weights[layer].lower() != "none":
-            reg_func = (
-                jnp.abs if "l1" in cfg.reg_types_weights[layer].lower()
-                else jnp.square
-            )
-            reg_w += (cfg.reg_scales_weights[layer]
-                      * jnp.sum(reg_func(layer)))
+    if cfg.training.reg_types_weights.lower() != "none":
+        reg_func = (
+            jnp.abs if "l1" in cfg.training.reg_types_weights.lower()
+            else jnp.square
+        )
+        reg_w += jnp.sum(  # Sum over all leaves of w_init_learned
+            jnp.sum(reg_func(x)) for x in jax.tree_util.tree_leaves(w_init_learned)
+            ) * cfg.training.reg_scales_weights
+
+    # Return trajectories that caller wants, and ones we need for loss computation
+    simulation_returns = returns
+    if 'neural' in cfg.training.fit_data:
+        simulation_returns = simulation_returns + ('ys',)
+    if 'behavioral' in cfg.training.fit_data:
+        simulation_returns = simulation_returns + ('outputs',)
+    if 'reinforcement' in cfg.training.fit_data:
+        simulation_returns = simulation_returns + ('outputs', 'decisions', 'rewards')
 
     # Return simulated trajectory of one experiment
-    simulated_data = model.simulate_trajectory(
+    simulated_data = simulation.simulate_trajectory(
         key,
-        init_weights,
-        exp['feedforward_mask_training'],
-        exp['recurrent_mask_training'],
-        thetas_masked,  # Our current plasticity coefficients estimate
-        plasticity_funcs,
-        exp['data']['x_train'],
-        exp['rewarded_pos'],
-        exp['step_mask'],
-        cfg,
-        mode=('simulation' if mode=='training'  # Only return activation trajectories
-              else 'generation_test')  # Return both activation and weight trajectories
+        exp,
+        exp.x_input,
+        network,
+        plasticity,
+        returns=simulation_returns
     )
 
     # Allow python 'if' in jitted function because cfg is static
-    if "neural" in cfg.fit_data:
+    if "neural" in cfg.training.fit_data:
         neural_loss = neural_mse_loss(
             # subkey,
-            exp['data']['ys'],
+            exp.data['ys'],
             simulated_data['ys'],
-            exp['step_mask'],
-            exp['recording_mask'],
+            exp.step_mask,
+            exp.network.recording_mask,
             # cfg.measurement_noise_scale,
         )
     else:
         neural_loss = 0.0
 
-    if "behavioral" in cfg.fit_data:
+    if "behavioral" in cfg.training.fit_data:
         behavioral_loss = behavioral_ce_loss(
             simulated_data['outputs'],
-            exp['data']['decisions'],
-            exp['step_mask']
+            exp.data['decisions'],
+            exp.step_mask
             )
     else:
         behavioral_loss = 0.0
 
-    if "reinforcement" in cfg.fit_data:
+    if "reinforcement" in cfg.training.fit_data:
         reinforcement_loss, R, D = reinforce_loss(
             simulated_data['outputs'],
             simulated_data['decisions'],
             simulated_data['rewards'],
-            exp['step_mask'],
-            cfg.lick_cost
+            exp.step_mask,
+            cfg.training.lick_cost
         )
     else:
         reinforcement_loss, R, D = 0.0, 0.0, 0.0
 
+    # Compute total loss
     loss = reg_theta + reg_w + neural_loss + behavioral_loss + reinforcement_loss
-    aux = {'trajectories': simulated_data if mode=='evaluation' else None,
+
+    # Only return trajectories that caller wants
+    simulated_data = {k: v for k, v in simulated_data.items() if k in returns}
+
+    aux = {'trajectories': simulated_data,
+           'total': loss,
            'neural': neural_loss,
            'behavioral': behavioral_loss,
            'total_reward': R,
