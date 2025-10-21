@@ -163,8 +163,9 @@ def loss(
             jnp.abs if "l1" in cfg.training.reg_types_theta.lower()
             else jnp.square
         )
-        reg_theta += jnp.sum(  # Sum over all leaves of thetas
-            jnp.sum(reg_func(x)) for x in jax.tree_util.tree_leaves(thetas)
+        # Sum over all leaves of thetas
+        reg_theta += jax.tree_util.tree_reduce(
+            lambda acc, leaf: acc + jnp.sum(reg_func(leaf)), thetas, 0.0
             ) * cfg.training.reg_scales_theta
 
     # Compute regularization for initial weights and add it to total loss
@@ -174,8 +175,9 @@ def loss(
             jnp.abs if "l1" in cfg.training.reg_types_weights.lower()
             else jnp.square
         )
-        reg_w += jnp.sum(  # Sum over all leaves of w_init_learned
-            jnp.sum(reg_func(x)) for x in jax.tree_util.tree_leaves(w_init_learned)
+        # Sum over all leaves of w_init_learned
+        reg_theta += jax.tree_util.tree_reduce(
+            lambda acc, leaf: acc + jnp.sum(reg_func(leaf)), w_init_learned, 0.0
             ) * cfg.training.reg_scales_weights
 
     # Return trajectories that caller wants, and ones we need for loss computation
