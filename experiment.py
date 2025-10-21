@@ -38,7 +38,7 @@ def generate_experiments(key, cfg, mode):
 
     # Initialize plasticity for generation
     plasticity_gen = plasticity.initialize_plasticity(
-        plasticity_gen_key, cfg.plasticity, mode='generation')
+        plasticity_gen_key, cfg.plasticity, mode='generation', init_scale=0.0)
 
     # Build list of experiment dicts
     experiments_list = []

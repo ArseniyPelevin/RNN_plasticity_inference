@@ -8,7 +8,8 @@ def initialize_plasticity(key, cfg, mode, init_scale=None):
                             'mlp': MLPPlasticity}
     plasticity = {}
     for layer in cfg.plasticity_models:
-        if init_scale is None:  # init_scale=0.0 for null plasticity model in evaluation
+        # init_scale=0.0 for null plasticity model in evaluation and for generation
+        if init_scale is None:
             init_scale = cfg.plasticity_coeffs_init_scale[layer]
 
         # Initialize plasticity modules for each plastic layer
