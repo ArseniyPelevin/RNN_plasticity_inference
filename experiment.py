@@ -318,7 +318,7 @@ class Experiment(eqx.Module):
         """
 
         # Generate velocity and position inputs
-        t, v, pos = self.generate_velocity_and_position(key, num_steps, self.cfg)
+        t, v, pos = self.generate_velocity_and_position(key, num_steps)
 
         # Generate visual cue sequence
         # [1,1,1,1,1,1,2,2,2,2,1,1,1,4,4,1,1,1,5,5,1,1,1,0,0,0]
@@ -371,6 +371,7 @@ class Experiment(eqx.Module):
         observed_velocity_std = jnp.std(v_smooth)
         v_smooth = v_smooth * target_velocity_std / (observed_velocity_std + 1e-12)
         v_smooth = v_smooth + v_mean  # cm/dt
+        v_smooth = jnp.clip(v_smooth, a_min=0.0)  # No negative velocities
 
         # Integrate to get position, rescale to desired distance
         positions = jnp.cumsum(v_smooth)  # cm
