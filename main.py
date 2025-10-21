@@ -36,7 +36,7 @@ config = {
 
         # For input_type 'random':
         # (Overwritten as mean_trial_time/dt if input_type is 'task')
-        "mean_steps_per_trial": 50,  # Number of sequential time steps in one trial
+        "mean_steps_per_trial": 100,  # Number of sequential time steps in one trial
         "std_steps_per_trial": 0,  # Standard deviation of steps per trial
 
         # For input_type 'task':
@@ -64,18 +64,18 @@ config = {
     "network": {
     # Network architecture
         # For input_type 'task', num_x_neurons is set automatically
-        "num_x_neurons": 10,  # x, presynaptic neurons for feedforward layer
-        "num_y_neurons": 10,  # y, neurons of recurrent layer
+        "num_x_neurons": 50,  # x, presynaptic neurons for feedforward layer
+        "num_y_neurons": 100,  # y, neurons of recurrent layer
         "num_outputs": 1,
 
-        "plasticity_layers": ["ff"],  # List of plastic layers: 'ff' and/or 'rec'
+        "plasticity_layers": ["rec"],  # List of plastic layers: 'ff' and/or 'rec'
         # Fraction of Y neurons receiving FF input, for generation and training,
         # only effective if recurrent connections are present, otherwise 1
-        "input_sparsity": {"generation": 1, "training": 1},
+        "input_sparsity": {"generation": 0.3, "training": 0.3},
         # Fraction of nonzero weights in feedforward layer, for generation and training,
         # of all Y neurons receiving FF input (input_sparsity),
         # all X neurons are guaranteed to have some output
-        "feedforward_sparsity": {"generation": 1, "training": 1},
+        "feedforward_sparsity": {"generation": 0.3, "training": 0.3},
         # Fraction of nonzero weights in recurrent layer, for generation and training,
         # all Y neurons receive some input (FF or rec, not counting self-connections)
         "recurrent_sparsity": {"generation": 1, "training": 1},
@@ -87,7 +87,7 @@ config = {
         "input_noise_std": 0.0, # Noise added to input layer
 
         "feedforward_input_scale": 1,  # Scale of feedforward weights
-        "recurrent_input_scale": 0,  # Scale of recurrent weights
+        "recurrent_input_scale": 1,  # Scale of recurrent weights
         # TODO? Also different for generation and training?
 
         # Weight initialization std for generation and training
@@ -98,6 +98,7 @@ config = {
         "synaptic_weight_threshold": 10,  # Weights are normally in the range [-4, 4]
         "min_lick_probability": 0.05,  # To encourage exploration, only in reinforcement
 
+        "adaptive_bias": True,
         "homeostasis_rate": 0.1,  # Rate of bias adaptation to mean post activity
 
         "measurement_noise_scale": 0,

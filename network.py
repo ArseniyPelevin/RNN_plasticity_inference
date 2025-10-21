@@ -322,9 +322,10 @@ class Network(eqx.Module):
             else:
                 plasticity_function = plasticity['ff']
             ff_weights = plasticity_vmap(x, y, self.ff_layer.weight, reward_term)
+            # Clip feedforward weights using tanh
             tanh_scale = self.cfg.synaptic_weight_threshold
             ff_weights = jax.nn.tanh(ff_weights / tanh_scale) * tanh_scale
-            # Do not update weights on padded steps
+            # Apply step mask: do not update weights on padded steps
             ff_weights = jnp.where(valid, ff_weights, self.ff_layer.weight)
         else:
             ff_weights = self.ff_layer.weight
@@ -338,10 +339,16 @@ class Network(eqx.Module):
             else:
                 plasticity_function = plasticity['rec']
             rec_weights = plasticity_vmap(y_old, y, self.rec_layer.weight, reward_term)
+            # Clip recurrent weights using tanh
             tanh_scale = self.cfg.synaptic_weight_threshold
             rec_weights = jax.nn.tanh(rec_weights / tanh_scale) * tanh_scale
-            rec_biases = (self.rec_layer.bias -
-                          self.cfg.homeostasis_rate * mean_y_activation)
+            # Update recurrent biases for homeostasis
+            if self.cfg.adaptive_bias:
+                rec_biases = (self.rec_layer.bias -
+                            self.cfg.homeostasis_rate * mean_y_activation)
+            else:
+                rec_biases = 0
+            # Apply step mask: do not update weights and biases on padded steps
             rec_weights = jnp.where(valid, rec_weights, self.rec_layer.weight)
             rec_biases = jnp.where(valid, rec_biases, self.rec_layer.bias)
         else:
