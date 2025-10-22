@@ -150,6 +150,10 @@ config = {
         "reg_scales_weights": 0,
 
         "lick_cost": 0.1,  # Cost of each lick in reward-based tasks
+
+        "same_init_thetas": True,  # Use generation thetas for training
+        "same_init_weights": False,  # Use generation weights for training
+        "same_init_connectivity": True,  # Use generation connectivity mask for training
     },
 
     "logging": {

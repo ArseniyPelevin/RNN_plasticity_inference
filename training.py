@@ -51,9 +51,11 @@ def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
 
     init_plasticity_key, train_key = jax.random.split(key)
 
-    # Initialize plasticity and add coefficients to params
+    # Initialize training plasticity
     plasticity_train = plasticity.initialize_plasticity(
-        init_plasticity_key, cfg.plasticity, mode='training')
+        init_plasticity_key, cfg.plasticity,
+        mode = 'training' if not cfg.training.same_init_thetas else 'generation')
+    # Add coefficients to params
     params = {'thetas': {layer: pl.coeffs for layer, pl in plasticity_train.items()}}
 
     num_epochs = cfg.training.num_epochs + 1  # +1 so that we have 250th epoch

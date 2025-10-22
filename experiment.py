@@ -9,7 +9,7 @@ from scipy import stats
 from utils import sample_truncated_normal
 
 
-def generate_experiments(key, cfg, mode):
+def generate_experiments(key, cfg, mode, num_exps=None):
     """ Generate all experiments/trajectories.
 
     Args:
@@ -20,11 +20,11 @@ def generate_experiments(key, cfg, mode):
     Returns:
         experiments (list): List of Experiment objects.
     """
-
-    if mode == "train":
-        num_exps = cfg.experiment.num_exp_train
-    elif mode == "test":
-        num_exps = cfg.experiment.num_exp_test
+    if num_exps is None:
+        if mode == "train":
+            num_exps = cfg.experiment.num_exp_train
+        elif mode == "test":
+            num_exps = cfg.experiment.num_exp_test
     print(f"\nGenerating {num_exps} {mode} trajectories")
 
     # Presplit keys for each experiment
@@ -146,8 +146,8 @@ class Experiment(eqx.Module):
         # Generate random keys for different parts of the model
         (net_gen_key,
          net_train_key,
-         w_init_gen_key,
-         w_init_train_key,
+         w_gen_key,
+         w_train_key,
          inputs_key,
          x_gen_key,
          x_train_key,
@@ -158,12 +158,18 @@ class Experiment(eqx.Module):
         # Training network is saved and used for training.
         network_gen = network.Network(net_gen_key, cfg.network,
                                       self.cfg.input_type, mode='generation')
-        self.network = network.Network(net_train_key, cfg.network,
-                                       self.cfg.input_type, mode='training')
+        if not cfg.training.same_init_connectivity:
+            self.network = network.Network(net_train_key, cfg.network,
+                                        self.cfg.input_type, mode='training')
+        else:
+            self.network = network_gen
 
         # Initialize weights for generation and training. Store them to experiment
-        self.w_init_gen = network.initialize_weights(w_init_gen_key, cfg.network)
-        self.w_init_train = network.initialize_weights(w_init_train_key, cfg.network)
+        self.w_init_gen = network.initialize_weights(w_gen_key, cfg.network)
+        if not cfg.training.same_init_weights:
+            self.w_init_train = network.initialize_weights(w_train_key, cfg.network)
+        else:
+            self.w_init_train = self.w_init_gen  # Use same initial weights for training
 
         # Apply initial weights to corresponding networks
         network_gen = network_gen.apply_weights(self.w_init_gen)
