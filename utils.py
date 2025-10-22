@@ -1,11 +1,12 @@
-"""Module with utility functions, taken as is from https://github.com/yashsmehta/MetaLearnPlasticity"""
-
+import ast
+import json
 import logging
 import pickle
 from itertools import count
 from pathlib import Path
 
 import equinox as eqx
+import experiment
 import h5py
 import jax
 import jax.numpy as jnp
@@ -15,7 +16,8 @@ import pandas as pd
 
 
 def setup_platform(device: str) -> None:
-    """Set up the environment based on the configuration."""
+    """Set up the environment based on the configuration.
+    Copied from https://github.com/yashsmehta/MetaLearnPlasticity"""
 
     # Suppress JAX backend initialization messages if using CPU
     if device == "cpu":
@@ -28,9 +30,6 @@ def setup_platform(device: str) -> None:
 
     device = jax.lib.xla_bridge.get_backend().platform
     logging.info(f"Platform: {device}\n")
-
-def softclip(x, cap, p=10):
-    return x / ((1.0 + jnp.abs(x / cap) ** p) ** (1.0 / p))
 
 def sample_truncated_normal(key, mean, std, shape=1):
     """ Samples values from a normal distribution that are >= (mean - std). """
@@ -45,6 +44,7 @@ def sample_truncated_normal(key, mean, std, shape=1):
 def print_and_log_learned_params(cfg, expdata, thetas):
     """
     Logs and prints current plasticity coefficients.
+    Copied partially from https://github.com/yashsmehta/MetaLearnPlasticity
 
     Args:
         cfg (object): Configuration object containing the model settings.
@@ -157,7 +157,7 @@ def save_results(cfg, params, expdata, train_time, trajectories,
 
     if cfg.logging.log_trajectories:
         # Save trajectories
-        save_nested_hdf5(trajectories, path + f"Exp_{exp_id}_trajectories.h5")
+        save_hdf5(trajectories, path + f"Exp_{exp_id}_trajectories.h5")
 
     return path
 
@@ -201,31 +201,93 @@ def save_logs(cfg, df):
 
     return logdata_path
 
-def save_nested_hdf5(obj, path):
-    """Save a nested dict of arrays to HDF5, preserving the tree."""
-    with h5py.File(path, 'w') as f:
-        for k, lst in obj.items():
-            g = f.create_group(str(k))
-            for i, rec in enumerate(lst):
-                s = g.create_group(str(i))
-                for name, arr in rec.items():
-                    if name == 'weights':
-                        wg = s.create_group('weights')
-                        for wk, wv in arr.items():
-                            wg.create_dataset(wk, data=np.array(wv))
-                    else:
-                        s.create_dataset(name, data=np.array(arr))
-
-def load_nested_hdf5(fname):
-    """Load HDF5 into nested dict (datasets -> numpy arrays)."""
-    def _recursively_read(h):
-        out = {}
-        for k in h:
-            item = h[k]
-            if isinstance(item, h5py.Group):
-                out[k] = _recursively_read(item)
+def save_hdf5(obj, fname):
+    with h5py.File(fname, "w") as f:
+        def _write(g, o):
+            if isinstance(o, dict):
+                g.attrs["__type__"] = "dict"
+                keys = list(o.keys())
+                g.attrs["__keys__"] = json.dumps([[str(k), type(k).__name__]
+                                                  for k in keys])
+                for i, k in enumerate(keys):
+                    sg = g.create_group(f"item_{i}")
+                    _write(sg, o[k])
+            elif isinstance(o, list):
+                g.attrs["__type__"] = "list"
+                g.attrs["__len__"] = len(o)
+                for i, v in enumerate(o):
+                    sg = g.create_group(f"item_{i}")
+                    _write(sg, v)
+            elif isinstance(o, tuple):
+                g.attrs["__type__"] = "tuple"
+                g.attrs["__len__"] = len(o)
+                for i, v in enumerate(o):
+                    sg = g.create_group(f"item_{i}")
+                    _write(sg, v)
             else:
-                out[k] = item[()]  # read dataset into numpy array
-        return out
+                # leaf: jax array
+                g.attrs["__type__"] = "array"
+                arr = np.asarray(jax.device_get(o))
+                g.create_dataset("value", data=arr,
+                                 compression="gzip", compression_opts=4)
+        _write(f, obj)
+
+def load_hdf5(fname):
+    def _restore_key(s, tname):
+        if tname == "int": return int(s)
+        if tname == "float": return float(s)
+        if tname == "bool": return s == "True"
+        if tname == "str": return s
+        if tname == "NoneType": return None
+        try:
+            return ast.literal_eval(s)
+        except Exception:
+            return s
+
     with h5py.File(fname, "r") as f:
-        return _recursively_read(f)
+        def _read(g):
+            t = g.attrs.get("__type__", None)
+            if t == b"dict": t = "dict"   # h5py may return bytes
+            if t == b"list": t = "list"
+            if t == b"tuple": t = "tuple"
+            if t == b"array": t = "array"
+
+            if t == "dict":
+                keys_meta = json.loads(g.attrs["__keys__"])
+                out = {}
+                for i, (ks, tname) in enumerate(keys_meta):
+                    out[_restore_key(ks, tname)] = _read(g[f"item_{i}"])
+                return out
+            if t == "list":
+                n = int(g.attrs.get("__len__",
+                                    len([k for k in g if k.startswith("item_")])))
+                return [_read(g[f"item_{i}"]) for i in range(n)]
+            if t == "tuple":
+                n = int(g.attrs.get("__len__",
+                                    len([k for k in g if k.startswith("item_")])))
+                return tuple(_read(g[f"item_{i}"]) for i in range(n))
+            if t == "array":
+                data = g["value"][...]
+                return jnp.array(data)
+            # fallback (empty file/root without attrs) try to infer
+            # if it has item_* children, treat as list
+            keys = sorted(k for k in g)
+            if keys and all(k.startswith("item_") for k in keys):
+                return [_read(g[k]) for k in keys]
+            return None
+
+        return _read(f)
+
+def load_generated_experiments(path, cfg, mode):
+    exp_like = experiment.generate_experiments(jax.random.PRNGKey(0), cfg,
+                                               mode=mode, num_exps=1)
+    path = path + f"generated_{mode}_experiments\\"
+    # Number of files in path folder:
+    num_files = len(list(Path(path).glob("experiment_*.eqx")))
+    exps = []
+    for exp_id in range(num_files):
+        exp = eqx.tree_deserialise_leaves(path + f"experiment_{exp_id}.eqx",
+                                          exp_like[0])
+        exps.append(exp)
+
+    return exps
