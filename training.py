@@ -140,7 +140,9 @@ def training_loop(key, params, plasticity, experiments,
                 continue
 
             if cfg.logging.log_trajectories:
-                epoch_trajectories.append(aux.pop('trajectories'))
+                epoch_trajectory = {**aux['trajectories'],
+                                    'init_weights': params['w_init_learned'][exp_i]}
+                epoch_trajectories.append(epoch_trajectory)
 
             epoch_losses.append(aux)
 
