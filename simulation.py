@@ -135,8 +135,9 @@ def simulate_trajectory(
 
         *session_variables, y_key = session_variables
         # Initialize y activity at start of session
-        init_y = jax.random.normal(y_key, (network.cfg.num_y_neurons,))
-        init_y = jax.nn.sigmoid(init_y)  # Initial activity between 0 and 1
+        # init_y = jax.random.normal(y_key, (network.cfg.num_y_neurons,))
+        # init_y = jax.nn.sigmoid(init_y)  # Initial activity between 0 and 1
+        init_y = jnp.zeros((network.cfg.num_y_neurons,))  # Start with zero activity
 
         # Run inner scan over steps within one session
         (network, _), session_output = jax.lax.scan(
