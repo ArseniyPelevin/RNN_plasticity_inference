@@ -245,6 +245,8 @@ class Experiment(eqx.Module):
                 elif self.cfg.input_type == 'task':
                     trial_inputs = self.generate_task_trial_input(
                         trial_keys[session_i, task_i], num_steps_, task_type)
+                elif self.cfg.input_type == 'constant':
+                    trial_inputs = self.generate_constant_input(num_steps_)
 
                 # Append trial inputs to session inputs
                 for var in trial_inputs:
@@ -305,6 +307,20 @@ class Experiment(eqx.Module):
         """
         x = jax.random.normal(key, shape=(num_steps, self.network.cfg.num_x_neurons))
         x = x * self.cfg.input_firing_std + self.cfg.input_firing_mean
+
+        return {'x': x,
+                'rewarded_pos': jnp.zeros((num_steps,))  # Dummy, not used
+                }
+
+    def generate_constant_input(self, num_steps):
+        """ Generate constant input for one trial.
+
+        Returns:
+            inputs: {'x' (num_steps, num_x_neurons): array of input activity,
+                     'rewarded_pos': (num_steps,) dummy to fit task input format}
+        """
+        x = jnp.ones((num_steps, self.network.cfg.num_x_neurons)
+                     ) * self.cfg.input_firing_mean
 
         return {'x': x,
                 'rewarded_pos': jnp.zeros((num_steps,))  # Dummy, not used

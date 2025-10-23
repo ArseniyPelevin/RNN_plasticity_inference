@@ -16,7 +16,7 @@ coeff_masks = {'ff': coeff_mask, 'rec': coeff_mask}
 config = {
     "experiment": {
         "use_experimental_data": False,
-        "input_type": 'random',  # 'random' (Mehta 2023) / 'task' (Sun 2025)
+        "input_type": 'task',  # 'random' (Mehta 2023) / 'task' (Sun 2025) / 'constant'
 
         "num_exp_train": 25,  # Number of experiments/trajectories/animals
         "num_exp_test": 5,
