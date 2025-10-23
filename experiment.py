@@ -182,7 +182,10 @@ class Experiment(eqx.Module):
         # Generate real input activity and don't save it - it is latent variable
         x_gen = self.generate_x(x_gen_key, inputs, mode='generation')
         # Generate assumed input activity and save for training or testing
-        x_train = self.generate_x(x_train_key, inputs, mode='training')
+        if not cfg.training.same_input:
+            x_train = self.generate_x(x_train_key, inputs, mode='training')
+        else:
+            x_train = x_gen
         self.x_input = x_train
 
         trajectories = simulation.simulate_trajectory(

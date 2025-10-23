@@ -154,6 +154,7 @@ config = {
         "same_init_thetas": True,  # Use generation thetas for training
         "same_init_weights": False,  # Use generation weights for training
         "same_init_connectivity": True,  # Use generation connectivity mask for training
+        "same_input": True,  # Use generation input for training
     },
 
     "logging": {
