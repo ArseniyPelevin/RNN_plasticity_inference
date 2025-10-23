@@ -16,7 +16,7 @@ def initialize_plasticity(key, cfg, mode, init_scale=None):
         plasticity[layer] = plasticity_functions[
             cfg.plasticity_models[layer]](
                 key,
-                learning_rate=cfg.synapse_learning_rate[layer],
+                learning_rate=cfg.synaptic_learning_rate[layer],
                 init_scale=init_scale,
                 coeff_mask=jnp.array(cfg.coeff_masks[layer]),  # For VolterraPlasticity
                 hidden_sizes=None)  #cfg.mlp_hidden_sizes[layer])  # For MLPPlasticity

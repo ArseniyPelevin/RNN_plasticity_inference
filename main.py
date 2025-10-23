@@ -124,7 +124,7 @@ config = {
         # Per-plastic-layer masks for plasticity coefficients
         "coeff_masks": {k: v.tolist() for k, v in coeff_masks.items()},
 
-        "synapse_learning_rate": 1,
+        "synaptic_learning_rate": 0.3,
     },
 
     "training": {

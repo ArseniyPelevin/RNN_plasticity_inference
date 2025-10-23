@@ -659,9 +659,9 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
 
     n_rows = num_exps * num_layers
     n_cols = num_epochs + 1
-    fig, ax = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 3 * n_rows),
-                           gridspec_kw={'width_ratios': [1.0]*num_epochs + [0.06]},
-                           layout='tight')
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=(2 * n_cols, 2 * n_rows),
+                           gridspec_kw={'width_ratios': [1.0]*num_epochs + [0.03]},
+                           layout='constrained')
     ax = ax.reshape(n_rows, n_cols)  # ensure 2D array even if n_cols=1
     for i in range(num_exps):
         exp = experiments[i]
@@ -684,7 +684,7 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
 
             mappable = plt.cm.ScalarMappable(cmap=im.get_cmap(), norm=im.norm)
             mappable.set_array([])
-            plt.colorbar(mappable, cax=ax[num_layers*i+j, -1], fraction=0.02, pad=0.01)
+            plt.colorbar(mappable, cax=ax[num_layers*i+j, -1], fraction=0.02, pad=0.001)
 
     return fig
 
