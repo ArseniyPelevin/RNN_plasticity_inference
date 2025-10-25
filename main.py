@@ -287,7 +287,7 @@ def validate_config(cfg):
 
     return cfg
 
-def run_experiment(cfg, seed=None):
+def run_new_experiment(cfg, seed=None):
     if seed is None:
         seed = cfg.logging.exp_id
     cfg.experiment.seed = seed  # Save seed in config for logging
@@ -307,7 +307,7 @@ def run_experiment(cfg, seed=None):
     train_time = time.time() - time_start
     print(f"\nTraining time: {train_time:.1f} seconds")
 
-     # Save results
+    # Save results
     try:
         path = utils.save_results(cfg, params, expdata, train_time, trajectories,
                                   train_experiments, test_experiments)
@@ -317,6 +317,44 @@ def run_experiment(cfg, seed=None):
 
     return params, expdata, trajectories, _losses_and_r2s, path
 
+def continue_experiment(path, cfg=None):
+    # Load config and validate
+    (old_cfg,
+     params,
+     expdata,
+     train_experiments,
+     test_experiments,
+     trajectories) = utils.load_old_experiment(path)
+
+    if not cfg:
+        cfg = old_cfg
+
+    last_epoch = max(trajectories.keys())
+
+    # Set new seed for continued learning based on previous training epochs
+    seed = cfg.experiment.seed + last_epoch
+    key = jax.random.PRNGKey(seed)
+
+    time_start = time.time()
+    params, new_expdata, new_trajectories, _losses_and_r2s = (
+        training.meta_learn_plasticity(key, cfg,
+                                       train_experiments, test_experiments,
+                                       params, last_epoch))
+    train_time = time.time() - time_start
+    print(f"\nTraining time: {train_time:.1f} seconds")
+    train_time = expdata.pop('train_time')[0] + train_time
+
+    # Merge new expdata with old
+    for k in new_expdata:
+        expdata[k].extend(new_expdata[k])
+    # Merge new trajectories with old
+    trajectories.update(new_trajectories)
+
+    # Save results
+    path = utils.save_results(cfg, params, expdata, train_time, trajectories, path=path)
+
+    return params, expdata, trajectories, _losses_and_r2s
+
 if __name__ == "__main__":
     cfg = create_config()
-    params, expdata, trajectories, _losses_and_r2s, path = run_experiment(cfg)
+    params, expdata, trajectories, _losses_and_r2s, path = run_new_experiment(cfg)

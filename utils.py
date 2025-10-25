@@ -1,7 +1,10 @@
 import ast
+import glob
 import json
 import logging
+import os
 import pickle
+from bisect import bisect_left
 from itertools import count
 from pathlib import Path
 
@@ -40,6 +43,32 @@ def sample_truncated_normal(key, mean, std, shape=1):
         samples = jnp.where(samples < -1, samples2, samples)
     samples = samples * std + mean
     return samples.round().astype(jnp.int32)
+
+def sample_epochs(rec, num_epochs):
+    n = len(rec)
+    if n <= 1:
+        return rec[:]               # handle empty or single-element list
+    k = min(n, max(2, num_epochs))
+    start, end = rec[0], rec[-1]
+    targets = [start + i*(end - start)/(k - 1) for i in range(k)]
+    def pick(t):
+        i = bisect_left(rec, t)
+        if i == 0:
+            return rec[0]
+        if i == n:
+            return rec[-1]
+        return rec[i] if rec[i] - t < t - rec[i-1] else rec[i-1]
+    res = []
+    prev = None
+    for t in targets:
+        v = pick(t)
+        if v != prev:
+            res.append(v)
+            prev = v
+    if res[0] != start:
+        res.insert(0, start)
+    if res[-1] != end: res.append(end)
+    return res
 
 def print_and_log_learned_params(cfg, expdata, thetas):
     """
@@ -107,7 +136,7 @@ def print_and_log_learned_params(cfg, expdata, thetas):
     return expdata
 
 def save_results(cfg, params, expdata, train_time, trajectories,
-                 train_experiments, test_experiments):
+                 train_experiments=None, test_experiments=None, path=None):
     """Save training logs and parameters."""
 
     def create_directory():
@@ -126,34 +155,26 @@ def save_results(cfg, params, expdata, train_time, trajectories,
 
     exp_id = cfg.logging.exp_id
 
-    path = create_directory()
+    if not path:
+        path = create_directory()
 
     # Save configuration
     if cfg.logging.log_config:
         # Save configuration used for the experiment
-        omegaconf.OmegaConf.save(cfg, path + f"Exp_{exp_id}_config.yaml")
+        save_config(cfg, path, exp_id)
 
     # Save final parameters
     if cfg.logging.log_final_params:
-        with open(path + f"Exp_{exp_id}_final_params.pkl", "wb+") as f:
-            pickle.dump(jax.device_get(params), f)
+        save_final_params(params, path, exp_id)
 
     if cfg.logging.log_expdata:
         # Save expdata as .csv
-        df = pd.DataFrame.from_dict(expdata)
-        df["train_time"] = train_time
-        df.to_csv(path + f"Exp_{exp_id}_results.csv", mode="w+", index=False)
-        # TODO allow appending to existing file if retraining
+        save_expdata(expdata, path, exp_id, train_time)
 
-    if cfg.logging.log_generated_experiments:
+    if (cfg.logging.log_generated_experiments and
+        train_experiments is not None and test_experiments is not None):
         # Save generated experiments
-        for name, experiments in zip(["train", "test"],
-                                     [train_experiments, test_experiments],
-                                     strict=False):
-            exp_path = Path(path + f"generated_{name}_experiments")
-            exp_path.mkdir(parents=True, exist_ok=True)
-            for i, exp in enumerate(experiments):
-                eqx.tree_serialise_leaves(exp_path / f"experiment_{i}.eqx", exp)
+        save_generated_experiments(path, train_experiments, test_experiments)
 
     if cfg.logging.log_trajectories:
         # Save trajectories
@@ -161,45 +182,74 @@ def save_results(cfg, params, expdata, train_time, trajectories,
 
     return path
 
-# Older version allowing appending to existing log files
-def save_logs(cfg, df):
-    """
-    Saves the logs to a specified directory based on the configuration.
+def load_old_experiment(path):
+    """ Loads configuration, final parameters, expdata, generated experiments
+    and trajectories from an older experiment saved in `path`. """
 
-    Args:
-        cfg (object): Configuration object containing the model settings and paths.
-        df (DataFrame): DataFrame containing the logs to be saved.
+    cfg = load_config(path)
+    params = load_final_params(path)
+    expdata = load_expdata(path)
+    train_experiments = load_generated_experiments(path, cfg, mode="train")
+    test_experiments = load_generated_experiments(path, cfg, mode="test")
+    trajectories = load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
 
-    Returns:
-        Path: The path where the logs were saved.
-    """
+    return cfg, params, expdata, train_experiments, test_experiments, trajectories
 
-    # local_random = random.Random()
-    # local_random.seed(os.urandom(10))
-    # sleep_duration = local_random.uniform(1, 5)
-    # time.sleep(sleep_duration)
-    # print(f"Slept for {sleep_duration:.2f} seconds.")
+def save_config(cfg, path, exp_id):
+    """ Saves the configuration used for the experiment as a JSON file. """
+    omegaconf.OmegaConf.save(cfg, path + f"Exp_{exp_id}_config.yaml")
 
-    logdata_path = Path(cfg.log_dir)
-    if cfg.log_expdata:
+def load_config(path):
+    """ Loads the configuration used for the experiment from a YAML file. """
+    path = glob.glob(os.path.join(path, "Exp_*_config.yaml"))[0]
+    return omegaconf.OmegaConf.load(path)
 
-        logdata_path.mkdir(parents=True, exist_ok=True)
-        csv_file = logdata_path / f"exp_{cfg.logging.exp_id}.csv"
-        write_header = not csv_file.exists()
+def save_final_params(params, path, exp_id):
+    """ Saves the final learned parameters as a pickle file. """
+    with open(path + f"Exp_{exp_id}_final_params.pkl", "wb") as f:
+        pickle.dump(params, f)
 
-        lock_file = csv_file.with_suffix(".lock")
-        while lock_file.exists():
-            print(f"Waiting for lock on {csv_file}...")
-            # time.sleep(random.uniform(1, 5))
+def load_final_params(path):
+    """ Loads the final learned parameters from a pickle file. """
+    path = glob.glob(os.path.join(path, "Exp_*_final_params.pkl"))[0]
+    with open(path, "rb") as f:
+        params = pickle.load(f)
+    return params
 
-        try:
-            lock_file.touch()
-            df.to_csv(csv_file, mode="a", header=write_header, index=False)
-            print(f"Saved logs to {csv_file}")
-        finally:
-            lock_file.unlink()
+def save_expdata(expdata, path, exp_id, train_time):
+    df = pd.DataFrame.from_dict(expdata)
+    df["train_time"] = train_time
+    df.to_csv(path + f"Exp_{exp_id}_expdata.csv", mode="w+", index=False)
+    # TODO allow appending to existing file if retraining
 
-    return logdata_path
+def load_expdata(path):
+    path = glob.glob(os.path.join(path, "Exp_*_expdata.csv"))[0]
+    df = pd.read_csv(path)
+    expdata = df.to_dict(orient="list")
+    return expdata
+
+def save_generated_experiments(path, train_experiments, test_experiments):
+    for name, experiments in zip(["train", "test"],
+                                 [train_experiments, test_experiments],
+                                 strict=False):
+        exp_path = Path(path + f"generated_{name}_experiments")
+        exp_path.mkdir(parents=True, exist_ok=True)
+        for i, exp in enumerate(experiments):
+            eqx.tree_serialise_leaves(exp_path / f"experiment_{i}.eqx", exp)
+
+def load_generated_experiments(path, cfg, mode):
+    exp_like = experiment.generate_experiments(jax.random.PRNGKey(0), cfg,
+                                               mode=mode, num_exps=1)
+    path += f"generated_{mode}_experiments/"
+    # Number of files in path folder:
+    num_files = len(list(Path(path).glob("experiment_*.eqx")))
+    exps = []
+    for exp_id in range(num_files):
+        exp = eqx.tree_deserialise_leaves(path + f"experiment_{exp_id}.eqx",
+                                          exp_like[0])
+        exps.append(exp)
+
+    return exps
 
 def save_hdf5(obj, fname):
     with h5py.File(fname, "w") as f:
@@ -278,16 +328,42 @@ def load_hdf5(fname):
 
         return _read(f)
 
-def load_generated_experiments(path, cfg, mode):
-    exp_like = experiment.generate_experiments(jax.random.PRNGKey(0), cfg,
-                                               mode=mode, num_exps=1)
-    path = path + f"generated_{mode}_experiments\\"
-    # Number of files in path folder:
-    num_files = len(list(Path(path).glob("experiment_*.eqx")))
-    exps = []
-    for exp_id in range(num_files):
-        exp = eqx.tree_deserialise_leaves(path + f"experiment_{exp_id}.eqx",
-                                          exp_like[0])
-        exps.append(exp)
+# Older version allowing appending to existing log files
+def save_logs(cfg, df):
+    """
+    Saves the logs to a specified directory based on the configuration.
 
-    return exps
+    Args:
+        cfg (object): Configuration object containing the model settings and paths.
+        df (DataFrame): DataFrame containing the logs to be saved.
+
+    Returns:
+        Path: The path where the logs were saved.
+    """
+
+    # local_random = random.Random()
+    # local_random.seed(os.urandom(10))
+    # sleep_duration = local_random.uniform(1, 5)
+    # time.sleep(sleep_duration)
+    # print(f"Slept for {sleep_duration:.2f} seconds.")
+
+    logdata_path = Path(cfg.log_dir)
+    if cfg.log_expdata:
+
+        logdata_path.mkdir(parents=True, exist_ok=True)
+        csv_file = logdata_path / f"exp_{cfg.logging.exp_id}.csv"
+        write_header = not csv_file.exists()
+
+        lock_file = csv_file.with_suffix(".lock")
+        while lock_file.exists():
+            print(f"Waiting for lock on {csv_file}...")
+            # time.sleep(random.uniform(1, 5))
+
+        try:
+            lock_file.touch()
+            df.to_csv(csv_file, mode="a", header=write_header, index=False)
+            print(f"Saved logs to {csv_file}")
+        finally:
+            lock_file.unlink()
+
+    return logdata_path
