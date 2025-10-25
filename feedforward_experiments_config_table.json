@@ -1,7 +1,7 @@
 {
     "10": {
         "input_std": 0.5,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": 0.1,
         "N_in": 100,
         "N_out": 1000,
@@ -9,7 +9,7 @@
     },
     "11": {
         "input_std": 0.1,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": 0.1,
         "N_in": 100,
         "N_out": 1000,
@@ -17,7 +17,7 @@
     },
     "12": {
         "input_std": 1.0,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": 0.1,
         "N_in": 100,
         "N_out": 1000,
@@ -25,7 +25,7 @@
     },
     "13": {
         "input_std": 1.0,
-        "synapse_lr": 1.0,
+        "synaptic_lr": 1.0,
         "init_w_std": 0.1,
         "N_in": 100,
         "N_out": 1000,
@@ -33,7 +33,7 @@
     },
     "14": {
         "input_std": 1.0,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": 0.05,
         "N_in": 100,
         "N_out": 1000,
@@ -41,7 +41,7 @@
     },
     "15": {
         "input_std": 1.0,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": 0.01,
         "N_in": 100,
         "N_out": 1000,
@@ -49,7 +49,7 @@
     },
     "16": {
         "input_std": 1.0,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": 0.1,
         "N_in": 100,
         "N_out": 1000,
@@ -57,7 +57,7 @@
     },
     "17": {
         "input_std": 1.0,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": 0.1,
         "N_in": 50,
         "N_out": 500,
@@ -65,7 +65,7 @@
     },
     "18": {
         "input_std": 1.0,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": 0.1,
         "N_in": 10,
         "N_out": 10,
@@ -73,7 +73,7 @@
     },
     "19": {
         "input_std": 1.0,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": 0.1,
         "N_in": 10,
         "N_out": 10,
@@ -81,7 +81,7 @@
     },
     "20": {
         "input_std": 0.1,
-        "synapse_lr": 1.0,
+        "synaptic_lr": 1.0,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -89,7 +89,7 @@
     },
     "21": {
         "input_std": 0.1,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -97,7 +97,7 @@
     },
     "22": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -105,7 +105,7 @@
     },
     "23": {
         "input_std": 1,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -113,7 +113,7 @@
     },
     "24": {
         "input_std": 1,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": "Xavier (1/100+100)",
         "N_in": 100,
         "N_out": 100,
@@ -121,7 +121,7 @@
     },
     "25": {
         "input_std": 1,
-        "synapse_lr": 0.1,
+        "synaptic_lr": 0.1,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -129,7 +129,7 @@
     },
     "26": {
         "input_std": 1,
-        "synapse_lr": 0.5,
+        "synaptic_lr": 0.5,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -138,7 +138,7 @@
     },
     "27": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -147,7 +147,7 @@
     },
     "28": {
         "input_std": 0.1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": "Xavier (1/10+10)",
         "N_in": 10,
         "N_out": 10,
@@ -156,7 +156,7 @@
     },
     "29": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": "Xavier (1/100+100)",
         "N_in": 100,
         "N_out": 100,
@@ -165,7 +165,7 @@
     },
     "30": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 100,
         "N_out": 100,
@@ -174,7 +174,7 @@
     },
     "31": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 10,
         "N_out": 10,
@@ -182,7 +182,7 @@
     },
     "32": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
         "N_in": 10,
         "N_out": 10,
@@ -190,7 +190,7 @@
     },
     "33": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.0001,
         "N_in": 10,
         "N_out": 10,
@@ -198,7 +198,7 @@
     },
     "34": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.1,
         "N_in": 10,
         "N_out": 10,
@@ -206,7 +206,7 @@
     },
     "35": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.1,
         "N_in": 10,
         "N_out": 10,
@@ -214,7 +214,7 @@
     },
     "36": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 10,
         "N_out": 100,
@@ -222,7 +222,7 @@
     },
     "37": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 100,
         "N_out": 10,
@@ -230,7 +230,7 @@
     },
     "38": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 100,
         "N_out": 1000,
@@ -238,7 +238,7 @@
     },
     "39": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.01,
         "N_in": 10,
         "N_out": 10,
@@ -247,7 +247,7 @@
     },
     "40": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.1,
         "N_in": 10,
         "N_out": 10,
@@ -256,7 +256,7 @@
     },
     "41": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 1,
         "N_in": 10,
         "N_out": 10,
@@ -265,7 +265,7 @@
     },
     "42": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.0001,
         "N_in": 10,
         "N_out": 10,
@@ -274,7 +274,7 @@
     },
     "43": {
         "input_std": 0.1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.0001,
         "N_in": 10,
         "N_out": 10,
@@ -283,7 +283,7 @@
     },
     "44": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
         "N_in": 10,
         "N_out": 10,
@@ -292,44 +292,44 @@
     },
     "45": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
         "plasticity_coeffs_init_scale": 0,
         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
     },
     "46": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
-        "presynaptic_noise_std": 0.1,
+        "input_noise_std": 0.1,
         "\nPlasticity_rule": "$xy-y^{2}w-0.5w+0.3xy^{2}$"
     },
     "47": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
-        "presynaptic_noise_std": 0.1,
+        "input_noise_std": 0.1,
         "\nPlasticity_rule": "$xy-y^{2}w$"
     },
     "48": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
-        "presynaptic_noise_std": 1,
+        "input_noise_std": 1,
         "\nPlasticity_rule": "$xy-y^{2}w$"
     },
     "49": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
-        "presynaptic_noise_std": 0.01,
+        "input_noise_std": 0.01,
         "\nPlasticity_rule": "$xy-y^{2}w$"
     },
     "75": {
         "input_std": 1,
-        "synapse_lr": 1,
+        "synaptic_lr": 1,
         "init_w_std": 0.001,
-        "presynaptic_noise_std": 0,
+        "input_noise_std": 0,
         "\nPlasticity_rule": "$x-0.05xyw$"
     }
 }

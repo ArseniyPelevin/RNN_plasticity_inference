@@ -11,12 +11,14 @@ import utils
 # coeff_mask[0:2, 0, 0, 0:2] = 1
 coeff_mask = np.ones((3, 3, 3, 3)).astype(bool)
 coeff_mask[:, :, :, 1:] = False  # Zero out reward coefficients
+# coeff_mask[:, :, 2, :] = False
+# coeff_mask[2, :, :, :] = False
 coeff_masks = {'ff': coeff_mask, 'rec': coeff_mask}
 
 config = {
     "experiment": {
         "use_experimental_data": False,
-        "input_type": 'task',  # 'random' (Mehta 2023) / 'task' (Sun 2025) / 'constant'
+        "input_type": 'random',  # 'random' (Mehta 2023) / 'task' (Sun 2025) / 'constant'
 
         "num_exp_train": 25,  # Number of experiments/trajectories/animals
         "num_exp_test": 5,
@@ -36,19 +38,19 @@ config = {
 
         # For input_type 'random':
         # (Overwritten as mean_trial_time/dt if input_type is 'task')
-        "mean_steps_per_trial": 100,  # Number of sequential time steps in one trial
+        "mean_steps_per_trial": 400,  # Number of sequential time steps in one trial
         "std_steps_per_trial": 0,  # Standard deviation of steps per trial
 
         # For input_type 'task':
-        "dt": 1,  # s, time step of simulation
+        "dt": 0.5,  # s, time step of simulation
         "mean_trial_time": 29,  # s, including 2s teleportation
-        "std_trial_time": 10,  # s
+        "std_trial_time": 0,  # s
         "velocity_std": 2,  # cm/s
         "velocity_smoothing_window": 5,  # seconds
         "trial_distance": 230,  # cm, fixed
 
         "num_place_neurons": 10,
-        "num_visual_neurons_per_type": 5,
+        "num_visual_neurons_per_type": 3,
         "num_velocity_neurons": 1,
 
         "place_field_width_mean": 20,  # 70 cm - from article
@@ -64,21 +66,20 @@ config = {
     "network": {
     # Network architecture
         # For input_type 'task', num_x_neurons is set automatically
-        "num_x_neurons": 50,  # x, presynaptic neurons for feedforward layer
-        "num_y_neurons": 100,  # y, neurons of recurrent layer
+        "num_x_neurons": 10,  # x, presynaptic neurons for feedforward layer
+        "num_y_neurons": 20,  # y, neurons of recurrent layer
         "num_outputs": 1,
 
         "plasticity_layers": ["rec"],  # List of plastic layers: 'ff' and/or 'rec'
-        # Fraction of Y neurons receiving FF input, for generation and training,
-        # only effective if recurrent connections are present, otherwise 1
-        "input_sparsity": {"generation": 0.3, "training": 0.3},
+        # Fraction of Y neurons receiving FF input, for generation and training
+        "input_sparsity": {"generation": 1, "training": 1},
         # Fraction of nonzero weights in feedforward layer, for generation and training,
         # of all Y neurons receiving FF input (input_sparsity),
         # all X neurons are guaranteed to have some output
-        "feedforward_sparsity": {"generation": 0.3, "training": 0.3},
+        "feedforward_sparsity": {"generation": 1, "training": 1},
         # Fraction of nonzero weights in recurrent layer, for generation and training,
         # all Y neurons receive some input (FF or rec, not counting self-connections)
-        "recurrent_sparsity": {"generation": 1, "training": 1},
+        "recurrent_sparsity": {"generation": 0.5, "training": 0.5},
 
         "neural_recording_sparsity": 1,
         # TODO? output_sparsity?  # Fraction of Y neurons contributing to output
@@ -91,11 +92,11 @@ config = {
         # TODO? Also different for generation and training?
 
         # Weight initialization std for generation and training
-        "init_weights_std": {"generation": {'ff': 0.01, 'rec': 0.01, 'out': 0.01},
+        "init_weights_std": {"generation": {'ff': 1, 'rec': 1, 'out': 1},
                              "training": {'ff': 1, 'rec': 1, 'out': 1}},
 
         "reward_scale": 0,
-        "synaptic_weight_threshold": 10,  # Weights are normally in the range [-4, 4]
+        "synaptic_weight_threshold": 1000,  # Numerical precaution against explosion
         "min_lick_probability": 0.05,  # To encourage exploration, only in reinforcement
 
         "adaptive_bias": True,
@@ -110,10 +111,23 @@ config = {
         # Per-plastic-layer dict or str, in latter case use same for all plastic layers
         "generation_plasticity": {
             # 1xy - 1y2w
-            'ff': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
-                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}],
-            'rec': [{'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
-                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}]
+            'ff': [
+                {'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}
+     ],
+            'rec': [
+                # Exp_76:
+                # {'value': 0.1, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0},
+                # {'value': -1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                # {'value': 0.6, 'pre': 0, 'post': 1, 'weight': 0, 'reward': 0}
+
+                #
+                # {'value': -1, 'pre': 1, 'post': 2, 'weight': 1, 'reward': 0},
+                # {'value': 0.5, 'pre': 0, 'post': 2, 'weight': 0, 'reward': 0},
+
+                # {'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                # {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0}
+                ]
         },
         "generation_models": "volterra",  # "volterra" / "mlp"
         "plasticity_models": "volterra",  # "volterra" / "mlp"
@@ -131,10 +145,10 @@ config = {
         "fit_data": ["neural"],  # ["behavioral", "neural"] / ["reinforcement"]
 
         # Only affects training, generation depends on generation_plasticity
-        "trainable_thetas": "same",  # "same", "different"
-        "trainable_init_weights": [],#'ff', 'rec', 'out'],
+        "trainable_thetas": "different",  # "same", "different"
+        "trainable_init_weights": [],#'ff', 'rec'],  # 'none', 'ff', 'rec', 'both'
 
-        "num_epochs": 250,
+        "num_epochs": 300,
         "learning_rate": 3e-3,
         "max_grad_norm": 0.2,
 
@@ -151,7 +165,7 @@ config = {
 
         "lick_cost": 0.1,  # Cost of each lick in reward-based tasks
 
-        "same_init_thetas": True,  # Use generation thetas for training
+        "same_init_thetas": False,  # Use generation thetas for training
         "same_init_weights": False,  # Use generation weights for training
         "same_init_connectivity": True,  # Use generation connectivity mask for training
         "same_input": True,  # Use generation input for training

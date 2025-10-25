@@ -61,8 +61,7 @@ def neural_mse_loss(
     #     """
     #     y_flat = jnp.ravel(y)
     #     bins = jnp.linspace(0.0, 1.0, n_bins)
-    #     if sigma is None:
-    #         sigma = 1.0 / n_bins  # reasonable default
+    #     sigma = 1.0 / n_bins  # reasonable default
     #     # distances: (n_samples, n_bins)
     #     diffs = y_flat[:, None] - bins[None, :]
     #     weights = jnp.exp(-0.5 * (diffs / sigma) ** 2)
@@ -82,7 +81,7 @@ def neural_mse_loss(
     # y = sim_traj_ys_masked
     # H = soft_hist_entropy(y)
     # edge = edge_penalty(y)
-    # H_loss = -H + 3 * edge
+    # H_loss = -H + 9 * edge
     # return H_loss
     return mse_loss
 

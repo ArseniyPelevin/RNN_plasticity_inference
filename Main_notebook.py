@@ -16,7 +16,6 @@
 # %autoreload 2
 
 import itertools
-import os
 
 import jax
 import jax.numpy as jnp
@@ -25,469 +24,7 @@ import jax.numpy as jnp
 import main
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-
-# import training
-from matplotlib.lines import Line2D
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-
-def plot_coeff_trajectories(exp_id, path, params_table, use_all_81=False):
-    """
-    Plot a single experiment's loss (top) and coefficient trajectories (bottom).
-
-    This function is 100% ChatGPT 5 generated
-
-    Args:
-        exp_id (int): single experiment id
-        params_table (dict): mapping exp_id -> dict of parameters for subplot title
-    """
-
-    # single file path for the single experiment
-    fpath = os.path.join(path, f"Exp_{exp_id}_results.csv")
-    if not os.path.exists(fpath):
-        new_dir = os.path.join(os.path.dirname(path.rstrip('/\\')), f"Exp_{exp_id}")
-        fpath = os.path.join(new_dir, f"Exp_{exp_id}_results.csv")
-
-    # highlight a few columns (if they exist)
-    highlight = {"F_1100", "F_0210"}  # TODO use generation_plasticity config
-
-    # --- read data ---
-    df = pd.read_csv(fpath)
-
-    # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
-    has_eval = 'train_loss_median' in df.columns
-
-    # For 27-mode we keep existing layout; for 81-mode we will recreate below with 3 coeff subplots
-    if not use_all_81:
-        if has_eval:
-            fig, axs = plt.subplots(3, 1, figsize=(10, 8),
-                                    gridspec_kw={'height_ratios': [1, 2, 2]}, sharex=True,
-                                    layout='tight')
-            top_ax, eval_ax, coeff_ax = axs
-        else:
-            fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-            top_ax, coeff_ax = axs
-            eval_ax = None
-    else:
-        # placeholder; we'll create the desired layout (loss + optional eval + 3 coeff subplots)
-        top_ax = eval_ax = coeff_ax = None
-
-    # --- Top: loss subplot (backwards-compatible) ---
-    x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
-
-    # If we didn't yet create axes (use_all_81 True), create them now properly
-    if use_all_81:
-        if has_eval:
-            fig, axs = plt.subplots(5, 1, figsize=(12, 13),
-                                    gridspec_kw={'height_ratios': [1, 1, 2, 2, 2]}, sharex=True)
-            top_ax, eval_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
-            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
-        else:
-            fig, axs = plt.subplots(4, 1, figsize=(12, 13),
-                                    gridspec_kw={'height_ratios': [1, 2, 2, 2]}, sharex=True)
-            top_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
-            eval_ax = None
-            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
-    else:
-        # we already have coeff_ax for 27-mode
-        coeff_axes = [coeff_ax]
-
-    # plot loss on top_ax
-    if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss_median'], color='blue', label='train_loss_median')
-        top_ax.plot(x_epochs, df['test_loss_median'], color='red', label='test_loss_median')
-    elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
-                                           'test_loss_mean','test_loss_std']):
-        top_ax.plot(x_epochs, df['train_loss_mean'], color='blue', label='train_loss')
-        top_ax.fill_between(x_epochs,
-                            df['train_loss_mean'] - df['train_loss_std'],
-                            df['train_loss_mean'] + df['train_loss_std'],
-                            color='blue', alpha=0.2)
-        top_ax.plot(x_epochs, df['test_loss_mean'], color='red', label='test_loss')
-        top_ax.fill_between(x_epochs,
-                            df['test_loss_mean'] - df['test_loss_std'],
-                            df['test_loss_mean'] + df['test_loss_std'],
-                            color='red', alpha=0.2)
-    elif 'train_loss' in df.columns and 'test_loss' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss'], color='blue', label='train_loss')
-        top_ax.plot(x_epochs, df['test_loss'], color='red', label='test_loss')
-    elif 'loss' in df.columns:
-        top_ax.plot(x_epochs, df['loss'], color='blue', label='train_loss')
-
-    top_ax.set_title("Train and Test Loss", fontsize=12)
-    top_ax.legend(loc='upper right')
-    top_ax.grid(True)
-    top_ax.set_ylabel('Loss')
-
-    # --- Middle: evaluation metrics subplot (if available) ---
-    if eval_ax is not None:
-        metrics = ['PDE_F_neural', 'PDE_T_neural', 'PDE_W_neural',
-                   'R2_F_y', 'R2_F_w', 'R2_T_y', 'R2_T_w', 'R2_W_y', 'R2_W_w']
-
-        for metric in metrics:
-            if 'PDE' in metric:
-                line_style = '-'
-                k = 1
-            elif 'R2' in metric:
-                continue
-                k = 100
-                if '_y' in metric:
-                    line_style = '--'
-                elif '_w' in metric:
-                    line_style = ':'
-
-            if '_F_' in metric:
-                color = 'blue'
-            elif '_T_' in metric:
-                color = 'purple'
-            elif '_W_' in metric:
-                color = 'red'
-            if metric in df.columns:
-                eval_ax.plot(x_epochs, df[metric]*k, label=metric,
-                             linestyle=line_style, color=color)
-        eval_ax.legend(loc='center right', fontsize=8)
-        eval_ax.set_ylabel('Percent deviance / R2 * 100')
-        eval_ax.grid(True)
-        eval_ax.set_title("Evaluation Metrics", fontsize=12)
-
-    # --- Bottom: coefficient trajectories ---
-    # find candidate columns like "A_abcd"
-    candidate_cols = [c for c in df.columns if len(str(c).split('_')[-1]) == 4
-                      and str(c).split('_')[-1].isdigit()]
-
-    if use_all_81:
-        data_cols = candidate_cols  # use all 81 A_xxxx columns
-    else:
-        # old behaviour: only those ending with '0' (27 columns)
-        data_cols = [c for c in candidate_cols
-                     if str(c).split('_')[-1].endswith('0')]
-
-    # Fallback: if nothing found
-    if not data_cols:
-        coeff_axes[0].text(0.5, 0.5, "No coefficient columns found in CSV",
-                            ha='center', va='center')
-        plt.show()
-        return
-
-    # parse suffixes
-    parsed = {}
-    for c in data_cols:
-        suffix = str(c).split('_')[-1]
-        a, b, w, r = map(int, list(suffix))
-        parsed[c] = (a, b, w, r)
-
-    # deterministic ordering key
-    def col_key(col):
-        s = str(col).split('_')[-1]
-        return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
-                else (0, 0, 0, 0))
-
-    # assign colors grouped like the 27-mode so r=0 colors match the old plot
-    # build ordered list of base (a,b,w) keys in deterministic order
-    base_keys = []
-    seen = set()
-    for c in sorted(data_cols, key=col_key):
-        a,b,w,r = parsed[c]
-        key3 = (a,b,w)
-        if key3 not in seen:
-            seen.add(key3)
-            base_keys.append(key3)
-
-    # assign colors per base_key but grouped by w (to mimic 27-mode coloring)
-    color_map = {}
-    for w_val in sorted({k[2] for k in base_keys}):
-        group_keys = [k for k in base_keys if k[2] == w_val]
-        n = len(group_keys)
-        cmap = plt.get_cmap('Set1')
-        if n <= 1:
-            colors = [cmap(0.5)]
-        else:
-            colors = [cmap(t) for t in np.linspace(0, 1, n)]
-        for key3, colcolor in zip(group_keys, colors, strict=False):
-            # assign this color to every column that matches the (a,b,w) base key
-            for cc in data_cols:
-                if parsed[cc][:3] == key3:
-                    color_map[cc] = colcolor
-
-    # fallback: ensure every column has a color
-    for c in data_cols:
-        if c not in color_map:
-            color_map[c] = plt.get_cmap('tab10')(0)
-
-    # pretty labels (now include r as well)
-    def pretty_label(col):
-        suffix = str(col).split('_')[-1]
-        a, b, c_, d = map(int, list(suffix))
-        parts = []
-        for exp, var in ((a, 'x'), (b, 'y'), (c_, 'w'), (d, 'r')):
-            if exp == 0:
-                continue
-            if exp == 1:
-                parts.append(var)
-            else:
-                parts.append(f"{var}^{{{exp}}}")
-        return f"${''.join(parts)}$" if parts else col
-
-    label_map = {c: pretty_label(c) for c in data_cols}
-    linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
-
-    x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
-    x_vals = np.asarray(x)
-
-    # --- Special handling for use_all_81: three subplots, same y-limits, no markers, no jitter ---
-    if use_all_81:
-        # compute global y limits across all data columns
-        all_vals = np.hstack([df[c].values for c in data_cols])
-        ymin, ymax = np.min(all_vals), np.max(all_vals)
-        pad = max(1e-8, 0.05 * (ymax - ymin)) if ymax > ymin else 0.1
-        y_lim = (ymin - pad, ymax + pad)
-
-        # build ordered 27 base keys (a,b,w) preserving original order used in 27-mode
-        base_keys = []
-        seen = set()
-        for c in sorted(data_cols, key=col_key):
-            a,b,w,r = parsed[c]
-            key3 = (a,b,w)
-            if key3 not in seen:
-                seen.add(key3)
-                base_keys.append(key3)
-
-        # plot each r in its own axis
-        # allocate extra vertical space so per-axis legends can sit between subplots
-        fig.subplots_adjust(hspace=0.7)
-        for rexp, ax in enumerate(coeff_axes):
-            for c in sorted(data_cols, key=col_key):
-                a,b,w,r = parsed[c]
-                if r != rexp:
-                    continue
-                ls = linestyle_map.get(w, '-')
-                lw = 3 if c in highlight else 2
-                color = color_map.get(c, 'k')
-                # no jitter, no markers
-                ax.plot(x_vals, df[c].values, label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
-            ax.set_ylim(y_lim)
-            ax.grid(True)
-            ax.set_ylabel('')
-
-            # build legend for this axis with 27 base entries (no markers)
-            legend_handles = []
-            legend_labels = []
-            for key3 in base_keys:
-                # find column with r==rexp that matches key3; if not found, pick representative with r==0 for label/color
-                target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == rexp), None)
-                if target is None:
-                    # fall back to any (a,b,w) representative (prefer r=0 to keep color consistent)
-                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3 and parsed[cc][3] == 0), None)
-                if target is None:
-                    # ultimate fallback, pick any matching (a,b,w)
-                    target = next((cc for cc in data_cols if parsed[cc][:3] == key3), None)
-                if target is None:
-                    legend_handles.append(Line2D([0],[0], color='none'))
-                    legend_labels.append('')
-                else:
-                    # line-only proxy (no marker)
-                    color = color_map.get(target, 'k')
-                    ls = linestyle_map.get(parsed[target][2], '-')
-                    lw = 3 if target in highlight else 2
-                    legend_handles.append(Line2D([0],[0], color=color, lw=lw, linestyle=ls))
-                    legend_labels.append(pretty_label(target))
-
-            # place legend beneath this coefficient subplot
-            ax.legend(legend_handles, legend_labels, loc='lower center', bbox_to_anchor=(0.5, -0.65),
-                      ncol=9, fontsize=9, frameon=False)
-
-        # set title on the middle coeff axis (or topmost coeff axis)
-        basename = os.path.basename(fpath)
-        exp_num = exp_id
-        if exp_num is not None and exp_num in params_table:
-            p = params_table[exp_num]
-            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
-            coeff_axes[0].set_title(f"{basename[:-4]}: {param_str}", fontsize=12)
-        else:
-            coeff_axes[0].set_title(basename, fontsize=12)
-
-    else:
-        # --- existing 27-parameter plotting logic (unchanged) ---
-        # group by w-exponent (third digit of suffix) for coloring / styling
-        groups = {}
-        parsed = {}
-        for c in data_cols:
-            suffix = str(c).split('_')[-1]
-            a, b, w, r = map(int, list(suffix))
-            groups.setdefault(w, []).append(c)
-            parsed[c] = (a, b, w, r)
-
-        # deterministic ordering key
-        def col_key(col):
-            s = str(col).split('_')[-1]
-            return (tuple(map(int, list(s))) if len(s) == 4 and s.isdigit()
-                    else (0, 0, 0, 0))
-
-        # assign colors within each w-group
-        color_map = {}
-        for _wexp, cols in groups.items():
-            cols_sorted = sorted(cols, key=col_key)
-            n = len(cols_sorted)
-            cmap = plt.get_cmap('Set1')
-            colors = [cmap(0.5)] if n == 1 else [cmap(t)
-                                                 for t in np.linspace(0, 1, n)]
-            for col, colcolor in zip(cols_sorted, colors, strict=False):
-                color_map[col] = colcolor
-
-        # pretty labels (now include r as well)
-        def pretty_label(col):
-            suffix = str(col).split('_')[-1]
-            a, b, c_, d = map(int, list(suffix))
-            parts = []
-            for exp, var in ((a, 'x'), (b, 'y'), (c_, 'w'), (d, 'r')):
-                if exp == 0:
-                    continue
-                if exp == 1:
-                    parts.append(var)
-                else:
-                    parts.append(f"{var}^{{{exp}}}")
-            return f"${''.join(parts)}$" if parts else col
-
-        label_map = {c: pretty_label(c) for c in data_cols}
-        linestyle_map = {0: '-', 1: '--', 2: ':'}  # W^0,W^1,W^2
-
-        x = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
-        ax = coeff_axes[0]
-
-        # jitter in axis units: small horizontal offset for R groups
-        jitter = 1.0
-        x_vals = np.asarray(x)
-
-        # plot lines + markers according to R (original behavior)
-        for c in sorted(data_cols, key=col_key):
-            a, b, wexp, rexp = parsed[c]
-            lw = 3 if c in highlight else 2
-            ls = linestyle_map.get(wexp, '-')
-            color = color_map.get(c, 'k')
-            # shift both line and markers by rexp * jitter (in axis units)
-            x_plot = x_vals + (rexp * jitter)
-            ax.plot(x_plot, df[c], label=label_map.get(c, c), linewidth=lw, linestyle=ls, color=color)
-            # overlay markers for R=1 and R=2 (same shift)
-            if rexp == 1:
-                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                        markerfacecolor=color, markeredgecolor=color)
-            elif rexp == 2:
-                ax.plot(x_plot, df[c], linestyle='None', marker='o', markersize=4,
-                        markerfacecolor='none', markeredgecolor=color)
-
-        # title with parameters if available
-        basename = os.path.basename(fpath)
-        exp_num = exp_id
-        if exp_num is not None and exp_num in params_table:
-            p = params_table[exp_num]
-            param_str = ', '.join(f'{key}={value}' for key, value in p.items())
-            ax.set_title(f"Exp_{exp_num}: {param_str}", fontsize=12)
-        else:
-            ax.set_title(f"Exp_{exp_num}", fontsize=12)
-
-        ax.grid(True)
-        ax.set_xlabel('epoch')
-
-        # build legend handles for each R block separately
-        # (preserve same base 27 order)
-        # create ordered list of 27 unique (a,b,w) combos
-        base_keys = []
-        seen = set()
-        for c in sorted(data_cols, key=col_key):
-            a,b,w,r = parsed[c]
-            key3 = (a,b,w)
-            if key3 not in seen:
-                seen.add(key3)
-                base_keys.append(key3)
-
-        # helper to make a proxy handle (include marker for R1/R2)
-        def proxy_handle(col, rexp):
-            a, b, wexp, _ = parsed[col]
-            color = color_map.get(col, 'k')
-            ls = linestyle_map.get(wexp, '-')
-            lw = 3 if col in highlight else 2
-            if rexp == 0:
-                return Line2D([0], [0], color=color, lw=lw, linestyle=ls)
-            if rexp == 1:
-                return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                              marker='o', markerfacecolor=color, markersize=6)
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls,
-                          marker='o', markerfacecolor='none', markersize=6)
-
-        # now build handles/labels per R
-        handles_by_r = {0: [], 1: [], 2: []}
-        labels_by_r = {0: [], 1: [], 2: []}
-        for rexp in (0,1,2):
-            for key3 in base_keys:
-                # find column with this (a,b,w) and r=rexp
-                target = next((cc for cc in data_cols
-                               if parsed[cc][:3] == key3
-                               and parsed[cc][3] == rexp), None)
-                if target is None:
-                    h = Line2D([0],[0], color='none')
-                    lbl = ''
-                else:
-                    h = proxy_handle(target, rexp)
-                    lbl = label_map.get(target, target)
-                handles_by_r[rexp].append(h)
-                labels_by_r[rexp].append(lbl)
-
-        # older 27-parameter legend (unchanged)
-        legend_handles = []
-        legend_labels = []
-        for key3 in base_keys:
-            target = next((cc for cc in data_cols
-                           if parsed[cc][:3] == key3
-                           and parsed[cc][3] == 0), None)
-            if target is None:
-                target = next((cc for cc in data_cols
-                               if parsed[cc][:3] == key3), None)
-            if target is None:
-                legend_handles.append(Line2D([0], [0], color='none'))
-                legend_labels.append('')
-            else:
-                legend_handles.append(proxy_handle(target, 0))
-                legend_labels.append(label_map.get(target, target))
-        fig.subplots_adjust(bottom=0.30, hspace=0.50, top=0.92)
-
-        ncol = 9
-        fig.legend(legend_handles, legend_labels,
-                   loc='lower center', bbox_to_anchor=(0.5, -0.10),
-                   bbox_transform=fig.transFigure,
-                   ncol=ncol,
-                   fontsize=11, frameon=False, handlelength=2.4,
-                   markerscale=1.0, labelspacing=0.30, columnspacing=1.0,
-                   handletextpad=0.5,
-                   handleheight=1.0, borderaxespad=0.5)
-
-    # ensure x-axis ticks are sparse (every 5th epoch) but markers remain at each epoch
-    # choose ticks based on epoch *values* (even if epoch spacing isn't uniform)
-    if len(x_vals) > 1:
-        epoch_step = np.median(np.diff(x_vals))
-        desired_interval = 5 * epoch_step
-        # select epoch values that are multiples of desired_interval (within tolerance)
-        tol = max(1e-8, desired_interval * 0.01)
-        mask = np.isclose(((x_vals - x_vals[0]) % desired_interval), 0, atol=tol)
-        tick_positions = x_vals[mask]
-        # fallback if mask selects too few points: use index-based every-5th
-        if len(tick_positions) < 2:
-            idxs = np.arange(0, len(x_vals), 5)
-            if idxs[-1] != len(x_vals)-1:
-                idxs = np.concatenate([idxs, [len(x_vals)-1]])
-            tick_positions = x_vals[idxs]
-    else:
-        tick_positions = x_vals
-
-    # set xticks on the bottom-most axis
-    coeff_axes[-1].set_xticks(tick_positions)
-    coeff_axes[-1].set_xticklabels([str(int(v)) if float(v).is_integer() else str(v)
-                                     for v in tick_positions])
-
-    plt.show()
-
-    return fig
-
+import plotting_utils
 
 # +
 # Set parameters and run experiment
@@ -512,7 +49,7 @@ behavioral_experiments_config_table = {
      8: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
          '\nscale_by_N_inputs': True, 'init_weights_std': 'ff=0.1, rec=0.1'},
      9: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
-         '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=0.1, rec=0.1'},
+         '/nscale_by_N_inputs': False, 'init_weights_std': 'ff=0.1, rec=0.1'},
     10: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
          '\nscale_by_N_inputs': False, 'init_weights_std': 'ff=Kaiming, rec=Kaiming'},
     11: {"N_in": 50, "N_out": 50, 'plasticity': "ff, rec",
@@ -576,22 +113,109 @@ behavioral_experiments_config_table = {
     69: {'plasticity_layers': ["ff", "rec"], 'trainable_w': "None",
          "\nuse_ff_bias": False, "recurrent_input_scale": 0.5, "input_noise_std": 0, "seed": 47,
          "\ninput_sparsity_gen": 0.3, "input_sparsity_train": 0.3, "rec_bias": True},
+    76: {'plasticity_layers': ["rec"], 'trainable_w': ["ff", "rec"],
+         "\nnum_x": 50, "num_y": 100, "input_sparsity_gen": 0.3, "input_sparsity_train": 0.3,
+         "\nrule": "$-xy + 0.6y - 0.1w$"},
+    77: {"loss": "-H + 5 * edge", "L2": -0.1, "synaptic_weight_threshold": 10},
+    78: {'plasticity_layers': ["rec"], 'trainable_w': ["ff", "rec"],
+         "\nnum_x": 50, "num_y": 100, "input_sparsity_gen": 0.3, "input_sparsity_train": 0.3,
+         "\nrule": "$-0.1xy^2 - 0.2xy - 0.2y^2 + 0.1w + 0.1$"},
+    79: {'plasticity_layers': ["rec"], 'trainable_w': ["ff", "rec"],
+         "\nnum_x": 10, "num_y": 20, "input_sparsity_gen": 0.3, "input_sparsity_train": 0.3,
+         "\nrule": "$-0.1xy^2 - 0.2xy - 0.2y^2 + 0.1w + 0.1$"},
+    80: {"loss": "-H + 5 * edge", "L2": -0.1, "synaptic_weight_threshold": 1000},
+    81: {"loss": "5 * edge", "synaptic_weight_threshold": 1000},
+    82: {"loss": "-H + 5 * edge", "synaptic_weight_threshold": 1000},
+    83: {"loss": "-H + 7 * edge", "L2": -0.05, "synaptic_weight_threshold": 1000},
+    84: {"trainable_weights": "none", "loss": "-H + 10 * edge", "L2": -0.01, "synaptic_weight_threshold": 1000},
+    85: {"trainable_weights": "none", "loss": "-H + 9 * edge", "L2": -0.02, "synaptic_weight_threshold": 1000},
+    86: {"trainable_weights": "none", "loss": "-H + 9 * edge", "L2": -0.01, "synaptic_learning_rate": 0.3},
+    87: {'plasticity_layers': ["rec"], 'trainable_w': "none", "synaptic_learning_rate": 0.1, "input_type": "task",
+         "\nnum_x": 20, "num_y": 30, "input_sparsity_gen": 0.3, "input_sparsity_train": 0.3,
+         "\nrule": "$-0.15xy^2w - 0.2y^2w + 0.2xyw + 0.15yw - 0.03w$"},
+    88: {'plasticity_layers': ["rec"], 'trainable_w': "none", "synaptic_learning_rate": 0.3, "input_type": "task",
+         "\nnum_x": 29, "num_y": 30, "input_sparsity_gen": 0.5, "input_sparsity_train": 0.5, "ff_spars_gen": 1, "ff_spars_train": 1,
+         "\nrule": "$-xy^2w + 0.5y^2$"},
+    89: {"same_init_thetas": True, "same_init_weights": True, "same_init_connectivity": True},
+    90: {"same_init_thetas": True, "same_init_weights": False, "same_init_connectivity": True},
+    91: {"same_init_thetas": False, "same_init_weights": True, "same_init_connectivity": True},
+    92: {"same_init_thetas": False, "same_init_weights": False, "same_init_connectivity": True},
+    93: {"same_init_thetas": True, "same_init_weights": True, "same_init_connectivity": True, "same_input": True,},
+    94: {"same_init_thetas": False, "same_init_weights": True, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "trials": 1},
+    95: {"same_init_thetas": False, "same_init_weights": True, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False, "trials": 1},
+    96: {"same_init_thetas": True, "same_init_weights": False, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False, "trials": 5},
+    97: {"continued learning": "test"},
+    98: {"same_init_thetas": True, "same_init_weights": True, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False},
+    99: {"same_init_thetas": True, "same_init_weights": False, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False},
+    100: {"same_init_thetas": False, "same_init_weights": True, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False},
+    101: {"same_init_thetas": False, "same_init_weights": False, "same_init_connectivity": True, "same_input": True,
+         "\ninput_sparsity": 1, "ff_sparsity": 1, "rec_sparsity": 0.3, "coeff_mask": False},
 }
 
 cfg = main.create_config()
 
-cfg.logging.exp_id = 70
+# cfg.logging.exp_id = 97
+# cfg.training.num_epochs = 100
+# cfg.logging.log_interval = 1
+path = r"C:\Users\pelevina\Desktop\Plasticity_inference_project\03_data\02_training_data\Exp_96/"
+# params, expdata, trajectories, _losses_and_r2s = main.continue_experiment(path)
+# print(f"{trajectories.keys()=}")
 
-path = None
-params, expdata, trajectories, _losses_and_r2s, path = main.run_experiment(cfg, seed=47)
-if not path:  # When run to plot older experiment
-    path = cfg.logging.log_dir + f"Exp_{cfg.logging.exp_id}/"
+# cfg.training.same_init_thetas = True
+# cfg.training.same_init_weights = False
+# cfg.training.same_init_connectivity = True
+# cfg.training.same_input = True
 
-fig = plot_coeff_trajectories(cfg.logging.exp_id, path, behavioral_experiments_config_table,
-                              use_all_81=False)
-fig.savefig(path + f"Exp_{cfg.logging.exp_id}_coeff_trajectories.png",
-            dpi=300, bbox_inches="tight")
-plt.close(fig)
+# path = None
+# params, expdata, trajectories, _losses_and_r2s, path = main.run_new_experiment(cfg)
+# if not path:  # When run to plot older experiment
+#     path = cfg.logging.log_dir + f"Exp_{cfg.logging.exp_id}/"
+
+plotting_utils.plot_init_weights_heatmaps(path, epochs=[350, 400, 800])
+
+# plotting_utils.plot_experiment_results(path, behavioral_experiments_config_table, show_plots=True, save_plots=True)
+
+# +
+cfg = main.create_config()
+
+print("EXPERIMENT 98")
+cfg.training.same_init_thetas = True
+cfg.training.same_init_weights = True
+cfg.training.same_init_connectivity = True
+cfg.logging.exp_id = 98
+params, expdata, trajectories, _losses_and_r2s, path = main.run_new_experiment(cfg)
+plotting_utils.plot_experiment_results(path, cfg, behavioral_experiments_config_table, show_plots=True)
+
+print("EXPERIMENT 99")
+cfg.training.same_init_thetas = True
+cfg.training.same_init_weights = False
+cfg.training.same_init_connectivity = True
+cfg.logging.exp_id = 99
+params, expdata, trajectories, _losses_and_r2s, path = main.run_new_experiment(cfg)
+plotting_utils.plot_experiment_results(path, cfg, behavioral_experiments_config_table, show_plots=True)
+
+print("EXPERIMENT 100")
+cfg.training.same_init_thetas = False
+cfg.training.same_init_weights = True
+cfg.training.same_init_connectivity = True
+cfg.logging.exp_id = 100
+params, expdata, trajectories, _losses_and_r2s, path = main.run_new_experiment(cfg)
+plotting_utils.plot_experiment_results(path, cfg, behavioral_experiments_config_table, show_plots=True)
+
+print("EXPERIMENT 101")
+cfg.training.same_init_thetas = False
+cfg.training.same_init_weights = False
+cfg.training.same_init_connectivity = True
+cfg.logging.exp_id = 101
+params, expdata, trajectories, _losses_and_r2s, path = main.run_new_experiment(cfg)
+plotting_utils.plot_experiment_results(path, cfg, behavioral_experiments_config_table, show_plots=True)
+
 # +
 # inspect equinox module content
 import dataclasses
@@ -687,109 +311,266 @@ key = jax.random.key(1912)
 cfg = main.create_config()
 cfg.logging.log_trajectories = False
 train_experiments = experiment.generate_experiments(key, cfg, mode='train')
-# params, expdata = main.run_experiment(cfg)
+# params, expdata = main.run_new_experiment(cfg)
 # plasticity = plasticity.initialize_plasticity(key, cfg.plasticity, 'training')
 # exp = train_experiments[0]
 # inspect_eqx_module(plasticity['both'])
 inspect_eqx_module(train_experiments[0])
 
+# +
+# Generate and plot experiments with specific plasticity rules
+import experiment
+
+cfg = main.create_config()
+
+def plot_xy(gen_experiments):
+    fig, ax = plt.subplots(num_exp*2, 1, layout='tight', figsize=(8, 12))
+    for i in range(num_exp):
+        n_steps = gen_experiments[i].data['xs'][0].T.shape[1]
+        imx = ax[2*i].imshow(gen_experiments[i].data['xs'][0].T, cmap='viridis',
+                            interpolation='none', aspect='auto',
+                            extent=[0, n_steps, 0, gen_experiments[i].data['xs'][0].T.shape[0]])
+        ax[2*i].set_title(f'Exp {i}: X activity', fontsize=10)
+        ax[2*i].set_ylabel('X neuron')
+        plt.colorbar(imx, ax=ax[2*i])
+        imy = ax[2*i+1].imshow(gen_experiments[i].data['ys'][0].T, cmap='viridis',
+                            interpolation='none', aspect='auto',
+                            extent=[0, n_steps, 0, gen_experiments[i].data['ys'][0].T.shape[0]])
+
+        ax[2*i+1].set_title(f'Exp {i}: Y activity', fontsize=10)
+        ax[2*i+1].set_ylabel('Y neuron')
+        plt.colorbar(imy, ax=ax[2*i+1])
+    ax[2*num_exp-1].set_xlabel('Step')
+    plt.title(f'Generated X and Y activities with {f=}')
+    plt.show()
+
+def init_gen_experiments(f):
+    cfg.plasticity.generation_plasticity = {
+        'rec':
+        # -0.07y2 - 0.08y + 0.06 - 0.6w: homeostasis-rate-dependent oscillations
+        # [{'value': 0.6, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0},
+        #  {'value': 0.06, 'pre': 0, 'post': 0, 'weight': 0, 'reward': 0},
+        #  {'value': -0.08, 'pre': 0, 'post': 1, 'weight': 0, 'reward': 0},
+        #  {'value': -0.07, 'pre': 0, 'post': 2, 'weight': 0, 'reward': 0}]
+
+        # -0.1xy2 -0.2xy2 -0.2y +0.1w +0.1: uniform activity
+        # [{'value': 0.1, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0},
+        #  {'value': 0.1, 'pre': 0, 'post': 0, 'weight': 0, 'reward': 0},
+        #  {'value': -0.2, 'pre': 0, 'post': 2, 'weight': 0, 'reward': 0},
+        #  {'value': -0.2, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+        #  {'value': -0.1, 'pre': 1, 'post': 2, 'weight': 0, 'reward': 0}]
+
+        # Exp 84, epoch 140 rule. Uniform activity and stable weights.
+        # R_1210	-0.18946
+        # R_0210	-0.17745
+        # R_1110	0.169058
+        # R_0110	0.163479
+            # [{'value': -0.18946, 'pre': 1, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': -0.17745, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': 0.169058, 'pre': 1, 'post': 1, 'weight': 1, 'reward': 0},
+            #  {'value': 0.163479, 'pre': 0, 'post': 1, 'weight': 1, 'reward': 0},
+
+            # {'value': -0.03, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0}]
+        # Modification and simplification of the above rule
+            # [{'value': -0.15, 'pre': 1, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': -0.2, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': 0.2, 'pre': 1, 'post': 1, 'weight': 1, 'reward': 0},
+            #  {'value': 0.15, 'pre': 0, 'post': 1, 'weight': 1, 'reward': 0},
+
+            #  {'value': -0.03, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0}]
+
+        # Exp 85-inspired. Irregular oscillations. Weights around +1. Exps 89-101
+            # [{'value': -1, 'pre': 1, 'post': 2, 'weight': 1, 'reward': 0},
+            # {'value': 0.5, 'pre': 0, 'post': 2, 'weight': 0, 'reward': 0},]
+            # # For oscillations with constant input:
+            # {'value': 0.2, 'pre': 0, 'post': 1, 'weight': 1, 'reward': 0}],
+
+        # Exp 86 simplification: slow aperiodic waves
+            # [{'value': -1, 'pre': 1, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': 1, 'pre': 1, 'post': 1, 'weight': 1, 'reward': 0},
+            #  {'value': 0.5, 'pre': 0, 'post': 1, 'weight': 1, 'reward': 0},
+            #  {'value': -1, 'pre': 0, 'post': 2, 'weight': 1, 'reward': 0},
+            #  {'value': 0.3, 'pre': 0, 'post': 1, 'weight': 0, 'reward': 0},
+
+            #  {'value': -0.2, 'pre': 0, 'post': 0, 'weight': 1, 'reward': 0}]
+
+        # Balanced Hebbian
+            [
+                {'value': (2*f - 1), 'pre': 1, 'post': 1, 'weight': 1, 'reward': 0},
+                {'value': 1, 'pre': 1, 'post': 1, 'weight': 0, 'reward': 0},
+                {'value': -f, 'pre': 1, 'post': 0, 'weight': 1, 'reward': 0},
+                {'value': -f, 'pre': 0, 'post': 1, 'weight': 1, 'reward': 0}
+            ]
+    }
+
+    key = jax.random.key(123)
+    cfg.experiment.num_exp_train = num_exp
+    # cfg.experiment.input_type = 'task'
+    cfg.experiment.input_firing_mean = 0
+    gen_experiments = experiment.generate_experiments(key, cfg, mode='test')
+
+    return gen_experiments
+
+num_exp = 5
+for f in [0, 0.5, 1]:
+    print(f"Generating experiments with f={f}")
+    gen_experiments = init_gen_experiments(float(f))
+    plot_xy(gen_experiments)
+    plt.hist(gen_experiments[0].data['ys'][:, 0:100].flatten(), bins=30, label='Steps 0-100')
+    plt.hist(gen_experiments[0].data['ys'][:, 100:200].flatten(), bins=30, label='Steps 100-200')
+    plt.hist(gen_experiments[0].data['ys'][:, 200:300].flatten(), bins=30, label='Steps 200-300')
+    plt.legend()
+    plt.title(f'Y activity distribution for f={f}')
+    plt.show()
+
+fig, ax = plt.subplots(num_exp, 1, layout='tight', figsize=(6, 4))
+for i in range(num_exp):
+    w_rec = gen_experiments[i].weights_trajec['w_rec'][0]
+    print(w_rec.shape)
+    im = ax[i].plot(w_rec.reshape(w_rec.shape[0], -1), alpha=0.5)
+    ax[i].set_title(f'Exp {i}: Recurrent weights', fontsize=10)
+plt.show()
 
 # +
-# Plot activity and weights trajectories
-# print(trajectories[0].keys())
-# print(trajectories[0]['xs'].shape)  # (num_steps, num_neurons_in)
-# print(trajectories[0]['outputs'].shape)  # (num_steps, num_neurons_out)
-# print(trajectories[0]['rewards'].shape)  # (num_steps, num_neurons_out)
+# Chaotic network: phase portrait and neuron activities
+import equinox as eqx
+import jax
+from matplotlib.collections import LineCollection
 
-def plot_step_weights_heatmap(epoch, step, ax_i):
-    exp, sess = 0, 0
-    wff = trajectories[epoch][exp]['weights']['w_ff'][sess]
-    # wrec = trajectories[epoch][exp]['weights']['w_rec'][sess]
 
-    wff_ax = ax[ax_i, 0].imshow(wff[step], aspect='auto', cmap='viridis', interpolation='none')
-    plt.colorbar(wff_ax, ax=ax[ax_i, 0])
-    ax[ax_i, 0].set_title('Feedforward weights, epoch %d, step %d' % (epoch, step))
-    ax[ax_i, 0].set_xlabel('Y neurons')
-    ax[ax_i, 0].set_ylabel('X neurons')
+class Net(eqx.Module):
+    J_ij: jnp.ndarray
+    J: float
+    N: int
+    g: float
+    dt: float
 
-    wrec_ax = ax[ax_i, 1].imshow(wrec[step], aspect='auto', cmap='viridis', interpolation='none')
-    plt.colorbar(wrec_ax, ax=ax[ax_i, 1])
-    ax[ax_i, 1].set_title('Recurrent weights, epoch %d, step %d' % (epoch, step))
-    ax[ax_i, 1].set_xlabel('Y neurons')
-    ax[ax_i, 1].set_ylabel('Y neurons')
+    def __init__(self, key, J, N, g, dt=0.01):
+        k1, _ = jax.random.split(key)
+        self.J = J; self.N = N; self.g = g; self.dt = dt
+        self.J_ij = jax.random.normal(k1, (N, N)) * (J / jnp.sqrt(N))
+        self.J_ij = self.J_ij - jnp.diag(jnp.diag(self.J_ij))  # zero diagonal
 
-def plot_epoch_weights_traces(epoch, ax_i):
-    wff = trajectories[epoch][exp]['weights']['w_ff'][sess]
-    # wrec = trajectories[epoch][exp]['weights']['w_rec'][sess]
-    output = trajectories[epoch][exp]['outputs'][sess]
-    d = trajectories[epoch][exp]['decisions'][sess]
-    r = trajectories[epoch][exp]['rewards'][sess]
+    @eqx.filter_jit
+    def __call__(self, key, h):
+        dh = -h + jnp.dot(self.J_ij, jnp.tanh(self.g * h))
+        h += self.dt * dh
+        return h
 
-    traces_ff = wff.reshape(wff.shape[0], -1).T
-    # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_ff.shape[0]))
-    # colors_pl = plt.get_cmap('cool')(np.linspace(0, 1, cfg.experiment.num_place_neurons * wff.shape[-1]))
-    # colors_vis = plt.get_cmap('autumn')(np.linspace(0, 1, (wff.shape[-2]-cfg.experiment.num_place_neurons-1) * wff.shape[-1]))
-    # colors_v = plt.get_cmap("Greens")(np.linspace(0, 1, cfg.experiment.num_velocity_neurons * wff.shape[-1]))  # single green for last group
-    # colors = np.concatenate([colors_pl, colors_vis, colors_v])
-    # repeat each presyn color for all posts so it matches traces_ff rows
-    # colors_traces = np.repeat(colors_pre, wff.shape[-1], axis=0)
-    # for trace, color in zip(traces_ff, colors, strict=False):
-    #     ax[ax_i, 0].plot(trace, color=color, alpha=0.1)
-    for trace in traces_ff:
-        ax[ax_i, 0].plot(trace, color='orange', alpha=0.1)
-    ax[ax_i, 0].plot(output, color='gray', linewidth=2, label='output', alpha=0.5)
-    idx = np.flatnonzero(np.asarray(d) == 1)
-    ax[ax_i, 0].scatter(idx, np.where(np.asarray(r)[idx] == 1, 1, 0), s=10, c='k', zorder=10)
+key = jax.random.PRNGKey(1234)
+key, k1, k2 = jax.random.split(key, 3)
+gJ = 2.3
+model = Net(k1, J=np.sqrt(gJ), N=150, g=np.sqrt(gJ), dt=0.1)
+h = jax.random.normal(k2, (model.N,))
+hs = []
+for t in range(100000):
+    key, subkey = jax.random.split(key)
+    h = model(subkey, h)
+    hs.append(h)
+hs = jnp.array(hs)
 
-    ax[ax_i, 0].set_title('Feedforward weights traces, epoch %d' % epoch)
-    ax[ax_i, 0].set_xlabel('Steps')
+X = np.array(hs)                 # (T, N)
+Xc = X - X.mean(axis=0)
+U, s, Vt = np.linalg.svd(Xc, full_matrices=False)
+pcs = Xc @ Vt.T                  # projected data (T, N)
+plt.figure(figsize=(6,6))
+# plt.plot(pcs[:,0], pcs[:,1], alpha=0.7)
+points = pcs[:, :2]
+segments = np.stack([points[:-1], points[1:]], axis=1)
+lc = LineCollection(segments, cmap='rainbow', norm=plt.Normalize(0, 1))
+lc.set_array(np.linspace(0, 1, len(segments)))
+# lc.set_linewidth(2)
+ax = plt.gca()
+ax.add_collection(lc)
+ax.autoscale()
+plt.colorbar(lc, label='time progression')
 
-    # traces_rec = wrec.reshape(wrec.shape[0], -1).T
-    # colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_rec.shape[0]))
-    # for trace, color in zip(traces_rec, colors, strict=False):
-    #     ax[ax_i, 1].plot(trace, color=color, alpha=0.1)
-    # ax[ax_i, 1].set_title('Recurrent weights traces, epoch %d' % epoch)
-    # ax[ax_i, 1].set_xlabel('Steps')
-
-epoch = 250
-fig, ax = plt.subplots(5, 2, figsize=(10, 12), layout='tight')
-
-exp, sess = 0, 0
-xs = trajectories[epoch][exp]['xs'][sess].T
-ys = trajectories[epoch][exp]['ys'][sess].T
-n_steps = xs.shape[1]
-
-xs_ax = ax[0, 0].imshow(xs, aspect='auto',
-                      cmap='viridis', interpolation='none', origin='lower')
-ax[0, 0].set_title('X, epoch %d' % epoch)
-# fig.colorbar(xs_ax, ax=ax[0, 0], fraction=0.046, pad=0.04)
-divider = make_axes_locatable(ax[0, 0])
-cax = divider.append_axes("right", size="1.5%", pad=0.03)
-fig.colorbar(xs_ax, cax=cax)
-ax[0, 0].set_ylabel('Neurons')
-ax[0, 0].set_xlabel('Steps')
-
-ys_ax = ax[0, 1].imshow(ys, aspect='auto',
-                      cmap='viridis', interpolation='none', origin='lower')
-ax[0, 1].set_title('Y, epoch %d' % epoch)
-# fig.colorbar(ys_ax, ax=ax[0, 1], fraction=0.04, pad=0.01, location=)
-divider = make_axes_locatable(ax[0, 1])
-cax = divider.append_axes("right", size="1.5%", pad=0.03)
-fig.colorbar(ys_ax, cax=cax)
-ax[0, 1].set_ylabel('Neurons')
-ax[0, 1].set_xlabel('Steps')
-
-for irow in range(ax.shape[0]):
-    for jcol in range(ax.shape[1]):
-        ax[irow, jcol].set_xlim(-0.5, n_steps - 0.5)
-
-plot_epoch_weights_traces(epoch=0, ax_i=1)
-plot_epoch_weights_traces(epoch=40, ax_i=2)
-plot_epoch_weights_traces(epoch=100, ax_i=3)
-plot_epoch_weights_traces(epoch=250, ax_i=4)
+plt.scatter(pcs[0,0], pcs[0,1], color='green', label='start')
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title(f"Phase portrait: PC1 vs PC2 (gJ={gJ}, N={model.N})")
+plt.axis('equal')
+plt.grid(True)
 plt.show()
-fig.savefig(path + f"Exp_{cfg.logging.exp_id}_weights_traces.png",
-            dpi=300, bbox_inches="tight")
+
+
+plt.figure(figsize=(8, 4))
+plt.imshow(hs.T, aspect='auto', cmap='viridis')
+plt.colorbar(label='Neuron activity')
+plt.xlabel('Time step')
+plt.ylabel('Neuron index')
+plt.title(f'RNN Neuron Activities Over Time (gJ={gJ}, N={model.N})')
+plt.show()
+
+
+# +
+# Chaotic network: Map of largest Lyapunov exponent over (N, gJ)
+import tqdm
+
+Ns = [50, 100, 150, 200, 250, 300, 400, 500, 600, 750, 1000]
+gJ_list = np.arange(1.0, 7.0, 0.5)
+key = jax.random.PRNGKey(0)
+steps = 2000
+dt = 0.1
+
+lyap_grid = np.zeros((len(Ns), len(gJ_list)))
+
+tqdm_bar = tqdm.tqdm(total=len(Ns)*len(gJ_list))
+for i,N in enumerate(Ns):
+    for j,gJ in enumerate(gJ_list):
+        key, k1, k2, k3 = jax.random.split(key, 4)
+        model = Net(k1, J=np.sqrt(gJ), N=N, g=np.sqrt(gJ), dt=dt)
+        map_step = lambda h: h + model.dt * (-h + jnp.dot(model.J_ij, jnp.tanh(model.g * h)))
+        h = jax.random.normal(k2, (N,))
+        v = jax.random.normal(k3, (N,)); v = v / jnp.linalg.norm(v)
+        s = 0.0
+        for _ in range(steps):
+            h = map_step(h)
+            _, jvp = jax.jvp(map_step, (h,), (v,))
+            v = jvp
+            nrm = jnp.linalg.norm(v) + 1e-16
+            v = v / nrm
+            s += jnp.log(nrm)
+        lyap_grid[i, j] = float(s) / (steps * dt)
+        tqdm_bar.update(1)
+Ns_arr = np.array(Ns)
+gJ_arr = np.array(gJ_list)
+plt.figure(figsize=(7,5))
+X, Y = np.meshgrid(Ns_arr, gJ_arr)                 # grid at sampled points
+plt.pcolormesh(X, Y, lyap_grid.T, shading='auto')  # use .T to match shapes
+c = plt.colorbar(); c.set_label('largest Lyapunov exponent')
+plt.xlabel('N'); plt.ylabel('gJ'); plt.title('Lyapunov map')
+
+plt.xticks(Ns_arr, rotation=45)   # ticks correspond exactly to sampled N
+plt.yticks(gJ_arr)
+plt.tight_layout()
+plt.show()
+# -
+
+# Chaotic network: Plot distance between two close trajectories as a function of time
+import jax
+import jax.numpy as jnp
+import numpy as np
+
+
+def lyap_trace(model, h0, steps=2000, eps=1e-8):
+    # copy of your key-handling but same subkeys for both trajectories
+    key = jax.random.PRNGKey(0)
+    h1 = h0 + eps * jax.random.normal(key, h0.shape)
+    d = []
+    k = key
+    for t in range(steps):
+        k, sub = jax.random.split(k)
+        h0 = model(sub, h0)
+        h1 = model(sub, h1)   # same subkey -> same noise
+        d.append(float(jnp.linalg.norm(h1-h0)))
+    d = np.array(d)
+    return np.log(d + 1e-20)
+h0 = jax.random.normal(jax.random.PRNGKey(7),(model.N,))
+logd = lyap_trace(model, h0, steps=200000)
+import matplotlib.pyplot as plt
+
+plt.plot(logd); plt.xlabel("t"); plt.ylabel("log dist"); plt.show()
 
 # +
 # Plot example input
@@ -839,7 +620,7 @@ cfg.num_epochs = 300
 for steps in [5, 10, 15, 20, 50, 100, 150]:
     cfg.mean_steps_per_trial = steps
     cfg.logging.exp_id += 1
-    _activation_trajs, _losses_and_r2s = main.run_experiment(cfg)
+    _activation_trajs, _losses_and_r2s = main.run_new_experiment(cfg)
 
     param_table = {
         cfg.logging.exp_id: {
@@ -878,7 +659,7 @@ plt.show()
 # +
 # Exp63-170
 def run(cfg):
-    _activation_trajs = main.run_experiment(cfg)
+    _activation_trajs = main.run_new_experiment(cfg)
 
     params_table = {cfg.logging.exp_id: {
         'trainable': str(cfg.trainable_init_weights),
@@ -949,42 +730,42 @@ for trainable in [[], ["w_rec"], ["w_rec", "w_ff"]]:
 print("\nEXPERIMENT 10")
 cfg.logging.exp_id = 10
 cfg.input_firing_std = 0.5
-main.run_experiment()
+main.run_new_experiment()
 
 print("\nEXPERIMENT 11")
 cfg.logging.exp_id = 11
 cfg.input_firing_std = 0.1
-main.run_experiment()
+main.run_new_experiment()
 
 cfg.input_firing_std = 1
 
 print("\nEXPERIMENT 12")
 cfg.logging.exp_id = 12
-cfg.synapse_learning_rate = 0.5
-main.run_experiment()
+cfg.synaptic_learning_rate = 0.5
+main.run_new_experiment()
 
 print("\nEXPERIMENT 13")
 cfg.logging.exp_id = 13
-cfg.synapse_learning_rate = 1
-main.run_experiment()
+cfg.synaptic_learning_rate = 1
+main.run_new_experiment()
 
-cfg.synapse_learning_rate = 0.1
+cfg.synaptic_learning_rate = 0.1
 
 print("\nEXPERIMENT 14")
 cfg.logging.exp_id = 14
 cfg.init_weights_std = 0.05
-main.run_experiment()
+main.run_new_experiment()
 
 print("\nEXPERIMENT 15")
 cfg.logging.exp_id = 15
 cfg.init_weights_std = 0.01
-main.run_experiment()
+main.run_new_experiment()
 
 cfg.init_weights_std = 0.1
 
 print("\nEXPERIMENT 16")
 cfg.logging.exp_id = 16
-main.run_experiment()
+main.run_new_experiment()
 
 
 # +
@@ -993,7 +774,7 @@ main.run_experiment()
 cfg.num_exp_train = 25
 cfg.input_noise_std = 0
 cfg.input_firing_std = 1
-cfg.synapse_learning_rate = 1
+cfg.synaptic_learning_rate = 1
 cfg.init_weights_std = 0.01
 
 for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000],
@@ -1001,7 +782,7 @@ for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000
     cfg.num_x_neurons = N_in
     cfg.num_y_neurons = N_out
     cfg.logging.exp_id = 50 + i
-    main.run_experiment()
+    main.run_new_experiment()
     params_dict = {cfg.logging.exp_id: {"N_in": N_in, "N_out": N_out}}
     fig = plot_coeff_trajectories(cfg.logging.exp_id, params_dict)
     fig.savefig(cfg.fig_dir + f"Exp{cfg.logging.exp_id} coeff trajectories.png",
@@ -1012,7 +793,7 @@ for i, (N_in, N_out) in enumerate(list(itertools.product([10, 50, 100, 500, 1000
 # +
 # Diagnose trajectories for NaN
 
-_activation_trajs = main.run_experiment()
+_activation_trajs = main.run_new_experiment()
 print(len(_activation_trajs)) # num epochs
 print(len(_activation_trajs[0])) # num experiments
 print(len(_activation_trajs[0][0])) # (x, y, output)
@@ -1051,7 +832,7 @@ print(f'{epoch_i=}, {exp_i=}, {sess_i=}, {step_i=}')
 # Plot experimental vs modelled neural activity
 (_activation_trajs,
  return_exp_activations,
- return_model_activations) = main.run_experiment()
+ return_model_activations) = main.run_new_experiment()
 # exp = _experiments[0]
 print(return_exp_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
 print(return_model_activations.shape)  # (num_sessions, num_steps, num_recorded_neurons)
@@ -1129,7 +910,7 @@ for plasticity in [["rec"], ["ff", "rec"]]:
                 exp_id = last_exp_id + i
                 cfg.logging.exp_id = exp_id
                 print(f"\nEXPERIMENT {cfg.logging.exp_id}:")
-                _activation_trajs = main.run_experiment()
+                _activation_trajs = main.run_new_experiment()
                 params_dict = {cfg.logging.exp_id: {"N_in": 50, "N_out": 50,
                                         "plasticity": "+".join(plasticity),
                                            "\ninp_spar": input_sparsity,
@@ -1152,7 +933,7 @@ print(recurrent_experiments_config_table)
 # +
 # Plot xs and ys, optionally evolution of weights
 
-# _activation_trajs, _model_activations, _null_activations = main.run_experiment()
+# _activation_trajs, _model_activations, _null_activations = main.run_new_experiment()
 
 # fig, ax = plt.subplots(1, 2, figsize=(12, 6))
 epoch = 8
