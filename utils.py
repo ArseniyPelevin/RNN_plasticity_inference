@@ -109,7 +109,7 @@ def print_and_log_learned_params(cfg, expdata, thetas):
     return expdata
 
 def save_results(cfg, params, expdata, train_time, trajectories,
-                 train_experiments, test_experiments):
+                 train_experiments=None, test_experiments=None, path=None):
     """Save training logs and parameters."""
 
     def create_directory():
@@ -128,7 +128,8 @@ def save_results(cfg, params, expdata, train_time, trajectories,
 
     exp_id = cfg.logging.exp_id
 
-    path = create_directory()
+    if not path:
+        path = create_directory()
 
     # Save configuration
     if cfg.logging.log_config:
@@ -143,7 +144,8 @@ def save_results(cfg, params, expdata, train_time, trajectories,
         # Save expdata as .csv
         save_expdata(expdata, path, exp_id, train_time)
 
-    if cfg.logging.log_generated_experiments:
+    if (cfg.logging.log_generated_experiments and
+        train_experiments is not None and test_experiments is not None):
         # Save generated experiments
         save_generated_experiments(path, train_experiments, test_experiments)
 
@@ -152,6 +154,19 @@ def save_results(cfg, params, expdata, train_time, trajectories,
         save_hdf5(trajectories, path + f"Exp_{exp_id}_trajectories.h5")
 
     return path
+
+def load_old_experiment(path):
+    """ Loads configuration, final parameters, expdata, generated experiments
+    and trajectories from an older experiment saved in `path`. """
+
+    cfg = load_config(path)
+    params = load_final_params(path)
+    expdata = load_expdata(path)
+    train_experiments = load_generated_experiments(path, cfg, mode="train")
+    test_experiments = load_generated_experiments(path, cfg, mode="test")
+    trajectories = load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+
+    return cfg, params, expdata, train_experiments, test_experiments, trajectories
 
 def save_config(cfg, path, exp_id):
     """ Saves the configuration used for the experiment as a JSON file. """
@@ -198,7 +213,7 @@ def save_generated_experiments(path, train_experiments, test_experiments):
 def load_generated_experiments(path, cfg, mode):
     exp_like = experiment.generate_experiments(jax.random.PRNGKey(0), cfg,
                                                mode=mode, num_exps=1)
-    path = path + f"generated_{mode}_experiments/"
+    path += f"generated_{mode}_experiments/"
     # Number of files in path folder:
     num_files = len(list(Path(path).glob("experiment_*.eqx")))
     exps = []

@@ -27,7 +27,8 @@ def meta_learning_step(params, key, exp, plasticity,
 
     return params, opt_state, aux
 
-def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
+def meta_learn_plasticity(key, cfg, train_experiments, test_experiments,
+                          params=None, last_epoch=0):
     """ Initialize plasticity, params, optimizer, and start training loop.
     Learn plasticity coefficients and initial weights of trainable layers.
 
@@ -36,6 +37,12 @@ def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
         cfg: Configuration object.
         train_experiments (list): List of Experiment objects for training.
         test_experiments (list): List of Experiment objects for evaluation.
+        params (dict): Initial parameters for training. Provided in continued learning:
+            'thetas': dict of plasticity coefficients for each plastic layer,
+            'w_init_learned': per-training-experiment list of
+                dicts of initial weights for each trainable layer.
+        last_epoch (int): Last (evaluation) epoch number from previous training,
+            for continued learning.
 
     Returns:
         params (dict): Learned parameters after training:
@@ -56,9 +63,11 @@ def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
         init_plasticity_key, cfg.plasticity,
         mode = 'training' if not cfg.training.same_init_thetas else 'generation')
     # Add coefficients to params
-    params = {'thetas': {layer: pl.coeffs for layer, pl in plasticity_train.items()}}
+    if params is None:  # Provided in continued learning
+        params = {'thetas': {layer: pl.coeffs
+                             for layer, pl in plasticity_train.items()}}
 
-    num_epochs = cfg.training.num_epochs + 1  # +1 so that we have 250th epoch
+    num_epochs = cfg.training.num_epochs
 
     optimizer = optax.chain(
         optax.clip_by_global_norm(cfg.training.max_grad_norm),
@@ -71,13 +80,13 @@ def meta_learn_plasticity(key, cfg, train_experiments, test_experiments):
     params, expdata, trajectories, _losses_and_r2s = training_loop(
         train_key, params, plasticity_train, train_experiments,
         num_epochs, optimizer, cfg,
-        test_experiments, returns, do_log=True)
+        test_experiments, returns, last_epoch, do_log=True)
 
     return params, expdata, trajectories, _losses_and_r2s
 
 def training_loop(key, params, plasticity, experiments,
                   num_epochs, optimizer, cfg,
-                  test_experiments=None, returns=(), do_log=False):
+                  test_experiments=None, returns=(), last_epoch=0, do_log=False):
     """ Training loop for meta-learning.
     Used for both plasticity coefficients learning and initial weights learning
     (for test experiments in evaluation).
@@ -97,6 +106,8 @@ def training_loop(key, params, plasticity, experiments,
         cfg: Configuration object.
         test_experiments (list): List of Experiment objects for evaluation.
         returns (tuple): Tuple of strings indicating which outputs to return.
+        last_epoch (int): Last (evaluation) epoch number from previous training,
+            for continued learning.
         do_log (bool): Whether to log metrics and trajectories.
 
     Returns:
@@ -114,12 +125,13 @@ def training_loop(key, params, plasticity, experiments,
     train_keys = jax.random.split(key, num_epochs * num_exps
                                   ).reshape((num_epochs, num_exps) + key.shape)
 
-    # Initialize trainable weights by copying corresponding layers of exp.w_init_train
-    params['w_init_learned'] = []
-    for exp in experiments:
-        params['w_init_learned'].append(
-            {layer: exp.w_init_train[layer]
-             for layer in cfg.training.trainable_init_weights})
+    if 'w_init_learned' not in params:  # Provided in continued learning
+        # Initialize trainable weights by copying layers of exp.w_init_train
+        params['w_init_learned'] = []
+        for exp in experiments:
+            params['w_init_learned'].append(
+                {layer: exp.w_init_train[layer]
+                for layer in cfg.training.trainable_init_weights})
 
     opt_state = optimizer.init(params)
 
@@ -127,8 +139,11 @@ def training_loop(key, params, plasticity, experiments,
     _losses_and_r2s = {}  # Per-evaluation-epoch losses and r2 values (debugging only)
     trajectories = {}  # Per-evaluation-epoch trajectories (debugging only)
 
-    for epoch in range(num_epochs):
-        epoch_keys = train_keys[epoch]
+    start_epoch = last_epoch + 1
+    end_epoch = start_epoch + num_epochs
+
+    for epoch in range(start_epoch, end_epoch):
+        epoch_keys = train_keys[epoch - start_epoch]
         epoch_trajectories, epoch_losses = [], []
         for exp_i, exp in enumerate(experiments):
             exp_key = epoch_keys[exp_i]
@@ -152,7 +167,8 @@ def training_loop(key, params, plasticity, experiments,
         if not do_log:
             return params
 
-        if epoch % cfg.logging.log_interval == 0:
+        if (epoch % cfg.logging.log_interval == 0
+            or epoch == start_epoch or epoch == end_epoch - 1):
             print(f"\nEpoch {epoch}")
             expdata, _losses_and_r2 = compute_and_log_evaluation_metrics(
                 exp_key, epoch, cfg, expdata, params,
