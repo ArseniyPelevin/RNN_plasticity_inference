@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import pickle
+from bisect import bisect_left
 from itertools import count
 from pathlib import Path
 
@@ -42,6 +43,32 @@ def sample_truncated_normal(key, mean, std, shape=1):
         samples = jnp.where(samples < -1, samples2, samples)
     samples = samples * std + mean
     return samples.round().astype(jnp.int32)
+
+def sample_epochs(rec, num_epochs):
+    n = len(rec)
+    if n <= 1:
+        return rec[:]               # handle empty or single-element list
+    k = min(n, max(2, num_epochs))
+    start, end = rec[0], rec[-1]
+    targets = [start + i*(end - start)/(k - 1) for i in range(k)]
+    def pick(t):
+        i = bisect_left(rec, t)
+        if i == 0:
+            return rec[0]
+        if i == n:
+            return rec[-1]
+        return rec[i] if rec[i] - t < t - rec[i-1] else rec[i-1]
+    res = []
+    prev = None
+    for t in targets:
+        v = pick(t)
+        if v != prev:
+            res.append(v)
+            prev = v
+    if res[0] != start:
+        res.insert(0, start)
+    if res[-1] != end: res.append(end)
+    return res
 
 def print_and_log_learned_params(cfg, expdata, thetas):
     """

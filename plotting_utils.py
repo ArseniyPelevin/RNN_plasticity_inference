@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -9,8 +8,9 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-def plot_experiment_results(path, cfg, behavioral_experiments_config_table,
-                            show_plots=False):
+def plot_experiment_results(path, params_table=None,
+                            epochs=None, num_epochs=4,
+                            show_plots=False, save_plots=False):
     """ Plot experiment results:
             - coefficient trajectories,
             - activity and weights trajectories,
@@ -20,256 +20,346 @@ def plot_experiment_results(path, cfg, behavioral_experiments_config_table,
         path (str): path to the experiment folder
         cfg (dict): configuration dictionary
         behavioral_experiments_config_table (dict): mapping exp_id -> dict of parameters
+        epochs (list): list of epochs to plot
+        num_epochs (int): number of epochs to plot if epochs is None
         show_plots (bool): whether to show plots interactively
     """
     # Create Plots directory
     save_path = Path(path) / "Plots/"
     save_path.mkdir(parents=True, exist_ok=True)
 
-    fig = plot_coeff_trajectories(cfg.logging.exp_id, path,
-                                             behavioral_experiments_config_table,
-                                             use_all_81=False)
-    fig.savefig(
-        save_path / f"Exp_{cfg.logging.exp_id}_coeff_trajectories.png",
-        dpi=300, bbox_inches="tight")
+    cfg = utils.load_config(path)
+    expdata = utils.load_expdata(path)
+    experiments = utils.load_generated_experiments(path, cfg, mode="train")
+    trajectories = utils.load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+
+    fig = plot_coeff_trajectories(data=(cfg, expdata), params_table=params_table)
+    if save_plots:
+        fig.savefig(
+            save_path / f"Exp_{cfg.logging.exp_id}_coeff_trajectories.png",
+            dpi=300, bbox_inches="tight")
     if show_plots:
         plt.show()
     plt.close(fig)
 
-    epochs = [0, 50, 100, 150]
+    recorded_epochs = list(trajectories.keys())
+    if epochs is None:
+        epochs = utils.sample_epochs(recorded_epochs, num_epochs)
+        epochs = [epoch for epoch in epochs if epoch in recorded_epochs]
+
     exp = 0
-    fig = plot_activity_and_weights_trajectories(path, cfg, epochs, exp, sess=0)
-    fig.savefig(
-        save_path / f"Exp_{cfg.logging.exp_id}_activity_and_weights (exp {exp}).png",
-        dpi=300, bbox_inches="tight")
+    fig = plot_activity_and_weights_trajectories(data=(cfg, trajectories),
+                                                 epochs=epochs, exp=exp, sess=0)
+    if save_plots:
+        fig.savefig(
+            save_path /
+            f"Exp_{cfg.logging.exp_id}_activity_and_weights (exp {exp}).png",
+            dpi=300, bbox_inches="tight")
     if show_plots:
         plt.show()
     plt.close(fig)
 
     mode = "diff"
-    fig = plot_init_weights_heatmaps(path, cfg, epochs=epochs, num_exps=5, mode=mode)
-    fig.savefig(
-        save_path / f"Exp_{cfg.logging.exp_id}_init_weights_heatmaps_{mode}.png")
+    fig = plot_init_weights_heatmaps(data=(cfg, experiments, trajectories),
+                                     epochs=epochs, num_exps=5, mode=mode)
+    if save_plots:
+        fig.savefig(
+            save_path / f"Exp_{cfg.logging.exp_id}_init_weights_heatmaps_{mode}.png")
     if show_plots:
         plt.show()
     plt.close(fig)
 
     mode = "abs"
-    fig = plot_init_weights_traces(path, cfg, mode=mode)
-    fig.savefig(
-        save_path / f"Exp_{cfg.logging.exp_id}_init_weights_traces_{mode}.png")
+    fig = plot_init_weights_traces(data=(cfg, experiments, trajectories), mode=mode)
+    if save_plots:
+        fig.savefig(
+            save_path / f"Exp_{cfg.logging.exp_id}_init_weights_traces_{mode}.png")
     if show_plots:
         plt.show()
     plt.close(fig)
 
-def plot_coeff_trajectories(exp_id, path, params_table, use_all_81=False):
-    """
-    Plot a single experiment's loss (top), evaluation metrics (middle, if available)
-    and coefficient trajectories (bottom).
-
-    This function is 100% ChatGPT 5 generated
-
-    Args:
-        exp_id (int): single experiment id
-        path (str): path to the experiment folder
-        params_table (dict): mapping exp_id -> dict of parameters for subplot title
-        use_all_81 (bool): whether to plot 81 coefficients (with rewards) or just 27
-    """
-
-    # single file path for the single experiment
-    fpath = os.path.join(path, f"Exp_{exp_id}_results.csv")
-    # if not os.path.exists(fpath):
-    #     new_dir = os.path.join(os.path.dirname(path.rstrip('/\\')), f"Exp_{exp_id}")
-    #     fpath = os.path.join(new_dir, f"Exp_{exp_id}_results.csv")
-
-    # highlight a few columns (if they exist)
-    highlight = {"F_1100", "F_0210"}  # TODO use generation_plasticity config
-
-    # --- read data ---
-    df = pd.read_csv(fpath)
-
-    # top = Loss, bottom = coeff trajectories[, middle = evaluation metrics]
-    has_eval = 'train_loss_median' in df.columns
-
-    # For 27-mode we keep existing layout;
-    # for 81-mode we will recreate below with 3 coeff subplots
-    if not use_all_81:
-        if has_eval:
-            fig, axs = plt.subplots(3, 1, figsize=(10, 8),
-                                    gridspec_kw={'height_ratios': [1, 2, 2]},
-                                    sharex=True,
-                                    layout='tight')
-            top_ax, eval_ax, coeff_ax = axs
-        else:
-            fig, axs = plt.subplots(2, 1, figsize=(12, 7))
-            top_ax, coeff_ax = axs
-            eval_ax = None
+def plot_coeff_trajectories(path=None, data=None, params_table=None):
+    if data:
+        cfg, expdata = data
+    elif path:
+        cfg = utils.load_config(path)
+        expdata = utils.load_expdata(path)
     else:
-        # placeholder; we'll create the desired layout
-        # (loss + optional eval + 3 coeff subplots)
-        top_ax = eval_ax = coeff_ax = None
+        raise ValueError("Either 'data' or 'path' must be provided.")
 
-    # --- Top: loss subplot (backwards-compatible) ---
-    x_epochs = df['epoch'] if 'epoch' in df.columns else np.arange(len(df))
+    exp_df = pd.DataFrame.from_dict(expdata)
+    exp_id = int(cfg.logging.exp_id) if hasattr(cfg.logging, "exp_id") else None
 
-    # If we didn't yet create axes (use_all_81 True), create them now properly
-    if use_all_81:
-        if has_eval:
-            fig, axs = plt.subplots(5, 1, figsize=(12, 13),
-                                    gridspec_kw={'height_ratios': [1, 1, 2, 2, 2]},
-                                    sharex=True)
-            top_ax, eval_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
-            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
-        else:
-            fig, axs = plt.subplots(4, 1, figsize=(12, 13),
-                                    gridspec_kw={'height_ratios': [1, 2, 2, 2]},
-                                    sharex=True)
-            top_ax, coeff0_ax, coeff1_ax, coeff2_ax = axs
-            eval_ax = None
-            coeff_axes = [coeff0_ax, coeff1_ax, coeff2_ax]
+    keymap = {"ff": "F", "rec": "R", "both": "B"}
+    layers = list(cfg.plasticity.generation_plasticity.keys())
+    prefixes = [keymap[layer_key] for layer_key in layers]
+    if prefixes == ["F", "R", "B"]:
+        prefixes = ["F", "R"]
+
+    def has_reward(mask_array):
+        mask_array = np.array(mask_array)
+        return np.any(mask_array[:, :, :, 1:])
+
+    masks = cfg.plasticity.coeff_masks
+    use_all_81 = any(
+        has_reward(masks[layer_key])
+        for layer_key in masks
+        if keymap.get(layer_key, "") in prefixes
+    )
+
+    if "epoch" in exp_df.columns:
+        epochs = np.asarray(exp_df["epoch"])
     else:
-        # we already have coeff_ax for 27-mode
-        coeff_axes = [coeff_ax]
+        epochs = np.arange(len(exp_df))
 
-    # plot loss on top_ax
-    if 'train_loss_median' in df.columns and 'test_loss_median' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss_median'],
-                    color='blue', label='train_loss_median')
-        top_ax.plot(x_epochs, df['test_loss_median'],
-                    color='red', label='test_loss_median')
-    elif all(col in df.columns for col in ['train_loss_mean','train_loss_std',
-                                           'test_loss_mean','test_loss_std']):
-        top_ax.plot(x_epochs, df['train_loss_mean'],
-                    color='blue', label='train_loss')
-        top_ax.fill_between(x_epochs,
-                            df['train_loss_mean'] - df['train_loss_std'],
-                            df['train_loss_mean'] + df['train_loss_std'],
-                            color='blue', alpha=0.2)
-        top_ax.plot(x_epochs, df['test_loss_mean'],
-                    color='red', label='test_loss')
-        top_ax.fill_between(x_epochs,
-                            df['test_loss_mean'] - df['test_loss_std'],
-                            df['test_loss_mean'] + df['test_loss_std'],
-                            color='red', alpha=0.2)
-    elif 'train_loss' in df.columns and 'test_loss' in df.columns:
-        top_ax.plot(x_epochs, df['train_loss'], color='blue', label='train_loss')
-        top_ax.plot(x_epochs, df['test_loss'], color='red', label='test_loss')
-    elif 'loss' in df.columns:
-        top_ax.plot(x_epochs, df['loss'], color='blue', label='train_loss')
+    highlight = set()
+    for layer_key in layers:
+        prefix_char = keymap[layer_key]
+        for gen_term in cfg.plasticity.generation_plasticity[layer_key]:
+            highlight.add(
+                f"{prefix_char}_{int(gen_term.pre)}{int(gen_term.post)}"
+                f"{int(gen_term.weight)}{int(gen_term.reward)}"
+            )
 
-    top_ax.set_title("Train and Test Loss", fontsize=12)
-    top_ax.legend(loc='upper right')
-    top_ax.grid(True)
-    top_ax.set_ylabel('Loss')
+    coeff_columns = [
+        col_name
+        for col_name in exp_df.columns
+        if isinstance(col_name, str)
+        and len(col_name.split("_")) == 2
+        and col_name[0] in "FRB"
+        and col_name.split("_")[1].isdigit()
+        and len(col_name.split("_")[1]) == 4
+    ]
 
-    # --- Middle: evaluation metrics subplot (if available) ---
-    if eval_ax is not None:
-        metrics = ['PDE_F_neural', 'PDE_T_neural', 'PDE_W_neural',
-                   'R2_F_y', 'R2_F_w', 'R2_T_y', 'R2_T_w', 'R2_W_y', 'R2_W_w']
+    columns_by_prefix = {
+        prefix_char: [col for col in coeff_columns if col.startswith(prefix_char + "_")]
+        for prefix_char in prefixes
+    }
 
-        for metric in metrics:
-            if 'PDE' in metric:
-                line_style = '-'
-                k = 1
-            elif 'R2' in metric:
+    def parse_key(col_name):
+        s = col_name.split("_")[1]
+        return tuple(map(int, list(s)))
+
+    base_triples = []
+    seen_triples = set()
+    for col_name in sorted(coeff_columns, key=parse_key):
+        a_idx, b_idx, w_power, r_idx = parse_key(col_name)
+        triple = (a_idx, b_idx, w_power)
+        if triple not in seen_triples:
+            seen_triples.add(triple)
+            base_triples.append(triple)
+
+    cmap = plt.get_cmap("Set1")
+    color_map = {}
+    for weight_power in sorted({t[2] for t in base_triples}):
+        triple_keys = [t for t in base_triples if t[2] == weight_power]
+        matching_cols = [col for col in coeff_columns
+                         if parse_key(col)[2] == weight_power]
+        colors = (
+            [cmap(0.5)]
+            if len(triple_keys) == 1
+            else [cmap(val) for val in np.linspace(0, 1, len(triple_keys))]
+        )
+        for triple_key, sample_color in zip(triple_keys, colors, strict=False):
+            for col_name in matching_cols:
+                if parse_key(col_name)[:3] == triple_key:
+                    color_map[col_name] = sample_color
+
+    def pretty_label(col_name):
+        a_idx, b_idx, w_power, r_idx = parse_key(col_name)
+        if a_idx == 0 and b_idx == 0 and w_power == 0 and r_idx == 0:
+            return "1"
+        parts = []
+        for exponent, ch in ((a_idx, "x"), (b_idx, "y"), (w_power, "w"), (r_idx, "r")):
+            if exponent == 0:
                 continue
-                k = 100
-                if '_y' in metric:
-                    line_style = '--'
-                elif '_w' in metric:
-                    line_style = ':'
+            parts.append(ch if exponent == 1 else f"{ch}^{{{exponent}}}")
+        return "$" + "".join(parts) + "$"
 
-            if '_F_' in metric:
-                color = 'blue'
-            elif '_T_' in metric:
-                color = 'purple'
-            elif '_W_' in metric:
-                color = 'red'
-            if metric in df.columns:
-                eval_ax.plot(x_epochs, df[metric]*k, label=metric,
-                             linestyle=line_style, color=color)
-        eval_ax.legend(loc='center right', fontsize=8)
-        eval_ax.set_ylabel('Percent deviance / R2 * 100')
+    label_map = {col: pretty_label(col) for col in coeff_columns}
+    linestyle_map = {0: "-", 1: "--", 2: ":"}
+
+    metrics = ["PDE_F_neural", "PDE_T_neural", "PDE_W_neural"]
+    has_eval = any(metric in exp_df.columns for metric in metrics)
+    top_rows = 2 if has_eval else 1
+    coeff_rows = 3 if use_all_81 else 1
+
+    fig = plt.figure(
+        figsize=(6 + 4 * len(prefixes), 3 + 2 * (top_rows + coeff_rows))
+    )
+
+    gs = fig.add_gridspec(
+        top_rows + coeff_rows,
+        len(prefixes),
+        height_ratios=[1] * top_rows + [2] * coeff_rows,
+    )
+    fig.subplots_adjust(hspace=0.30, bottom=0.08)
+
+    top_ax = fig.add_subplot(gs[0, :])
+    top_ax.plot(
+        epochs,
+        exp_df["train_loss_median"],
+        color="blue",
+        label="train_loss_median",
+    )
+    if "test_loss_median" in exp_df.columns:
+        top_ax.plot(
+            epochs,
+            exp_df["test_loss_median"],
+            color="red",
+            label="test_loss_median",
+        )
+
+    # exp_id and params as first line of the top subplot title
+    if params_table and exp_id in params_table:
+        params = params_table[exp_id]
+        params_str = ", ".join(f"{k}={v}" for k, v in params.items())
+        top_ax.set_title(f"exp_{exp_id}: {params_str}\nTrain and Test Loss")
+    else:
+        top_ax.set_title(f"exp_{exp_id}\nTrain and Test Loss")
+
+    top_ax.set_ylabel("Loss")
+    top_ax.grid(True)
+    top_ax.legend(loc="center right")
+
+    eval_ax = None
+    if has_eval:
+        eval_ax = fig.add_subplot(gs[1, :])
+        for metric, color in [
+            ("PDE_F_neural", "blue"),
+            ("PDE_T_neural", "purple"),
+            ("PDE_W_neural", "red"),
+        ]:
+            if metric in exp_df.columns:
+                eval_ax.plot(epochs, exp_df[metric], label=metric, color=color)
+        eval_ax.set_title("Evaluation Metrics")
+        eval_ax.set_ylabel("PDE")
         eval_ax.grid(True)
-        eval_ax.legend(loc='upper right', fontsize=8)
+        eval_ax.legend(loc="center right", fontsize=8)
 
     start_row = top_rows
-    coeff_axes = [[fig.add_subplot(gs[start_row + r, c]) for c in range(len(prefixes))] for r in range(coeff_rows)]
+    coeff_axes = [
+        [fig.add_subplot(gs[start_row + r, c]) for c in range(len(prefixes))]
+        for r in range(coeff_rows)
+    ]
 
-    for ci, p in enumerate(prefixes):
-        cols = by_pref[p]
-        if not cols: 
+    # increase vertical gap between coefficient rows only (fine-grained)
+    if coeff_rows > 1:
+        extra_gap = 0.045   # how much to push the 2nd row down relative to the first
+        for row_idx in range(1, coeff_rows):
+            shift = extra_gap * row_idx
+            for ax in coeff_axes[row_idx]:
+                pos = ax.get_position()
+                # move this row downward by `shift` in figure coordinates
+                ax.set_position([pos.x0, pos.y0 - shift, pos.width, pos.height])
+
+    for col_idx, prefix_char in enumerate(prefixes):
+        cols_for_prefix = columns_by_prefix[prefix_char]
+        if not cols_for_prefix:
             continue
         if use_all_81:
-            for r in range(3):
-                ax = coeff_axes[r][ci]
-                for c in sorted(cols, key=key4):
-                    a, b, w, rr = key4(c)
-                    if rr != r: 
+            for row_idx in range(3):
+                axis = coeff_axes[row_idx][col_idx]
+                for col_name in sorted(cols_for_prefix, key=parse_key):
+                    a_idx, b_idx, w_power, reward_idx = parse_key(col_name)
+                    if reward_idx != row_idx:
                         continue
-                    ax.plot(x, df[c].values, linestyle=ls.get(w, '-'), color=color_map.get(c, 'k'), linewidth=(3 if c in highlight else 1.5))
-                ax.grid(True)
+                    axis.plot(
+                        epochs,
+                        exp_df[col_name].values,
+                        linestyle=linestyle_map.get(w_power, "-"),
+                        color=color_map.get(col_name, "k"),
+                        linewidth=(3 if col_name in highlight else 1.5),
+                    )
+                axis.grid(True)
         else:
-            ax = coeff_axes[0][ci]
-            for c in sorted(cols, key=key4):
-                a, b, w, rr = key4(c)
-                ax.plot(x, df[c].values, linestyle=ls.get(w, '-'), color=color_map.get(c, 'k'), linewidth=(3 if c in highlight else 1.5))
-                if rr == 1: 
-                    ax.plot(x, df[c].values, linestyle='None', marker='o', markersize=4, markerfacecolor=color_map.get(c, 'k'), markeredgecolor=color_map.get(c, 'k'))
-                elif rr == 2: 
-                    ax.plot(x, df[c].values, linestyle='None', marker='o', markersize=4, markerfacecolor='none', markeredgecolor=color_map.get(c, 'k'))
-            ax.grid(True)
+            axis = coeff_axes[0][col_idx]
+            for col_name in sorted(cols_for_prefix, key=parse_key):
+                a_idx, b_idx, w_power, reward_idx = parse_key(col_name)
+                axis.plot(
+                    epochs,
+                    exp_df[col_name].values,
+                    linestyle=linestyle_map.get(w_power, "-"),
+                    color=color_map.get(col_name, "k"),
+                    linewidth=(3 if col_name in highlight else 1.5),
+                )
+            axis.grid(True)
 
-    if params_table and exp_id in params_table:
-        p = params_table[exp_id]
-        s = ', '.join(f'{k}={v}' for k, v in p.items())
-        coeff_axes[0][0].set_title(f"exp_{exp_id}: {s}")
-    else:
-        coeff_axes[0][0].set_title(f"exp_{exp_id}")
+    # Title each top coefficient subplot with its layer name (ff/rec/both)
+    # ensure same y-limits across all coefficient axes
+    if coeff_columns:
+        global_min = min(exp_df[col].min() for col in coeff_columns)
+        global_max = max(exp_df[col].max() for col in coeff_columns)
+        if global_min == global_max:
+            global_min -= 1e-6
+            global_max += 1e-6
+        pad = 0.05 * (global_max - global_min)
+        y_min = global_min - pad
+        y_max = global_max + pad
+        for row_axes in coeff_axes:
+            for axis in row_axes:
+                axis.set_ylim(y_min, y_max)
 
-    for ax in [top_ax] + ([eval_ax] if eval_ax is not None else []) + [a for row in coeff_axes for a in row]:
-        for t in ticks: 
-            ax.axvline(t, color='k', lw=0.3, alpha=0.2)
-    for a in coeff_axes[-1]:
-        a.set_xticks(ticks)
-        a.set_xticklabels([str(int(t)) for t in ticks])
+    layers_for_prefixes = [layer for layer in layers if keymap[layer] in prefixes]
+    for col_index, layer_name in enumerate(layers_for_prefixes):
+        coeff_axes[0][col_index].set_title(f"Coefficients of {layer_name} layer")
 
-    base_keys, seen = [], set()
-    for c in sorted(all_cols, key=key4):
-        a, b, w, r = key4(c)
-        t = (a, b, w)
-        if t not in seen: 
-            seen.add(t)
-        base_keys.append(t)
+    def proxy(col_name):
+        a_idx, b_idx, w_power, r_idx = parse_key(col_name)
+        color = color_map.get(col_name, "k")
+        line_width = 1.5
+        return Line2D(
+            [0],
+            [0],
+            color=color,
+            lw=line_width,
+            linestyle=linestyle_map.get(w_power, "-"),
+    )
 
-    def proxy(col):
-        a, b, w, r = key4(col)
-        color = color_map.get(col, 'k')
-        lw = 3 if col in highlight else 1.5
-        if r == 1: 
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls.get(w, '-'), marker='o', markerfacecolor=color, markersize=6)
-        if r == 2: 
-            return Line2D([0], [0], color=color, lw=lw, linestyle=ls.get(w, '-'), marker='o', markerfacecolor='none', markersize=6)
-        return Line2D([0], [0], color=color, lw=lw, linestyle=ls.get(w, '-'))
-
-    for r in range(3 if use_all_81 else 1):
-        reps = []
-        for t3 in base_keys:
-            cand = next((c for c in all_cols if key4(c)[:3] == t3 and key4(c)[3] == r), None)
-            if cand is None: 
-                cand = next((c for c in all_cols if key4(c)[:3] == t3), None)
-            if cand is None: 
-                reps.append((Line2D([0], [0], color='none'), ''))
+    for row_index in range(3 if use_all_81 else 1):
+        legend_entries = []
+        for triple in base_triples:
+            candidate_col = next(
+                (col for col in coeff_columns
+                 if parse_key(col)[:3] == triple and parse_key(col)[3] == row_index),
+                None,
+            )
+            if candidate_col is None:
+                candidate_col = next(
+                    (col for col in coeff_columns if parse_key(col)[:3] == triple),
+                    None,
+                )
+            if candidate_col is None:
+                legend_entries.append((Line2D([0], [0], color="none"), ""))
                 continue
-            reps.append((proxy(cand), label_map[cand]))
-        if not reps: continue
-        handles, labels = zip(*reps, strict=False)
-        y = min(ax.get_position().y0 for ax in coeff_axes[r])
-        fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, y - 0.06), ncol=9, fontsize=10, frameon=False, handlelength=2.4, markerscale=1.0, labelspacing=0.3, columnspacing=1.0, handletextpad=0.5)
+            legend_entries.append((proxy(candidate_col), label_map[candidate_col]))
+        if not legend_entries:
+            continue
+        handles, labels = zip(*legend_entries, strict=False)
+        y = min(ax.get_position().y0 for ax in coeff_axes[row_index])
+        if coeff_rows == 1:
+            legend_anchor = (0.5, y - 0.13)
+        else:
+            legend_anchor = (0.5, y - 0.09)
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=legend_anchor,
+            ncol=9,
+            fontsize=10,
+            frameon=False,
+            handlelength=2.4,
+            markerscale=1.0,
+            labelspacing=0.3,
+            columnspacing=1.0,
+            handletextpad=0.5,
+        )
 
     return fig
 
-def plot_init_weights_traces(path, cfg, sample_size=10, num_exps=5, mode="abs"):
+def plot_init_weights_traces(path=None, data=None,
+                             sample_size=10, num_exps=5, mode="abs"):
     """ Plot learning trajectories of initial weights
     across epochs for multiple experiments.
 
@@ -320,15 +410,25 @@ def plot_init_weights_traces(path, cfg, sample_size=10, num_exps=5, mode="abs"):
         if y_ax == 0:
             ax[x_ax, y_ax].set_ylabel(f"Experiment {i}")
 
-    experiments = utils.load_generated_experiments(path, cfg, mode="train")
-    num_exps = min(num_exps, len(experiments))
-    trajectories = utils.load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
-    epochs = list(trajectories.keys())
+    if data:
+        cfg, experiments, trajectories = data
+    elif path:
+        cfg = utils.load_config(path)
+        experiments = utils.load_generated_experiments(path, cfg, mode="train")
+        trajectories = utils.load_hdf5(path +
+                                       f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+    else:
+        raise ValueError("Either 'data' or 'path' must be provided.")
 
+    num_exps = min(num_exps, len(experiments))
+
+    epochs = list(trajectories.keys())
     num_epochs = len(epochs)
     epochs = np.array(epochs)
+
     layers = list(trajectories[epochs[0]][0]['init_weights'].keys())
     num_layers = len(layers)
+
     fig, ax = plt.subplots(num_exps, num_layers,
                            figsize=(10, 3 * num_exps), layout='tight')
     ax = ax.reshape(num_exps, num_layers)  # ensure 2D array
@@ -339,7 +439,8 @@ def plot_init_weights_traces(path, cfg, sample_size=10, num_exps=5, mode="abs"):
 
     return fig
 
-def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
+def plot_init_weights_heatmaps(path=None, data=None,
+                               epochs=None, num_epochs=4, num_exps=5, mode="diff"):
     """ Plot heatmaps of learned initial weights at selected epochs.
 
     Args:
@@ -354,7 +455,7 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
         fig: matplotlib figure object
     """
 
-    def plot_layer_weight_traces(row, col, layer, epoch, w_gen):
+    def plot_heatmap(row, col, layer, epoch, w_gen):
         w_train = trajectories[epoch][i]['init_weights'][layer]['w']
         if mode == 'diff':
             w_train = w_train - w_gen
@@ -374,12 +475,22 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
 
         return im
 
-    experiments = utils.load_generated_experiments(path, cfg, mode="train")
-    num_exps = min(num_exps, len(experiments))
-    trajectories = utils.load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
-    recorded_epochs = list(trajectories.keys())
+    if data:
+        cfg, experiments, trajectories = data
+    elif path:
+        cfg = utils.load_config(path)
+        experiments = utils.load_generated_experiments(path, cfg, mode="train")
+        trajectories = utils.load_hdf5(path +
+                                       f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+    else:
+        raise ValueError("Either 'data' or 'path' must be provided.")
 
-    epochs = [epoch for epoch in epochs if epoch in recorded_epochs]
+    num_exps = min(num_exps, len(experiments))
+
+    recorded_epochs = list(trajectories.keys())
+    if epochs is None:
+        epochs = utils.sample_epochs(recorded_epochs, num_epochs)
+        epochs = [epoch for epoch in epochs if epoch in recorded_epochs]
     num_epochs = len(epochs)
     if mode == 'abs':
         num_epochs += 1  # for ground-truth column
@@ -389,11 +500,15 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
     num_layers = len(layers)
 
     n_rows = num_exps * num_layers
-    n_cols = num_epochs + 1
-    fig, ax = plt.subplots(n_rows, n_cols, figsize=(2 * n_cols, 2 * n_rows),
+    n_cols = len(epochs)
+    if n_cols == 0:
+        print("Epochs requested for plotting activity not found in trajectories.")
+        return None
+
+    fig, ax = plt.subplots(n_rows, n_cols+1, figsize=(2.5 * n_cols, 2.5 * n_rows),
                            gridspec_kw={'width_ratios': [1.0]*num_epochs + [0.03]},
                            layout='constrained')
-    ax = ax.reshape(n_rows, n_cols)  # ensure 2D array even if n_cols=1
+    ax = ax.reshape(n_rows, n_cols+1)  # ensure 2D array even if n_cols=1
     for i in range(num_exps):
         exp = experiments[i]
         for j, layer in enumerate(layers):
@@ -403,8 +518,7 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
             v_min, v_max = np.min(w_gen)*2, np.max(w_gen)*2
 
             for k, epoch in enumerate(epochs):
-                im = plot_layer_weight_traces(num_layers*i+j, k, layer, epoch, w_gen)
-                # ax[3*i+j, k].set_clim(v_min, v_max)
+                im = plot_heatmap(num_layers*i+j, k, layer, epoch, w_gen)
             if mode == 'abs':
                 # Last column is colorbar, plot ground-truth weights to second last
                 ax[num_layers*i+j, -2].imshow(w_gen, vmin=v_min, vmax=v_max,
@@ -419,7 +533,8 @@ def plot_init_weights_heatmaps(path, cfg, epochs, num_exps=5, mode="diff"):
 
     return fig
 
-def plot_activity_and_weights_trajectories(path, cfg, epochs, exp=0, sess=0):
+def plot_activity_and_weights_trajectories(path=None, data=None,
+                                           epochs=None, num_epochs=4, exp=0, sess=0):
     """ Plot trajectories of neural activity and weight
     of selected experiment at different epochs.
 
@@ -477,18 +592,15 @@ def plot_activity_and_weights_trajectories(path, cfg, epochs, exp=0, sess=0):
                 colors = plt.get_cmap('viridis')(np.linspace(0, 1, traces_ff.shape[0]))
             elif cfg.experiment.input_type == 'task':
                 colors_pl = plt.get_cmap('cool')(np.linspace(
-                    0, 1, cfg.experiment.num_place_neurons * wff.shape[-1]))
+                    0, 1, cfg.experiment.num_place_neurons * wff.shape[-2]))
                 colors_vis = plt.get_cmap('autumn')(np.linspace(
-                    0, 1, (wff.shape[-2]-cfg.experiment.num_place_neurons-1)
-                    * wff.shape[-1]))
+                    0, 1, (wff.shape[-1]-cfg.experiment.num_place_neurons-1)
+                    * wff.shape[-2]))
                 colors_v = plt.get_cmap("Greens")(np.linspace(
-                    0, 1, cfg.experiment.num_velocity_neurons * wff.shape[-1]))
+                    0, 1, cfg.experiment.num_velocity_neurons * wff.shape[-2]))
                 colors = np.concatenate([colors_pl, colors_vis, colors_v])
-
-            # repeat each presyn color for all posts so it matches traces_ff rows
-            colors_traces = np.repeat(colors, wff.shape[-1], axis=0)
-            for trace, color in zip(traces_ff, colors_traces, strict=False):
-                ax[2, col_i].plot(trace, color=color, alpha=0.1)
+            for trace, color in zip(traces_ff, colors, strict=True):
+                ax[2, col_i].plot(trace, color=color, alpha=0.2)
 
             row_2_title += '.\nFeedforward weights traces'
 
@@ -509,17 +621,31 @@ def plot_activity_and_weights_trajectories(path, cfg, epochs, exp=0, sess=0):
         for irow in range(ax.shape[0]):
             ax[irow, col_i].set_xlim(-0.5, n_steps - 0.5)
 
-    trajectories = utils.load_hdf5(path + f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+    if data:
+        cfg, trajectories = data
+    elif path:
+        cfg = utils.load_config(path)
+        trajectories = utils.load_hdf5(path +
+                                       f"Exp_{cfg.logging.exp_id}_trajectories.h5")
+    else:
+        raise ValueError("Either 'data' or 'path' must be provided.")
+
     recorded_epochs = list(trajectories.keys())
-    epochs = [epoch for epoch in epochs if epoch in recorded_epochs]
+    if epochs is None:
+        epochs = utils.sample_epochs(recorded_epochs, num_epochs)
+        epochs = [epoch for epoch in epochs if epoch in recorded_epochs]
+
     n_cols = len(epochs)
+    if n_cols == 0:
+        print("Epochs requested for plotting activity not found in trajectories.")
+        return None
     n_rows = 3
     if 'w_rec' in trajectories[epochs[0]][exp]['weights']:
         n_rows += 1
-    fig, ax = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 3 * n_rows),
+
+    fig, ax = plt.subplots(n_rows, n_cols, figsize=(3 * n_cols, 2 * n_rows),
                            layout='tight')
     ax = ax.reshape(n_rows, n_cols)  # ensure 2D array even if n_cols=1
-
     for col_i, epoch in enumerate(epochs):
         plot_epoch_trajectories(epoch, col_i)
 
