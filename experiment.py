@@ -247,6 +247,8 @@ class Experiment(eqx.Module):
                         trial_keys[session_i, task_i], num_steps_, task_type)
                 elif self.cfg.input_type == 'constant':
                     trial_inputs = self.generate_constant_input(num_steps_)
+                else:
+                    raise ValueError(f"Unknown input type {self.cfg.input_type}")
 
                 # Append trial inputs to session inputs
                 for var in trial_inputs:
@@ -307,6 +309,7 @@ class Experiment(eqx.Module):
         """
         x = jax.random.normal(key, shape=(num_steps, self.network.cfg.num_x_neurons))
         x = x * self.cfg.input_firing_std + self.cfg.input_firing_mean
+        # x = jax.nn.sigmoid(x)  # Input activity between 0 and 1
 
         return {'x': x,
                 'rewarded_pos': jnp.zeros((num_steps,))  # Dummy, not used
@@ -425,8 +428,8 @@ class Experiment(eqx.Module):
         Returns:
             x: (n_sessions, n_steps, num_x_neurons) X layer activity
         """
-        if self.cfg.input_type == 'random':
-            return inputs['x']  # Random input is already X layer activity
+        if self.cfg.input_type in ['random', 'constant']:
+            return inputs['x']  # Random or constant input is already X layer activity
 
         elif self.cfg.input_type == 'task':
             # Positional input activity (n_sessions, n_steps, num_place_neurons)
