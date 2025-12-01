@@ -15,24 +15,28 @@ def dydt_varbal(t, y, g, alpha, tau_q):
     d/dt(q_i) = (x_i^2 - q_i) / tau_q
     d/dt(W_ij) = -alpha * (x_i^2 - q_i + x_j^2 - q_j) * W_ij
     '''
-    N = int(round(np.sqrt(len(y) + 1) - 1))
-    W = np.reshape(y[:N*N], (N, N))
-    h = y[N*N:N*N+N]
-    q = y[N*N+N:]
-    x = np.tanh(g * h)
+    # len(y) = N^2 + 2N; sqrt(len(y)+1) = N + 1
+    N = round(np.sqrt(len(y) + 1) - 1)
+
+    # Unpack variables from y
+    W = np.reshape(y[:N*N], (N, N))  # weight matrix
+    h = y[N*N:N*N+N]  # membrane potentials (leaky integrator of inputs)
+    q = y[N*N+N:N*N+2*N]  # running average of second moment of activity
+
+    x = np.tanh(g * h)  # Neuron's response
     xi2 = x**2
-    M = (xi2[:, None] - q[:, None]) + (xi2[None, :] - q[None, :])
+    M = (xi2[:, None] - q[:, None]) + (xi2[None, :] - q[None, :])  # Matrix of sums of deviations of pre- and post-synaptic neurons from their averages
     dW = -alpha * M * W
-    np.fill_diagonal(dW, 0)
-    dh = -h + W.dot(x) / np.sqrt(N)
+    np.fill_diagonal(dW, 0)  # no autapses
+    dh = -h + (W @ x) / np.sqrt(N)
     dq = (xi2 - q) / tau_q
     return np.concatenate((dW.ravel(), dh, dq))
 
 N = 300
-g = 2.0
-alpha = 0.5
-tau_q = 30.0
-Tm = 100.0
+g = 2.0  # Steepness of tanh activation function (how much all-or-none the response is)
+alpha = 0.5  # Learning rate
+tau_q = 30.0  # Time constant for running average of second moment of activity
+Tm = 100.0  # Total simulation time
 
 h0 = np.random.normal(0, 1, N)
 W0 = np.random.normal(0, 1, (N, N))
