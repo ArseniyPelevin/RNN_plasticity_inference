@@ -7,9 +7,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
-
-def dydt_varbal(t, y, g, alpha, tau_q):
-
+def dydt_varbal(t, y, g, alpha, tau_h, tau_q):
     '''
     d/dt(h_i) = -h_i + sum_j W_{ij} tanh(g h_j)
     d/dt(q_i) = (x_i^2 - q_i) / tau_q
@@ -25,52 +23,63 @@ def dydt_varbal(t, y, g, alpha, tau_q):
 
     x = np.tanh(g * h)  # Neuron's response
     xi2 = x**2
-    M = (xi2[:, None] - q[:, None]) + (xi2[None, :] - q[None, :])  # Matrix of sums of deviations of pre- and post-synaptic neurons from their averages
+    # Matrix of sums of deviations of pre- and post-synaptic neurons from their averages
+    M = (xi2[:, None] - q[:, None]) + (xi2[None, :] - q[None, :])
     dW = -alpha * M * W
     np.fill_diagonal(dW, 0)  # no autapses
-    dh = -h + (W @ x) / np.sqrt(N)
+    dh = (-h + (W @ x) / np.sqrt(N)) / tau_h
     dq = (xi2 - q) / tau_q
     return np.concatenate((dW.ravel(), dh, dq))
+
+def initialize_chaotic_network(N, g=2.0):
+    ''' Initialize chaotic network with variable balance learning rule '''
+    h0 = np.random.normal(0, 1, N)
+    x0 = np.tanh(g * h0)
+    W0 = np.random.normal(0, 1, (N, N))
+    # clip initial weights to [-1, 1]
+    W0 = np.clip(W0, -1, 1)
+    np.fill_diagonal(W0, 0)  # no autapses
+    q0 = 0.5 * np.ones(N)
+    return x0, h0, W0, q0
 
 N = 300
 g = 2.0  # Steepness of tanh activation function (how much all-or-none the response is)
 alpha = 0.5  # Learning rate
+tau_h = 1.0  # Time constant for membrane potential
 tau_q = 30.0  # Time constant for running average of second moment of activity
 Tm = 100.0  # Total simulation time
 
-h0 = np.random.normal(0, 1, N)
-W0 = np.random.normal(0, 1, (N, N))
-# clip initial weights to [-1, 1]
-W0 = np.clip(W0, -1, 1)
-np.fill_diagonal(W0, 0)  # no autapses
-q0 = 0.5 * np.ones(N)
+x0, h0, W0, q0 = initialize_chaotic_network(N, g)
 
 y0 = np.concatenate((W0.ravel(), h0, q0))
-sol = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_q), [0, Tm], y0)
+sol = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_h, tau_q), [0, Tm], y0)
 t = sol.t
 y = sol.y.T  # shape (nt, nvars)
 
-# Measure Lyapunov exponent
-# pick size of delta vector
+# Define small perturbations
 sigh = 1e-6
 sigW = 0.0
 delta_h = np.random.normal(0, sigh**2, h0.shape)
 delta_W = np.random.normal(0, sigW**2, W0.shape)
+
+# Reinitialize with added perturbations
 hd = h0 + delta_h
 Wd = W0 + delta_W
 qd = q0.copy()
 yd0 = np.concatenate((Wd.ravel(), hd, qd))
-sold = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_q), [0, Tm], yd0)
+
+# Solve for perturbed system
+sold = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_h, tau_q), [0, Tm], yd0)
 td = sold.t
 yd = sold.y.T
 
-# Compare at the same times
+# Compare trajectories to estimate Lyapunov exponent
 y_interp = interp1d(t, y, axis=0, kind='linear', fill_value='extrapolate')
 yd_interp = interp1d(td, yd, axis=0, kind='linear', fill_value='extrapolate')
 t_compare = np.arange(0, Tm + 0.1, 0.1)
-Y = y_interp(t_compare)
-YD = yd_interp(t_compare)
-Delta = np.linalg.norm(Y - YD, axis=1)
+Y = y_interp(t_compare)  # Original trajectory sampled at fixed times
+YD = yd_interp(t_compare)  # Perturbed trajectory sampled at fixed times
+Delta = np.linalg.norm(Y - YD, axis=1)  # Euclidean distance between trajectories
 cutoff = 1e6
 valid = Delta < Delta[0] * cutoff
 fit_param = np.polyfit(t_compare[valid], np.log(Delta[valid]), 1)
