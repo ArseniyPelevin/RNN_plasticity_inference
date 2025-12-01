@@ -2,14 +2,15 @@
     by John Briguglio
 '''
 
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
+
 
 def dydt_varbal(t, y, g, alpha, tau_q):
-    
-    ''' 
+
+    '''
     d/dt(h_i) = -h_i + sum_j W_{ij} tanh(g h_j)
     d/dt(q_i) = (x_i^2 - q_i) / tau_q
     d/dt(W_ij) = -alpha * (x_i^2 - q_i + x_j^2 - q_j) * W_ij
@@ -78,7 +79,8 @@ W_plot = y[:, :min(1000, N * N)]
 
 # Plot h (membrane potentials)
 plt.figure()
-plt.imshow(np.tanh(g * h).T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower', vmin=-1, vmax=1, interpolation='none')
+plt.imshow(np.tanh(g * h).T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
+           vmin=-1, vmax=1, interpolation='none')
 plt.xlabel('time')
 plt.ylabel('N')
 plt.title('h')
@@ -87,7 +89,8 @@ plt.set_cmap('RdBu')
 
 # Plot q (running average of the second moment of activity)
 plt.figure()
-plt.imshow(q.T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower', vmin=-1, vmax=1, interpolation='none')
+plt.imshow(q.T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
+           vmin=-1, vmax=1, interpolation='none')
 plt.xlabel('time')
 plt.ylabel('N')
 plt.title('q')
@@ -96,7 +99,8 @@ plt.set_cmap('RdBu')
 
 # Plot W (synaptic weights)
 plt.figure()
-plt.imshow(W_plot.T, extent=[t[0], t[-1], 1, W_plot.shape[1]], aspect='auto', origin='lower', interpolation='none')
+plt.imshow(W_plot.T, extent=[t[0], t[-1], 1, W_plot.shape[1]],
+           aspect='auto', origin='lower', interpolation='none')
 plt.xlabel('time')
 plt.ylabel('idx')
 plt.title('W')
@@ -107,7 +111,8 @@ plt.clim(-1, 1)
 # Plot Delta and fitted Lyapunov exponent
 plt.figure()
 plt.semilogy(t_compare, Delta)
-plt.semilogy(t_compare[valid], np.exp(fit_param[0] * t_compare[valid] + fit_param[1]), 'r--')
+plt.semilogy(t_compare[valid],
+             np.exp(fit_param[0] * t_compare[valid] + fit_param[1]), 'r--')
 plt.ylabel('Delta')
 plt.xlabel('time')
 ax = plt.gca()
