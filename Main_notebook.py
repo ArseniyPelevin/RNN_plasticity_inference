@@ -5,9 +5,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.18.1
 #   kernelspec:
-#     display_name: plasticity_inference
+#     display_name: plasticity-inference
 #     language: python
 #     name: python3
 # ---
@@ -1057,3 +1057,56 @@ ax.hist(flat, bins=100)
 ax.set_xlabel("Synaptic weight")
 ax.set_xlim(-5, 5)
 plt.show()
+
+# +
+import matplotlib.pyplot as plt
+import numpy as np
+from chaotic_network import initialize_chaotic_network, chaotic_step
+
+N = 300
+g = 2.0  # Steepness of tanh activation function (how much all-or-none the response is)
+alpha = 0.5  # Learning rate
+tau_h = 1.0  # Time constant for membrane potential
+tau_q = 30.0  # Time constant for running average of second moment of activity
+dt = 0.1  # Time step
+Tm = 100.0  # Total simulation time
+
+x, h, W, q = initialize_chaotic_network(N, g)
+
+steps = int(Tm / dt)
+xs, hs, qs = [np.zeros((steps, N)) for _ in range(3)]
+Ws = np.zeros((steps, N, N))
+for i in range(steps):
+    x, h, W, q = chaotic_step(x, h, W, q, g, alpha, tau_h, tau_q, dt)
+    xs[i], hs[i], Ws[i], qs[i] = x, h, W, q
+
+fig, ax = plt.subplots(4, 1, figsize=(8, 10), layout='tight')
+plt.set_cmap('RdBu')
+im = ax[0].imshow(xs.T, aspect='auto', cmap='RdBu', interpolation='none')
+fig.colorbar(im, ax=ax[0], fraction=0.046, pad=0.04)
+ax[0].set_title("Neuron activities over time")
+ax[0].set_ylabel("Neuron index")
+ax[0].set_xlabel("Time step")
+
+im = ax[1].imshow(hs.T, aspect='auto', cmap='RdBu', interpolation='none')
+fig.colorbar(im, ax=ax[1], fraction=0.046, pad=0.04)
+ax[1].set_title("Membrane potentials over time")
+ax[1].set_ylabel("Neuron index")
+ax[1].set_xlabel("Time step")
+
+W_plot = Ws.reshape((steps, -1))
+print(f'{W_plot.shape=}')
+
+W_plot = W_plot[:, :np.min((1000, N*N))]
+im = ax[2].imshow(W_plot.T, aspect='auto', cmap='RdBu', interpolation='none')
+fig.colorbar(im, ax=ax[2], fraction=0.046, pad=0.04)
+ax[2].set_title("Selected weights")
+ax[2].set_ylabel("Weight index")
+ax[2].set_xlabel("Time step")
+
+im = ax[3].imshow(qs.T, aspect='auto', interpolation='none')
+fig.colorbar(im, ax=ax[3], fraction=0.046, pad=0.04)
+ax[3].set_title("Running average of second moment of activity over time")
+ax[3].set_ylabel("Neuron index")
+ax[3].set_xlabel("Time step")
+
