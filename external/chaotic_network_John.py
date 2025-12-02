@@ -7,6 +7,13 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
+N = 300
+g = 2.0  # Steepness of tanh activation function (how much all-or-none the response is)
+alpha = 0.5  # Learning rate
+tau_h = 1.0  # Time constant for membrane potential
+tau_q = 30.0  # Time constant for running average of second moment of activity
+Tm = 300.0  # Total simulation time
+
 def dydt_varbal(t, y, g, alpha, tau_h, tau_q):
     '''
     d/dt(h_i) = -h_i + sum_j W_{ij} tanh(g h_j)
@@ -42,95 +49,101 @@ def initialize_chaotic_network(N, g=2.0):
     q0 = 0.5 * np.ones(N)
     return x0, h0, W0, q0
 
-N = 300
-g = 2.0  # Steepness of tanh activation function (how much all-or-none the response is)
-alpha = 0.5  # Learning rate
-tau_h = 1.0  # Time constant for membrane potential
-tau_q = 30.0  # Time constant for running average of second moment of activity
-Tm = 100.0  # Total simulation time
+def simulate_chaotic_network(h0, W0, q0):
+    ''' Simulate chaotic network with variable balance learning rule '''
+    y0 = np.concatenate((W0.ravel(), h0, q0))
+    sol = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_h, tau_q), [0, Tm], y0)
+    t = sol.t
+    y = sol.y.T  # shape (nt, nvars)
+    return t, y
 
-x0, h0, W0, q0 = initialize_chaotic_network(N, g)
+def resample_fixed_times(t, y, Tm, dt=0.1):
+    y_interp = interp1d(t, y, axis=0, kind='linear', fill_value='extrapolate')
+    t_fixed = np.arange(0, Tm + dt, dt)
+    Y = y_interp(t_fixed)  # Original trajectory sampled at fixed times
+    return t_fixed, Y
 
-y0 = np.concatenate((W0.ravel(), h0, q0))
-sol = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_h, tau_q), [0, Tm], y0)
-t = sol.t
-y = sol.y.T  # shape (nt, nvars)
+def compare_trajectories(t, y, td, yd):
+    # Compare trajectories to estimate Lyapunov exponent
+    t_compare, Y = resample_fixed_times(t, y, Tm)  # Original trajectory sampled at fixed times
+    _, YD = resample_fixed_times(td, yd, Tm)  # Perturbed trajectory sampled at fixed times
+    Delta = np.linalg.norm(Y - YD, axis=1)  # Euclidean distance between trajectories
+    cutoff = 1e6
+    valid = Delta < Delta[0] * cutoff
+    fit_param = np.polyfit(t_compare[valid], np.log(Delta[valid]), 1)
+    return t_compare, Delta, valid, fit_param
 
-# Define small perturbations
-sigh = 1e-6
-sigW = 0.0
-delta_h = np.random.normal(0, sigh**2, h0.shape)
-delta_W = np.random.normal(0, sigW**2, W0.shape)
+def plot_h(t, h, g, N):  # (membrane potentials)
+    plt.figure()
+    plt.imshow(np.tanh(g * h).T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
+            vmin=-1, vmax=1, interpolation='none')
+    plt.xlabel('time')
+    plt.ylabel('N')
+    plt.title('h')
+    plt.colorbar()
+    plt.set_cmap('RdBu')
 
-# Reinitialize with added perturbations
-hd = h0 + delta_h
-Wd = W0 + delta_W
-qd = q0.copy()
-yd0 = np.concatenate((Wd.ravel(), hd, qd))
+def plot_q(t, q, N):  # (running average of the second moment of activity)
+    plt.figure()
+    plt.imshow(q.T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
+            vmin=-1, vmax=1, interpolation='none')
+    plt.xlabel('time')
+    plt.ylabel('N')
+    plt.title('q')
+    plt.colorbar()
+    plt.set_cmap('RdBu')
 
-# Solve for perturbed system
-sold = solve_ivp(lambda t, y: dydt_varbal(t, y, g, alpha, tau_h, tau_q), [0, Tm], yd0)
-td = sold.t
-yd = sold.y.T
+def plot_W(t, W_plot):  # (weights)
+    plt.figure()
+    plt.imshow(W_plot.T, extent=[t[0], t[-1], 1, W_plot.shape[1]],
+            aspect='auto', origin='lower', interpolation='none')
+    plt.xlabel('time')
+    plt.ylabel('idx')
+    plt.title('W')
+    plt.colorbar()
+    plt.set_cmap('RdBu')
+    plt.clim(-1, 1)
 
-# Compare trajectories to estimate Lyapunov exponent
-y_interp = interp1d(t, y, axis=0, kind='linear', fill_value='extrapolate')
-yd_interp = interp1d(td, yd, axis=0, kind='linear', fill_value='extrapolate')
-t_compare = np.arange(0, Tm + 0.1, 0.1)
-Y = y_interp(t_compare)  # Original trajectory sampled at fixed times
-YD = yd_interp(t_compare)  # Perturbed trajectory sampled at fixed times
-Delta = np.linalg.norm(Y - YD, axis=1)  # Euclidean distance between trajectories
-cutoff = 1e6
-valid = Delta < Delta[0] * cutoff
-fit_param = np.polyfit(t_compare[valid], np.log(Delta[valid]), 1)
+def plot_Delta(t_compare, Delta, valid, fit_param):
+    # Distance and fitted Lyapunov exponent
+    plt.figure()
+    plt.semilogy(t_compare, Delta)
+    plt.semilogy(t_compare[valid],
+                np.exp(fit_param[0] * t_compare[valid] + fit_param[1]), 'r--')
+    plt.ylabel('Delta')
+    plt.xlabel('time')
+    ax = plt.gca()
+    ax.tick_params(direction='out')
+    ax.set_yscale('log')
+    plt.box(False)
+    plt.legend(['simulation', f'λ={fit_param[0]:.6f}'])
+    plt.show()
 
-# extract variables for plotting
-start = N * N
-h = y[:, start:start + N]
-q = y[:, start + N:start + 2 * N]
-W_plot = y[:, :min(1000, N * N)]
+def main():
+    _x0, h0, W0, q0 = initialize_chaotic_network(N, g)
 
-# Plot h (membrane potentials)
-plt.figure()
-plt.imshow(np.tanh(g * h).T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
-           vmin=-1, vmax=1, interpolation='none')
-plt.xlabel('time')
-plt.ylabel('N')
-plt.title('h')
-plt.colorbar()
-plt.set_cmap('RdBu')
+    t, y = simulate_chaotic_network(h0, W0, q0)
 
-# Plot q (running average of the second moment of activity)
-plt.figure()
-plt.imshow(q.T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
-           vmin=-1, vmax=1, interpolation='none')
-plt.xlabel('time')
-plt.ylabel('N')
-plt.title('q')
-plt.colorbar()
-plt.set_cmap('RdBu')
+    # Define small perturbations
+    sigh = 1e-6
+    sigW = 0.0
+    delta_h = np.random.normal(0, sigh**2, h0.shape)
+    delta_W = np.random.normal(0, sigW**2, W0.shape)
 
-# Plot W (synaptic weights)
-plt.figure()
-plt.imshow(W_plot.T, extent=[t[0], t[-1], 1, W_plot.shape[1]],
-           aspect='auto', origin='lower', interpolation='none')
-plt.xlabel('time')
-plt.ylabel('idx')
-plt.title('W')
-plt.colorbar()
-plt.set_cmap('RdBu')
-plt.clim(-1, 1)
+    td, yd = simulate_chaotic_network(h0 + delta_h, W0 + delta_W, q0)
 
-# Plot Delta and fitted Lyapunov exponent
-plt.figure()
-plt.semilogy(t_compare, Delta)
-plt.semilogy(t_compare[valid],
-             np.exp(fit_param[0] * t_compare[valid] + fit_param[1]), 'r--')
-plt.ylabel('Delta')
-plt.xlabel('time')
-ax = plt.gca()
-ax.tick_params(direction='out')
-ax.set_yscale('log')
-plt.box(False)
-plt.legend(['simulation', f'λ={fit_param[0]:.6f}'])
-plt.show()
+    t_compare, Delta, valid, fit_param = compare_trajectories(t, y, td, yd)
+    
+    # extract variables for plotting
+    start = N * N
+    h = y[:, start:start + N]
+    q = y[:, start + N:start + 2 * N]
+    W_plot = y[:, :min(1000, N * N)]
+
+    plot_h(t, h, g, N)
+    plot_q(t, q, N)
+    plot_W(t, W_plot)
+    plot_Delta(t_compare, Delta, valid, fit_param)
+
+if __name__ == "__main__":
+    main()
