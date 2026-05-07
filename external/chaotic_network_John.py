@@ -73,13 +73,13 @@ def compare_trajectories(t, y, td, yd):
     fit_param = np.polyfit(t_compare[valid], np.log(Delta[valid]), 1)
     return t_compare, Delta, valid, fit_param
 
-def plot_h(t, h, g, N):  # (membrane potentials)
+def plot_x(t, h, g, N):  # (membrane potentials)
     plt.figure()
     plt.imshow(np.tanh(g * h).T, extent=[t[0], t[-1], 1, N], aspect='auto', origin='lower',
             vmin=-1, vmax=1, interpolation='none')
     plt.xlabel('time')
     plt.ylabel('N')
-    plt.title('h')
+    plt.title('x = tanh(g*h)')
     plt.colorbar()
     plt.set_cmap('RdBu')
 
@@ -140,7 +140,7 @@ def main():
     q = y[:, start + N:start + 2 * N]
     W_plot = y[:, :min(1000, N * N)]
 
-    plot_h(t, h, g, N)
+    plot_x(t, h, g, N)
     plot_q(t, q, N)
     plot_W(t, W_plot)
     plot_Delta(t_compare, Delta, valid, fit_param)
